@@ -63,7 +63,7 @@ Supported in this slice:
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
   `RIGHT_OUTER` table aliases
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
-  `BETWEEN`, `IS`, `IS_NOT`, `LIT`, and `PARAM`
+  `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `LIT`, and `PARAM`
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`

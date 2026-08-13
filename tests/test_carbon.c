@@ -240,6 +240,8 @@ static void test_golden_fixtures(void) {
     run_fixture("join-alias");
     run_fixture("group-having");
     run_fixture("scalar-subselect");
+    run_fixture("exists-correlated");
+    run_fixture("not-exists-correlated");
 }
 
 int main(void) {
