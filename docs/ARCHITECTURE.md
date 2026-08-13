@@ -25,8 +25,9 @@ Bindings own runtime integration:
 - exception mapping
 
 The initial Python, PHP, Node, and Ruby bindings are intentionally thin: they
-call the C compiler, return SQL, params JSON, allowlist key, status, and error
-fields, and leave DB execution to the language package layer.
+call the C compiler, return SQL, params JSON, allowlist key, numeric status,
+stable status code, and error fields, and leave DB execution to the language
+package layer.
 
 This keeps the C ABI stable and keeps each language package idiomatic.
 
@@ -36,7 +37,7 @@ This keeps the C ABI stable and keeps each language package idiomatic.
 native binding object
   -> canonical JSON or MessagePack payload
   -> CarbonC compile/validate function
-  -> SQL + params + allowlist key + diagnostics
+  -> SQL + params + allowlist key + status/status_code diagnostics
   -> native driver executes prepared statement
 ```
 
@@ -47,6 +48,7 @@ later without changing the higher-level contract.
 ## ABI Rules
 
 - Functions return `carbon_status`.
+- `carbon_status_code()` maps each status to a stable machine-readable string.
 - Output strings use `carbon_buffer`.
 - The caller owns returned buffers.
 - CarbonC exposes explicit free functions.

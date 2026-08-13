@@ -90,6 +90,22 @@ static bool carbon_node_set_string(
     return true;
 }
 
+static bool carbon_node_set_cstring(napi_env env, napi_value object, const char *key, const char *data) {
+    napi_value value;
+
+    if (napi_create_string_utf8(env, data == NULL ? "" : data, NAPI_AUTO_LENGTH, &value) != napi_ok) {
+        napi_throw_error(env, NULL, "CarbonC failed to allocate result string");
+        return false;
+    }
+
+    if (napi_set_named_property(env, object, key, value) != napi_ok) {
+        napi_throw_error(env, NULL, "CarbonC failed to assign result field");
+        return false;
+    }
+
+    return true;
+}
+
 static bool carbon_node_set_int32(napi_env env, napi_value object, const char *key, int32_t number) {
     napi_value value;
 
@@ -159,6 +175,39 @@ static napi_value carbon_node_status_message(napi_env env, napi_callback_info in
                 NAPI_AUTO_LENGTH,
                 &value) != napi_ok) {
         napi_throw_error(env, NULL, "CarbonC failed to allocate status string");
+        return carbon_node_null(env);
+    }
+
+    return value;
+}
+
+static napi_value carbon_node_status_code(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1];
+    int32_t status;
+    napi_value value;
+
+    if (napi_get_cb_info(env, info, &argc, args, NULL, NULL) != napi_ok) {
+        napi_throw_error(env, NULL, "CarbonC failed to read arguments");
+        return carbon_node_null(env);
+    }
+
+    if (argc < 1) {
+        napi_throw_type_error(env, NULL, "status must be a number");
+        return carbon_node_null(env);
+    }
+
+    if (napi_get_value_int32(env, args[0], &status) != napi_ok) {
+        napi_throw_type_error(env, NULL, "status must be a number");
+        return carbon_node_null(env);
+    }
+
+    if (napi_create_string_utf8(
+                env,
+                carbon_status_code(static_cast<carbon_status>(status)),
+                NAPI_AUTO_LENGTH,
+                &value) != napi_ok) {
+        napi_throw_error(env, NULL, "CarbonC failed to allocate status code string");
         return carbon_node_null(env);
     }
 
@@ -260,6 +309,7 @@ static napi_value carbon_node_compile_query(napi_env env, napi_callback_info inf
     }
 
     ok = carbon_node_set_int32(env, object, "status", static_cast<int32_t>(result.status))
+            && carbon_node_set_cstring(env, object, "status_code", carbon_status_code(result.status))
             && carbon_node_set_string(env, object, "sql", &result.sql)
             && carbon_node_set_string(env, object, "params_json", &result.params_json)
             && carbon_node_set_string(env, object, "allowlist_key", &result.allowlist_key)
@@ -338,10 +388,12 @@ napi_value carbon_node_init(napi_env env, napi_value exports) {
     napi_property_descriptor descriptors[] = {
         {"version", NULL, carbon_node_version, NULL, NULL, NULL, napi_default, NULL},
         {"helloWorld", NULL, carbon_node_hello_world, NULL, NULL, NULL, napi_default, NULL},
+        {"statusCode", NULL, carbon_node_status_code, NULL, NULL, NULL, napi_default, NULL},
         {"statusMessage", NULL, carbon_node_status_message, NULL, NULL, NULL, napi_default, NULL},
         {"compileQuery", NULL, carbon_node_compile_query, NULL, NULL, NULL, napi_default, NULL},
         {"normalizeAllowlistSql", NULL, carbon_node_normalize_allowlist_sql, NULL, NULL, NULL, napi_default, NULL},
         {"hello_world", NULL, carbon_node_hello_world, NULL, NULL, NULL, napi_default, NULL},
+        {"status_code", NULL, carbon_node_status_code, NULL, NULL, NULL, napi_default, NULL},
         {"status_message", NULL, carbon_node_status_message, NULL, NULL, NULL, napi_default, NULL},
         {"compile_query", NULL, carbon_node_compile_query, NULL, NULL, NULL, napi_default, NULL},
         {"normalize_allowlist_sql", NULL, carbon_node_normalize_allowlist_sql, NULL, NULL, NULL, napi_default, NULL},

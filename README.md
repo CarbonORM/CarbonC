@@ -41,8 +41,8 @@ payloads:
 }
 ```
 
-The compiler emits SQL, a JSON array of bound parameter values, and a normalized
-allowlist key:
+The compiler returns a numeric `status`, stable string `status_code`, SQL, a
+JSON array of bound parameter values, and a normalized allowlist key:
 
 ```sql
 SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.last_name ASC LIMIT 25
@@ -112,6 +112,8 @@ Primary entrypoints:
 - `carbon_context_free()`
 - `carbon_buffer_init()`
 - `carbon_buffer_free()`
+- `carbon_status_code()`
+- `carbon_status_message()`
 - `carbon_compile_query()`
 - `carbon_compile_result_free()`
 - `carbon_normalize_allowlist_sql()`
@@ -130,7 +132,9 @@ ctest --test-dir build --output-on-failure
 ## Python Binding
 
 The Python binding wraps the same C ABI from
-`bindings/python/carbon_python.c` and returns a plain Python `dict`:
+`bindings/python/carbon_python.c` and returns a plain Python `dict` with
+`status`, `status_code`, `sql`, `params_json`, `allowlist_key`, and `error`
+fields:
 
 ```python
 import json
@@ -180,8 +184,8 @@ php -d extension=bindings/php/modules/carbon.so examples/php/index.php
 ```
 
 The extension exposes `carbon_version()`, `carbon_hello_world()`,
-`carbon_status_message()`, `carbon_compile_query()`, and
-`carbon_normalize_allowlist_sql()`.
+`carbon_status_code()`, `carbon_status_message()`, `carbon_compile_query()`,
+and `carbon_normalize_allowlist_sql()`.
 
 ## Node Binding
 
@@ -211,8 +215,8 @@ node examples/node/index.js
 ```
 
 The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
-`compileQuery()`, and `normalizeAllowlistSql()`, plus snake_case aliases for the
-multiword functions.
+`statusCode()`, `compileQuery()`, and `normalizeAllowlistSql()`, plus
+snake_case aliases for the multiword functions.
 
 ## Ruby Binding
 
@@ -243,7 +247,7 @@ ruby examples/ruby/example.rb
 ```
 
 The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
-`CarbonC.status_message`, `CarbonC.compile_query`, and
+`CarbonC.status_code`, `CarbonC.status_message`, `CarbonC.compile_query`, and
 `CarbonC.normalize_allowlist_sql`.
 
 ## Next Milestones
@@ -254,4 +258,4 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
    and binding-friendly diagnostic paths.
 3. Add package-level ergonomics for each binding without moving DB execution
    into C.
-4. Add structured error codes and paths for binding-friendly diagnostics.
+4. Add structured diagnostic paths for binding-friendly errors.

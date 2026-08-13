@@ -47,6 +47,7 @@ typedef struct carbon_compile_result {
 
 const char *carbon_version(void);
 const char *carbon_hello_world(void);
+const char *carbon_status_code(carbon_status status);
 const char *carbon_status_message(carbon_status status);
 
 carbon_context *carbon_context_new(void);

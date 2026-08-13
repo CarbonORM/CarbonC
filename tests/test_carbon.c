@@ -22,6 +22,14 @@ static void assert_buffer_equals(const carbon_buffer *buffer, const char *expect
 static void test_version(void) {
     assert(strcmp(carbon_version(), "0.1.0") == 0);
     assert(strcmp(carbon_hello_world(), "CarbonC portable kernel") == 0);
+    assert(strcmp(carbon_status_code(CARBON_STATUS_OK), "ok") == 0);
+    assert(strcmp(carbon_status_code(CARBON_STATUS_INVALID_ARGUMENT), "invalid_argument") == 0);
+    assert(strcmp(carbon_status_code(CARBON_STATUS_INVALID_JSON), "invalid_json") == 0);
+    assert(strcmp(carbon_status_code(CARBON_STATUS_INVALID_QUERY), "invalid_query") == 0);
+    assert(strcmp(carbon_status_code(CARBON_STATUS_UNSUPPORTED_DIALECT), "unsupported_dialect") == 0);
+    assert(strcmp(carbon_status_code(CARBON_STATUS_UNSUPPORTED_QUERY), "unsupported_query") == 0);
+    assert(strcmp(carbon_status_code(CARBON_STATUS_OUT_OF_MEMORY), "out_of_memory") == 0);
+    assert(strcmp(carbon_status_code((carbon_status) 999), "unknown_status") == 0);
 }
 
 static void test_mysql_select_where_limit(void) {

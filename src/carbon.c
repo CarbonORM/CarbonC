@@ -3126,6 +3126,27 @@ const char *carbon_hello_world(void) {
     return "CarbonC portable kernel";
 }
 
+const char *carbon_status_code(carbon_status status) {
+    switch (status) {
+        case CARBON_STATUS_OK:
+            return "ok";
+        case CARBON_STATUS_INVALID_ARGUMENT:
+            return "invalid_argument";
+        case CARBON_STATUS_INVALID_JSON:
+            return "invalid_json";
+        case CARBON_STATUS_INVALID_QUERY:
+            return "invalid_query";
+        case CARBON_STATUS_UNSUPPORTED_DIALECT:
+            return "unsupported_dialect";
+        case CARBON_STATUS_UNSUPPORTED_QUERY:
+            return "unsupported_query";
+        case CARBON_STATUS_OUT_OF_MEMORY:
+            return "out_of_memory";
+        default:
+            return "unknown_status";
+    }
+}
+
 const char *carbon_status_message(carbon_status status) {
     switch (status) {
         case CARBON_STATUS_OK:

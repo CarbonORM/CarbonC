@@ -23,6 +23,7 @@ def main() -> None:
 
     result = carbon.compile_query(json.dumps(query), schema_json=json.dumps(schema), dialect="mysql")
     assert result["status"] == 0, result
+    assert result["status_code"] == "ok", result
     assert result["sql"] == (
         "SELECT actor.actor_id, actor.first_name FROM `actor` "
         "WHERE (actor.actor_id) > ? LIMIT 5"
@@ -39,7 +40,9 @@ def main() -> None:
         dialect="mysql",
     )
     assert rejected["status"] == 3, rejected
+    assert rejected["status_code"] == "invalid_query", rejected
 
+    assert carbon.status_code(3) == "invalid_query"
     assert carbon.normalize_allowlist_sql("SELECT * FROM `actor` LIMIT 10") == "SELECT * FROM `actor` LIMIT ?"
     print("python binding smoke: ok")
 

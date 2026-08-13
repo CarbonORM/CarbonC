@@ -22,11 +22,13 @@ const query = {
 };
 
 assert.strictEqual(carbon.version(), '0.1.0');
+assert.strictEqual(carbon.statusCode(3), 'invalid_query');
 assert.strictEqual(carbon.statusMessage(0), 'ok');
 
 const result = carbon.compileQuery(JSON.stringify(query), JSON.stringify(schema), 'mysql');
 
 assert.strictEqual(result.status, 0, JSON.stringify(result));
+assert.strictEqual(result.status_code, 'ok', JSON.stringify(result));
 assert.strictEqual(
   result.sql,
   'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? LIMIT 5'
@@ -46,6 +48,7 @@ const rejected = carbon.compileQuery(
   'mysql'
 );
 assert.strictEqual(rejected.status, 3, JSON.stringify(rejected));
+assert.strictEqual(rejected.status_code, 'invalid_query', JSON.stringify(rejected));
 assert.strictEqual(rejected.error, 'invalid query');
 
 assert.strictEqual(

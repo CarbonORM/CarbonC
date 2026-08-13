@@ -34,6 +34,7 @@ $query = [
 $result = carbon_compile_query(json_encode($query), json_encode($schema), 'mysql');
 
 carbon_assert($result['status'] === 0, 'expected compile success: ' . json_encode($result));
+carbon_assert($result['status_code'] === 'ok', 'unexpected status code: ' . json_encode($result));
 carbon_assert(
     $result['sql'] === 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? LIMIT 5',
     'unexpected sql: ' . $result['sql']
@@ -50,7 +51,12 @@ $rejected = carbon_compile_query(
     'mysql'
 );
 carbon_assert($rejected['status'] === 3, 'expected invalid query rejection: ' . json_encode($rejected));
+carbon_assert(
+    $rejected['status_code'] === 'invalid_query',
+    'unexpected rejection status code: ' . json_encode($rejected)
+);
 
+carbon_assert(carbon_status_code(3) === 'invalid_query', 'unexpected direct status code');
 carbon_assert(
     carbon_normalize_allowlist_sql('SELECT * FROM `actor` LIMIT 10') === 'SELECT * FROM `actor` LIMIT ?',
     'unexpected allowlist normalization'

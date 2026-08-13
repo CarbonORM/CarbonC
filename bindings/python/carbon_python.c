@@ -25,10 +25,21 @@ static PyObject *carbon_py_status_message(PyObject *self, PyObject *args) {
     return PyUnicode_FromString(carbon_status_message((carbon_status) status));
 }
 
+static PyObject *carbon_py_status_code(PyObject *self, PyObject *args) {
+    int status;
+
+    (void) self;
+    if (!PyArg_ParseTuple(args, "i:status_code", &status)) {
+        return NULL;
+    }
+    return PyUnicode_FromString(carbon_status_code((carbon_status) status));
+}
+
 static PyObject *carbon_py_result_dict(const carbon_compile_result *result) {
     return Py_BuildValue(
-            "{s:i,s:s#,s:s#,s:s#,s:s#}",
+            "{s:i,s:s,s:s#,s:s#,s:s#,s:s#}",
             "status", (int) result->status,
+            "status_code", carbon_status_code(result->status),
             "sql", result->sql.data == NULL ? "" : result->sql.data, (Py_ssize_t) result->sql.length,
             "params_json", result->params_json.data == NULL ? "" : result->params_json.data,
             (Py_ssize_t) result->params_json.length,
@@ -125,6 +136,7 @@ static PyObject *carbon_py_normalize_allowlist_sql(PyObject *self, PyObject *arg
 static PyMethodDef carbon_methods[] = {
         {"version", carbon_py_version, METH_NOARGS, "Return the CarbonC version."},
         {"hello_world", carbon_py_hello_world, METH_NOARGS, "Return the CarbonC smoke-test message."},
+        {"status_code", carbon_py_status_code, METH_VARARGS, "Return a stable CarbonC status code."},
         {"status_message", carbon_py_status_message, METH_VARARGS, "Return a CarbonC status message."},
         {"compile_query", (PyCFunction) carbon_py_compile_query, METH_VARARGS | METH_KEYWORDS,
          "Compile canonical C6 JSON into SQL, params JSON, allowlist key, and diagnostics."},

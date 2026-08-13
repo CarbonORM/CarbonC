@@ -19,6 +19,10 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_carbon_status_message, 0, 1, IS_
         ZEND_ARG_TYPE_INFO(0, status, IS_LONG, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_carbon_status_code, 0, 1, IS_STRING, 0)
+        ZEND_ARG_TYPE_INFO(0, status, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_carbon_compile_query, 0, 1, IS_ARRAY, 0)
         ZEND_ARG_TYPE_INFO(0, query_json, IS_STRING, 0)
         ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, schema_json, IS_STRING, 0, "\"{}\"")
@@ -46,6 +50,16 @@ PHP_FUNCTION(carbon_status_message) {
         ZEND_PARSE_PARAMETERS_END();
 
         RETURN_STRING(carbon_status_message((carbon_status) status));
+}
+
+PHP_FUNCTION(carbon_status_code) {
+        zend_long status;
+
+        ZEND_PARSE_PARAMETERS_START(1, 1)
+                Z_PARAM_LONG(status)
+        ZEND_PARSE_PARAMETERS_END();
+
+        RETURN_STRING(carbon_status_code((carbon_status) status));
 }
 
 PHP_FUNCTION(carbon_compile_query) {
@@ -90,6 +104,7 @@ PHP_FUNCTION(carbon_compile_query) {
 
         array_init(return_value);
         add_assoc_long(return_value, "status", result.status);
+        add_assoc_string(return_value, "status_code", carbon_status_code(result.status));
         carbon_add_assoc_buffer(return_value, "sql", &result.sql);
         carbon_add_assoc_buffer(return_value, "params_json", &result.params_json);
         carbon_add_assoc_buffer(return_value, "allowlist_key", &result.allowlist_key);
@@ -126,6 +141,7 @@ PHP_FUNCTION(carbon_normalize_allowlist_sql) {
 const zend_function_entry carbon_functions[] = {
         PHP_FE(carbon_version, arginfo_carbon_version)
         PHP_FE(carbon_hello_world, arginfo_carbon_hello_world)
+        PHP_FE(carbon_status_code, arginfo_carbon_status_code)
         PHP_FE(carbon_status_message, arginfo_carbon_status_message)
         PHP_FE(carbon_compile_query, arginfo_carbon_compile_query)
         PHP_FE(carbon_normalize_allowlist_sql, arginfo_carbon_normalize_allowlist_sql)

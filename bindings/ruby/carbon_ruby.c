@@ -31,6 +31,11 @@ static VALUE carbon_ruby_status_message(VALUE self, VALUE status_value) {
     return rb_str_new_cstr(carbon_status_message((carbon_status) NUM2INT(status_value)));
 }
 
+static VALUE carbon_ruby_status_code(VALUE self, VALUE status_value) {
+    (void) self;
+    return rb_str_new_cstr(carbon_status_code((carbon_status) NUM2INT(status_value)));
+}
+
 static VALUE carbon_ruby_compile_query(int argc, VALUE *argv, VALUE self) {
     VALUE query_json_value;
     VALUE schema_json_value;
@@ -79,6 +84,7 @@ static VALUE carbon_ruby_compile_query(int argc, VALUE *argv, VALUE self) {
 
     hash = rb_hash_new();
     carbon_ruby_hash_set(hash, "status", INT2NUM(result.status));
+    carbon_ruby_hash_set(hash, "status_code", rb_str_new_cstr(carbon_status_code(result.status)));
     carbon_ruby_hash_set(hash, "sql", carbon_ruby_buffer_to_string(&result.sql));
     carbon_ruby_hash_set(hash, "params_json", carbon_ruby_buffer_to_string(&result.params_json));
     carbon_ruby_hash_set(hash, "allowlist_key", carbon_ruby_buffer_to_string(&result.allowlist_key));
@@ -122,6 +128,7 @@ void Init_carbon(void) {
     carbon_ruby_module = rb_define_module("CarbonC");
     rb_define_singleton_method(carbon_ruby_module, "version", carbon_ruby_version, 0);
     rb_define_singleton_method(carbon_ruby_module, "hello_world", carbon_ruby_hello_world, 0);
+    rb_define_singleton_method(carbon_ruby_module, "status_code", carbon_ruby_status_code, 1);
     rb_define_singleton_method(carbon_ruby_module, "status_message", carbon_ruby_status_message, 1);
     rb_define_singleton_method(carbon_ruby_module, "compile_query", carbon_ruby_compile_query, -1);
     rb_define_singleton_method(
