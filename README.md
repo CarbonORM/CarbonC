@@ -129,7 +129,7 @@ ctest --test-dir build --output-on-failure
 
 ## Python Binding
 
-The first native language binding wraps the same C ABI from
+The Python binding wraps the same C ABI from
 `bindings/python/carbon_python.c` and returns a plain Python `dict`:
 
 ```python
@@ -154,12 +154,41 @@ Build and smoke-test it from the repository root:
 PYTHONPATH=bindings/python python3 bindings/python/smoke.py
 ```
 
+## PHP Binding
+
+The PHP extension wraps the same compile result shape from
+`bindings/php/carbon_php.c` as an associative array:
+
+```php
+$result = carbon_compile_query(
+    json_encode(["FROM" => "actor", "SELECT" => ["actor.actor_id"]]),
+    json_encode([
+        "TABLES" => [
+            "actor" => ["COLUMNS" => ["actor.actor_id" => "actor_id"]],
+        ],
+    ]),
+    "mysql"
+);
+```
+
+Build and smoke-test it from the repository root:
+
+```bash
+(cd bindings/php && bash build.sh)
+php -d extension=bindings/php/modules/carbon.so bindings/php/smoke.php
+php -d extension=bindings/php/modules/carbon.so examples/php/index.php
+```
+
+The extension exposes `carbon_version()`, `carbon_hello_world()`,
+`carbon_status_message()`, `carbon_compile_query()`, and
+`carbon_normalize_allowlist_sql()`.
+
 ## Next Milestones
 
 1. Expand fixture coverage for derived joins, multi-row writes, PostgreSQL
    conflict targets, and schema-aware write normalization.
 2. Expand schema validation to unqualified references, generated type metadata,
    and binding-friendly diagnostic paths.
-3. Add Node N-API, PHP, and Ruby wrappers for the compile result shape without
+3. Add Node N-API and Ruby wrappers for the compile result shape without
    moving DB execution into C.
 4. Add structured error codes and paths for binding-friendly diagnostics.
