@@ -39,3 +39,4 @@ bindings/php/include/
 bindings/php/libtool
 bindings/php/modules/
 bindings/php/run-tests.php
+bindings/node/build/

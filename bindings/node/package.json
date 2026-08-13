@@ -1,0 +1,11 @@
+{
+  "name": "@carbonorm/carbonc",
+  "version": "0.1.0",
+  "description": "Node N-API binding for the CarbonC portable CarbonORM kernel.",
+  "main": "index.js",
+  "scripts": {
+    "build": "bash build.sh",
+    "smoke": "node smoke.js"
+  },
+  "private": true
+}

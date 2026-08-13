@@ -70,8 +70,8 @@ Supported in this slice:
 - MySQL upsert update lists through `UPDATE: ["column_name"]`
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL `?` placeholders and PostgreSQL `$1`-style placeholders
-- CarbonNode-style allowlist normalization for whitespace, `LIMIT`, `OFFSET`,
-  and `IN` bind-list cardinality
+- CarbonNode-style allowlist normalization for whitespace, `LIMIT` forms
+  including `LIMIT ... OFFSET ...`, and `IN` bind-list cardinality
 - schema-aware table, dotted-reference, join-alias, and write-column validation
   when `schema_json` includes a `TABLES` object
 
@@ -183,12 +183,43 @@ The extension exposes `carbon_version()`, `carbon_hello_world()`,
 `carbon_status_message()`, `carbon_compile_query()`, and
 `carbon_normalize_allowlist_sql()`.
 
+## Node Binding
+
+The Node binding uses plain N-API from `bindings/node/carbon_node.cpp` and
+exports camelCase methods plus snake_case aliases:
+
+```js
+const carbon = require('./bindings/node');
+
+const result = carbon.compileQuery(
+  JSON.stringify({FROM: 'actor', SELECT: ['actor.actor_id']}),
+  JSON.stringify({
+    TABLES: {
+      actor: {COLUMNS: {'actor.actor_id': 'actor_id'}},
+    },
+  }),
+  'mysql'
+);
+```
+
+Build and smoke-test it from the repository root:
+
+```bash
+(cd bindings/node && bash build.sh)
+node bindings/node/smoke.js
+node examples/node/index.js
+```
+
+The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
+`compileQuery()`, and `normalizeAllowlistSql()`, plus snake_case aliases for the
+multiword functions.
+
 ## Next Milestones
 
 1. Expand fixture coverage for derived joins, multi-row writes, PostgreSQL
    conflict targets, and schema-aware write normalization.
 2. Expand schema validation to unqualified references, generated type metadata,
    and binding-friendly diagnostic paths.
-3. Add Node N-API and Ruby wrappers for the compile result shape without
-   moving DB execution into C.
+3. Add a Ruby wrapper for the compile result shape without moving DB execution
+   into C.
 4. Add structured error codes and paths for binding-friendly diagnostics.
