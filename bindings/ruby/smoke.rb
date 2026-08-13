@@ -185,6 +185,41 @@ end
 unless custom_selected.fetch('params') == ['UNKNOWN']
   raise "unexpected custom call select params: #{custom_selected.fetch('params').inspect}"
 end
+spatial_polygon = 'POLYGON((39.5185659 -105.0142915,39.5401859 -105.0142915,39.5401859 -104.9862115,39.5185659 -104.9862115,39.5185659 -105.0142915))'
+spatial_inner_polygon = 'POLYGON((0 0,1 0,1 1,0 1,0 0))'
+expected_mbr_contains_payload = [
+  'MBRContains',
+  'property_units.envelope',
+  'property_units.location'
+]
+unless CarbonC.mbr_contains('property_units.envelope', 'property_units.location') == expected_mbr_contains_payload
+  raise 'unexpected MBRContains helper payload'
+end
+spatial_filtered = CarbonC.query('property_units')
+                          .select('property_units.unit_id')
+                          .where(
+                            {
+                              'MBRContains' => [
+                                CarbonC.fn('ST_GeomFromText', CarbonC.lit(spatial_polygon), 4326),
+                                'property_units.location'
+                              ],
+                              'OR' => [
+                                CarbonC.st_within(
+                                  'property_units.location',
+                                  CarbonC.fn('ST_GeomFromText', CarbonC.lit(spatial_inner_polygon), 4326)
+                                ),
+                                CarbonC.st_contains('property_units.envelope', 'property_units.location')
+                              ]
+                            }
+                          )
+                          .limit(10)
+                          .compile(nil, 'mysql')
+unless spatial_filtered.fetch('sql') == 'SELECT property_units.unit_id FROM `property_units` WHERE MBRCONTAINS(ST_GEOMFROMTEXT(?, 4326), property_units.location) AND (ST_WITHIN(property_units.location, ST_GEOMFROMTEXT(?, 4326)) OR ST_CONTAINS(property_units.envelope, property_units.location)) LIMIT 10'
+  raise "unexpected spatial predicate sql: #{spatial_filtered.fetch('sql')}"
+end
+unless spatial_filtered.fetch('params') == [spatial_polygon, spatial_inner_polygon]
+  raise "unexpected spatial predicate params: #{spatial_filtered.fetch('params').inspect}"
+end
 raise 'unexpected literal helper payload' unless CarbonC.lit('2023-01-01') == ['LIT', '2023-01-01']
 expected_exists_spec = [
   'property_units.parcel_id',

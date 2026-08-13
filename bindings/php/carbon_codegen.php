@@ -113,6 +113,21 @@ if (!function_exists('carbon_schema_models')) {
         return array_merge(['CALL', $name], $arguments);
     }
 
+    function carbon_st_contains($envelope, $shape): array
+    {
+        return carbon_fn('ST_Contains', $envelope, $shape);
+    }
+
+    function carbon_st_within($shape, $envelope): array
+    {
+        return carbon_fn('ST_Within', $shape, $envelope);
+    }
+
+    function carbon_mbr_contains($envelope, $shape): array
+    {
+        return carbon_fn('MBRContains', $envelope, $shape);
+    }
+
     function carbon_alias($expression, string $alias): array
     {
         return ['AS', $expression, $alias];

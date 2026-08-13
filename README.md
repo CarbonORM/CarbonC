@@ -79,7 +79,7 @@ Supported in this slice:
   `RIGHT_OUTER` table aliases and stringified derived targets
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
   `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `MATCH_AGAINST`, `LIT`,
-  and `PARAM`
+  `PARAM`, and boolean spatial-function predicates
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
 - explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads,
@@ -300,8 +300,8 @@ subselect helpers, derived `join_subselect` targets, advanced predicate helpers
 (`where_op`, `where_in`, `where_not_in`, `where_between`, `where_not_between`,
 `where_match_against`, `where_exists`, `where_not_exists`), composable boolean group helpers
 (`condition`, `and_`, `or_`, `where_and`, `where_or`), expression helpers
-(`fn`, `custom_call`, `call`, `lit`, `param`), limit/page, and order
-controls.
+(`fn`, `custom_call`, `call`, `lit`, `param`, `st_contains`, `st_within`,
+`mbr_contains`), limit/page, and order controls.
 `compile_query_result()` returns the same fields as the raw result plus decoded
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
 metadata into Python annotations such as
@@ -371,7 +371,8 @@ predicate helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`,
 `whereNotBetween`, `whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group
 helpers (`carbon_condition`, `carbon_and_group`, `carbon_or_group`, `whereAnd`,
 `whereOr`), expression helpers (`carbon_fn`, `carbon_custom_call`,
-`carbon_call`, `carbon_lit`, `carbon_param`), limit/page, and order controls.
+`carbon_call`, `carbon_lit`, `carbon_param`, `carbon_st_contains`,
+`carbon_st_within`, `carbon_mbr_contains`), limit/page, and order controls.
 `carbon_compile_query_result()`
 returns the same fields as the
 raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
@@ -447,7 +448,8 @@ boundary for table/from, select, where, join, group/having, write operations
 helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
 `whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group helpers
 (`condition`, `andGroup`, `orGroup`, `whereAnd`, `whereOr`), expression helpers
-(`fn`, `customCall`, `call`, `lit`, `param`), limit/page, and order controls.
+(`fn`, `customCall`, `call`, `lit`, `param`, `stContains`, `stWithin`,
+`mbrContains`), limit/page, and order controls.
 `compileQueryResult()` returns the same fields as the raw result
 plus decoded JavaScript `params` and `diagnostics` values. The generated
 TypeScript source maps DB metadata into primitive field types and adds `dbTypes`
@@ -528,8 +530,9 @@ predicate helpers (`where_op`, `where_in`, `where_not_in`, `where_between`,
 `where_not_between`, `where_match_against`, `where_exists`, `where_not_exists`), composable boolean
 group helpers (`CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
 `where_and`, `where_or`), expression helpers (`CarbonC.fn`,
-`CarbonC.custom_call`, `CarbonC.call`, `CarbonC.lit`, `CarbonC.param`),
-limit/page, and order controls.
+`CarbonC.custom_call`, `CarbonC.call`, `CarbonC.lit`, `CarbonC.param`,
+`CarbonC.st_contains`, `CarbonC.st_within`, `CarbonC.mbr_contains`), limit/page,
+and order controls.
 `CarbonC.compile_query_result` returns the same fields as the raw
 result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
 Struct source includes `TYPES` and `NULLABLE` metadata constants for runtime

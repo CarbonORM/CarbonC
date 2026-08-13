@@ -180,6 +180,41 @@ def main() -> None:
     )
     assert custom_selected["sql"] == "SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1", custom_selected
     assert custom_selected["params"] == ["UNKNOWN"], custom_selected
+    spatial_polygon = "POLYGON((39.5185659 -105.0142915,39.5401859 -105.0142915,39.5401859 -104.9862115,39.5185659 -104.9862115,39.5185659 -105.0142915))"
+    spatial_inner_polygon = "POLYGON((0 0,1 0,1 1,0 1,0 0))"
+    assert carbon_codegen.mbr_contains("property_units.envelope", "property_units.location") == [
+        "MBRContains",
+        "property_units.envelope",
+        "property_units.location",
+    ]
+    spatial_filtered = (
+        carbon_codegen.query("property_units")
+        .select("property_units.unit_id")
+        .where(
+            {
+                "MBRContains": [
+                    carbon_codegen.fn("ST_GeomFromText", carbon_codegen.lit(spatial_polygon), 4326),
+                    "property_units.location",
+                ],
+                "OR": [
+                    carbon_codegen.st_within(
+                        "property_units.location",
+                        carbon_codegen.fn("ST_GeomFromText", carbon_codegen.lit(spatial_inner_polygon), 4326),
+                    ),
+                    carbon_codegen.st_contains("property_units.envelope", "property_units.location"),
+                ],
+            }
+        )
+        .limit(10)
+        .compile(dialect="mysql")
+    )
+    assert spatial_filtered["sql"] == (
+        "SELECT property_units.unit_id FROM `property_units` "
+        "WHERE MBRCONTAINS(ST_GEOMFROMTEXT(?, 4326), property_units.location) "
+        "AND (ST_WITHIN(property_units.location, ST_GEOMFROMTEXT(?, 4326)) "
+        "OR ST_CONTAINS(property_units.envelope, property_units.location)) LIMIT 10"
+    ), spatial_filtered
+    assert spatial_filtered["params"] == [spatial_polygon, spatial_inner_polygon], spatial_filtered
     assert carbon_codegen.lit("2023-01-01") == ["LIT", "2023-01-01"]
     assert carbon_codegen.exists_spec("property_units.parcel_id", sales_query) == [
         "property_units.parcel_id",

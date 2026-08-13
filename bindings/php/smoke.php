@@ -198,6 +198,41 @@ carbon_assert(
     $customSelected['params'] === ['UNKNOWN'],
     'unexpected custom call select params: ' . json_encode($customSelected['params'])
 );
+$spatialPolygon = 'POLYGON((39.5185659 -105.0142915,39.5401859 -105.0142915,39.5401859 -104.9862115,39.5185659 -104.9862115,39.5185659 -105.0142915))';
+$spatialInnerPolygon = 'POLYGON((0 0,1 0,1 1,0 1,0 0))';
+carbon_assert(
+    carbon_mbr_contains('property_units.envelope', 'property_units.location') === [
+        'MBRContains',
+        'property_units.envelope',
+        'property_units.location',
+    ],
+    'unexpected MBRContains helper payload'
+);
+$spatialFiltered = carbon_query('property_units')
+    ->select('property_units.unit_id')
+    ->where([
+        'MBRContains' => [
+            carbon_fn('ST_GeomFromText', carbon_lit($spatialPolygon), 4326),
+            'property_units.location',
+        ],
+        'OR' => [
+            carbon_st_within(
+                'property_units.location',
+                carbon_fn('ST_GeomFromText', carbon_lit($spatialInnerPolygon), 4326)
+            ),
+            carbon_st_contains('property_units.envelope', 'property_units.location'),
+        ],
+    ])
+    ->limit(10)
+    ->compile(null, 'mysql');
+carbon_assert(
+    $spatialFiltered['sql'] === 'SELECT property_units.unit_id FROM `property_units` WHERE MBRCONTAINS(ST_GEOMFROMTEXT(?, 4326), property_units.location) AND (ST_WITHIN(property_units.location, ST_GEOMFROMTEXT(?, 4326)) OR ST_CONTAINS(property_units.envelope, property_units.location)) LIMIT 10',
+    'unexpected spatial predicate sql: ' . $spatialFiltered['sql']
+);
+carbon_assert(
+    $spatialFiltered['params'] === [$spatialPolygon, $spatialInnerPolygon],
+    'unexpected spatial predicate params: ' . json_encode($spatialFiltered['params'])
+);
 carbon_assert(carbon_lit('2023-01-01') === ['LIT', '2023-01-01'], 'unexpected literal helper payload');
 carbon_assert(
     carbon_exists_spec('property_units.parcel_id', $salesQuery) === [

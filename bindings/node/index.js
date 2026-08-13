@@ -129,6 +129,18 @@ function customCall(name, ...args) {
   return ['CALL', name, ...args.map(copyPayloadValue)];
 }
 
+function stContains(envelope, shape) {
+  return fn('ST_Contains', envelope, shape);
+}
+
+function stWithin(shape, envelope) {
+  return fn('ST_Within', shape, envelope);
+}
+
+function mbrContains(envelope, shape) {
+  return fn('MBRContains', envelope, shape);
+}
+
 function alias(expression, name) {
   return ['AS', copyPayloadValue(expression), name];
 }
@@ -640,6 +652,12 @@ native.call = call;
 native.fn = fn;
 native.customCall = customCall;
 native.custom_call = customCall;
+native.stContains = stContains;
+native.st_contains = stContains;
+native.stWithin = stWithin;
+native.st_within = stWithin;
+native.mbrContains = mbrContains;
+native.mbr_contains = mbrContains;
 native.alias = alias;
 native.as = alias;
 native.distinct = distinct;

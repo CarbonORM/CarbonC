@@ -1592,6 +1592,13 @@ static int carbon_is_boolean_operator(const char *op) {
     return strcmp(op, "AND") == 0 || strcmp(op, "OR") == 0;
 }
 
+static int carbon_is_boolean_function_key(const char *token) {
+    return token != NULL
+           && (strcmp(token, "ST_CONTAINS") == 0
+               || strcmp(token, "ST_WITHIN") == 0
+               || strcmp(token, "MBRCONTAINS") == 0);
+}
+
 static carbon_status carbon_append_param(
         carbon_compile_state *state,
         carbon_json_span raw_value,
@@ -2596,6 +2603,48 @@ cleanup:
     return status;
 }
 
+static carbon_status carbon_build_boolean_function_predicate(
+        carbon_compile_state *state,
+        const char *function_name,
+        carbon_json_span args,
+        size_t start_index,
+        carbon_string_builder *sql) {
+    size_t count;
+    size_t index;
+    int wrote = 0;
+
+    if (!carbon_is_boolean_function_key(function_name)
+        || !carbon_span_starts_with(args, '[')
+        || !carbon_array_count(args, &count)
+        || count <= start_index) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    if (!carbon_builder_append(sql, function_name)
+        || !carbon_builder_append_char(sql, '(')) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+
+    for (index = start_index; index < count; ++index) {
+        carbon_json_span item;
+        carbon_status status;
+
+        if (wrote && !carbon_builder_append(sql, ", ")) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        if (carbon_array_get(args, index, &item) != 1) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        status = carbon_append_expression(state, item, sql);
+        if (status != CARBON_STATUS_OK) {
+            return status;
+        }
+        wrote = 1;
+    }
+
+    return carbon_builder_append_char(sql, ')') ? CARBON_STATUS_OK : CARBON_STATUS_OUT_OF_MEMORY;
+}
+
 static carbon_status carbon_build_where_node(
         carbon_compile_state *state,
         carbon_json_span node,
@@ -2706,6 +2755,7 @@ static carbon_status carbon_build_where_array(
     carbon_json_span second;
     carbon_json_span third;
     char *first_string = NULL;
+    char *first_upper = NULL;
     char *second_string = NULL;
     carbon_status status = CARBON_STATUS_OK;
 
@@ -2716,11 +2766,18 @@ static carbon_status carbon_build_where_array(
         return CARBON_STATUS_OK;
     }
 
+    if (carbon_array_get(node, 0, &first) == 1) {
+        first_string = carbon_span_string_copy(first);
+        first_upper = first_string == NULL ? NULL : carbon_upper_copy(first_string);
+        if (first_upper != NULL && carbon_is_boolean_function_key(first_upper)) {
+            status = carbon_build_boolean_function_predicate(state, first_upper, node, 1, sql);
+            goto cleanup;
+        }
+    }
+
     if (count == 3
-        && carbon_array_get(node, 0, &first) == 1
         && carbon_array_get(node, 1, &second) == 1
         && carbon_array_get(node, 2, &third) == 1) {
-        first_string = carbon_span_string_copy(first);
         second_string = carbon_span_string_copy(second);
         if (second_string != NULL && carbon_operator_format(second_string) != NULL) {
             status = carbon_build_operator(state, second_string, node, NULL, sql);
@@ -2736,6 +2793,7 @@ static carbon_status carbon_build_where_array(
 
 cleanup:
     free(first_string);
+    free(first_upper);
     free(second_string);
     return status;
 }
@@ -2778,6 +2836,8 @@ static carbon_status carbon_build_where_object_pass(
             } else {
                 status = carbon_join_where_parts(state, entry.value, key_upper, &part);
             }
+        } else if (carbon_is_boolean_function_key(key_upper)) {
+            status = carbon_build_boolean_function_predicate(state, key_upper, entry.value, 0, &part);
         } else if (carbon_operator_format(key_upper) != NULL) {
             status = carbon_build_operator(state, key_upper, entry.value, NULL, &part);
         } else if (is_numeric) {

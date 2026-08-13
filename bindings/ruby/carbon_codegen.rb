@@ -250,6 +250,18 @@ module CarbonC
       ['CALL', name, *arguments.map { |argument| carbon_codegen_query_payload(argument) }]
     end
 
+    def st_contains(envelope, shape)
+      fn('ST_Contains', envelope, shape)
+    end
+
+    def st_within(shape, envelope)
+      fn('ST_Within', shape, envelope)
+    end
+
+    def mbr_contains(envelope, shape)
+      fn('MBRContains', envelope, shape)
+    end
+
     def alias_expression(expression, alias_name)
       ['AS', carbon_codegen_query_payload(expression), alias_name]
     end

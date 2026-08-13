@@ -427,6 +427,29 @@ static void test_pagination_rejects_invalid_order_shapes(void) {
     carbon_context_free(context);
 }
 
+static void test_where_rejects_invalid_boolean_function_payload(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] =
+            "{\"FROM\":\"property_units\","
+            "\"WHERE\":{\"ST_Contains\":\"property_units.location\"}}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
+    assert(result.status == CARBON_STATUS_INVALID_QUERY);
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
 static void test_postgresql_insert_write_returning(void) {
     carbon_context *context = carbon_context_new();
     const char query[] =
@@ -1390,6 +1413,7 @@ static void test_golden_fixtures(void) {
     run_fixture("top-level-order");
     run_fixture("root-order-limit-page");
     run_fixture("spatial-order");
+    run_fixture("where-spatial-predicates");
     run_fixture("where-in-between");
     run_fixture("where-boolean-groups");
     run_fixture("match-against");
@@ -1429,6 +1453,7 @@ int main(void) {
     test_expression_rejects_legacy_positional_as();
     test_expression_rejects_unknown_function_without_call();
     test_pagination_rejects_invalid_order_shapes();
+    test_where_rejects_invalid_boolean_function_payload();
     test_postgresql_insert_write_returning();
     test_postgresql_multi_row_insert_write_returning();
     test_loose_root_post_insert_ignores_metadata();

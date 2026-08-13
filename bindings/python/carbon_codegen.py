@@ -312,6 +312,18 @@ def custom_call(name: str, *arguments: Any) -> list[Any]:
     return ["CALL", name, *[Query._copy_payload_value(argument) for argument in arguments]]
 
 
+def st_contains(envelope: Any, shape: Any) -> list[Any]:
+    return fn("ST_Contains", envelope, shape)
+
+
+def st_within(shape: Any, envelope: Any) -> list[Any]:
+    return fn("ST_Within", shape, envelope)
+
+
+def mbr_contains(envelope: Any, shape: Any) -> list[Any]:
+    return fn("MBRContains", envelope, shape)
+
+
 def as_(expression: Any, alias: str) -> list[Any]:
     return ["AS", Query._copy_payload_value(expression), alias]
 
@@ -566,6 +578,7 @@ __all__ = [
     "in_",
     "lit",
     "match_against",
+    "mbr_contains",
     "model_column",
     "model_columns",
     "model_query",
@@ -580,5 +593,7 @@ __all__ = [
     "query",
     "schema_dataclasses",
     "schema_models",
+    "st_contains",
+    "st_within",
     "subselect",
 ]

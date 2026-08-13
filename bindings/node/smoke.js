@@ -171,6 +171,35 @@ const customSelected = carbon.query('actor')
   .compile(undefined, 'mysql');
 assert.strictEqual(customSelected.sql, 'SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1');
 assert.deepStrictEqual(customSelected.params, ['UNKNOWN']);
+const spatialPolygon = 'POLYGON((39.5185659 -105.0142915,39.5401859 -105.0142915,39.5401859 -104.9862115,39.5185659 -104.9862115,39.5185659 -105.0142915))';
+const spatialInnerPolygon = 'POLYGON((0 0,1 0,1 1,0 1,0 0))';
+assert.deepStrictEqual(carbon.mbrContains('property_units.envelope', 'property_units.location'), [
+  'MBRContains',
+  'property_units.envelope',
+  'property_units.location',
+]);
+const spatialFiltered = carbon.query('property_units')
+  .select('property_units.unit_id')
+  .where({
+    MBRContains: [
+      carbon.fn('ST_GeomFromText', carbon.lit(spatialPolygon), 4326),
+      'property_units.location',
+    ],
+    OR: [
+      carbon.stWithin(
+        'property_units.location',
+        carbon.fn('ST_GeomFromText', carbon.lit(spatialInnerPolygon), 4326)
+      ),
+      carbon.stContains('property_units.envelope', 'property_units.location'),
+    ],
+  })
+  .limit(10)
+  .compile(undefined, 'mysql');
+assert.strictEqual(
+  spatialFiltered.sql,
+  'SELECT property_units.unit_id FROM `property_units` WHERE MBRCONTAINS(ST_GEOMFROMTEXT(?, 4326), property_units.location) AND (ST_WITHIN(property_units.location, ST_GEOMFROMTEXT(?, 4326)) OR ST_CONTAINS(property_units.envelope, property_units.location)) LIMIT 10'
+);
+assert.deepStrictEqual(spatialFiltered.params, [spatialPolygon, spatialInnerPolygon]);
 assert.deepStrictEqual(carbon.lit('2023-01-01'), ['LIT', '2023-01-01']);
 assert.deepStrictEqual(carbon.existsSpec('property_units.parcel_id', salesQuery), [
   'property_units.parcel_id',
