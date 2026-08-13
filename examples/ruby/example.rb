@@ -42,7 +42,7 @@ query = {
   'PAGINATION' => {'LIMIT' => 5}
 }
 
-result = CarbonC.compile_query(JSON.generate(query), JSON.generate(schema), 'mysql')
+result = CarbonC.compile_query_value(query, schema, 'mysql')
 
 if result.fetch('status') != 0
   warn result.fetch('error')

@@ -5,6 +5,14 @@ require_relative 'carbon'
 
 module CarbonC
   class << self
+    def compile_query_value(query, schema = nil, dialect = 'mysql')
+      compile_query(
+        carbon_codegen_payload_json(query),
+        carbon_codegen_schema_json(schema),
+        dialect
+      )
+    end
+
     def schema_models(schema = nil, module_name: 'CarbonModels')
       metadata = JSON.parse(schema_metadata(carbon_codegen_schema_json(schema)))
       module_parts = carbon_codegen_module_parts(module_name)
@@ -74,6 +82,12 @@ module CarbonC
       return schema if schema.is_a?(String)
 
       JSON.generate(schema)
+    end
+
+    def carbon_codegen_payload_json(payload)
+      return payload if payload.is_a?(String)
+
+      JSON.generate(payload)
     end
 
     def carbon_codegen_module_parts(module_name)

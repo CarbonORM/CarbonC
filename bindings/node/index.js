@@ -36,6 +36,21 @@ function schemaJson(schema) {
   return JSON.stringify(schema);
 }
 
+function payloadJson(payload, name) {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+  const encoded = JSON.stringify(payload);
+  if (encoded === undefined) {
+    throw new TypeError(`${name} must be JSON-serializable`);
+  }
+  return encoded;
+}
+
+function compileQueryValue(query, schema, dialect = 'mysql') {
+  return native.compileQuery(payloadJson(query, 'query'), schemaJson(schema), dialect);
+}
+
 function dedupe(name, used) {
   let candidate = name;
   let index = 2;
@@ -164,5 +179,7 @@ function schemaModels(schema) {
 
 native.schemaModels = schemaModels;
 native.schema_models = schemaModels;
+native.compileQueryValue = compileQueryValue;
+native.compile_query_value = compileQueryValue;
 
 module.exports = native;

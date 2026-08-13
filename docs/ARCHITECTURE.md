@@ -21,15 +21,17 @@ Bindings own runtime integration:
 - transactions
 - async/event-loop behavior
 - framework adapters
+- native payload serialization helpers
 - native model classes and generated types
 - exception mapping
 
 The initial Python, PHP, Node, and Ruby bindings keep the native extensions
 thin: they call the C compiler, return SQL, params JSON, allowlist key, numeric
 status, stable status code, error fields, and normalized schema metadata. The
-package layer around those extensions owns typed source generators for Python
-dataclasses, TypeScript interfaces, PHP model classes, and Ruby Struct models.
-DB execution remains outside CarbonC.
+package layer around those extensions owns native dict/array/object/hash
+serialization helpers plus typed source generators for Python dataclasses,
+TypeScript interfaces, PHP model classes, and Ruby Struct models. DB execution
+remains outside CarbonC.
 
 This keeps the C ABI stable and keeps each language package idiomatic.
 
@@ -70,6 +72,8 @@ The initial compiler supports:
   keyed by qualified column name
 - package-level typed source generators for Python dataclasses, TypeScript
   interfaces, PHP model classes, and Ruby Struct models
+- package-level compile helpers for native Python dicts, PHP arrays, JavaScript
+  objects, and Ruby hashes
 - `dialect`: `mysql`, `postgresql`, or `postgres`
 - `FROM` or legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
@@ -146,7 +150,7 @@ layout changes.
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
-wrappers, package-level typed source generators, and binding-friendly diagnostic
-JSON. The next implementation step is to cover additional C6 grammar and
-schema-aware write normalization edge cases while improving package-level
-ergonomics.
+wrappers, package-level native payload helpers and typed source generators, and
+binding-friendly diagnostic JSON. The next implementation step is to cover
+additional C6 grammar and schema-aware write normalization edge cases while
+building typed result adapters above the raw compile result shape.

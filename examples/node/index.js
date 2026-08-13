@@ -41,7 +41,7 @@ const query = {
   PAGINATION: {LIMIT: 5},
 };
 
-const result = carbon.compileQuery(JSON.stringify(query), JSON.stringify(schema), 'mysql');
+const result = carbon.compileQueryValue(query, schema, 'mysql');
 
 if (result.status !== 0) {
   console.error(result.error);

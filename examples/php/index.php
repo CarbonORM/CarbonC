@@ -47,7 +47,7 @@ $query = [
     'PAGINATION' => ['LIMIT' => 5],
 ];
 
-$result = carbon_compile_query(json_encode($query), json_encode($schema), 'mysql');
+$result = carbon_compile_query_value($query, $schema, 'mysql');
 
 if ($result['status'] !== 0) {
     fwrite(STDERR, $result['error'] . PHP_EOL);

@@ -22,6 +22,18 @@ def _schema_json(schema: Any) -> str:
     return json.dumps(schema, separators=(",", ":"))
 
 
+def _payload_json(payload: Any) -> str:
+    if isinstance(payload, str):
+        return payload
+    return json.dumps(payload, separators=(",", ":"))
+
+
+def compile_query_value(query: Any, schema: Any = None, dialect: str = "mysql") -> dict[str, Any]:
+    """Compile a native Python query payload through the CarbonC JSON boundary."""
+
+    return carbon.compile_query(_payload_json(query), schema_json=_schema_json(schema), dialect=dialect)
+
+
 def _dedupe(name: str, used: MutableSet[str]) -> str:
     candidate = name
     index = 2
@@ -157,5 +169,6 @@ def schema_models(schema: Any = None) -> str:
 
 
 schema_dataclasses = schema_models
+compile_query = compile_query_value
 
-__all__ = ["schema_dataclasses", "schema_models"]
+__all__ = ["compile_query", "compile_query_value", "schema_dataclasses", "schema_models"]

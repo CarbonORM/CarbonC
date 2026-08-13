@@ -63,6 +63,8 @@ expected_diagnostics = {
   'diagnostics' => []
 }
 raise "unexpected success diagnostics: #{diagnostics.inspect}" unless diagnostics == expected_diagnostics
+ergonomic = CarbonC.compile_query_value(query, schema, 'mysql')
+raise "unexpected ergonomic compile result: #{ergonomic.inspect}" unless ergonomic == result
 metadata = JSON.parse(CarbonC.schema_metadata(JSON.generate(schema)))
 expected_metadata = {
   'tables' => [

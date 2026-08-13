@@ -59,6 +59,10 @@ def main() -> None:
         "ok": True,
         "diagnostics": [],
     }
+    ergonomic = carbon_codegen.compile_query_value(query, schema=schema, dialect="mysql")
+    assert ergonomic == result, ergonomic
+    ergonomic_alias = carbon_codegen.compile_query(query, schema=schema, dialect="mysql")
+    assert ergonomic_alias == result, ergonomic_alias
     metadata = json.loads(carbon.schema_metadata(json.dumps(schema)))
     assert metadata == {
         "tables": [

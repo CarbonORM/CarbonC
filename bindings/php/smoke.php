@@ -75,6 +75,8 @@ carbon_assert(
     ],
     'unexpected success diagnostics: ' . $result['diagnostics_json']
 );
+$ergonomic = carbon_compile_query_value($query, $schema, 'mysql');
+carbon_assert($ergonomic === $result, 'unexpected ergonomic compile result: ' . json_encode($ergonomic));
 $metadata = json_decode(carbon_schema_metadata(json_encode($schema)), true);
 carbon_assert(
     $metadata === [

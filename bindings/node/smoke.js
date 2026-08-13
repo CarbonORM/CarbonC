@@ -63,6 +63,8 @@ assert.deepStrictEqual(JSON.parse(result.diagnostics_json), {
   ok: true,
   diagnostics: [],
 });
+assert.deepStrictEqual(carbon.compileQueryValue(query, schema, 'mysql'), result);
+assert.deepStrictEqual(carbon.compile_query_value(query, schema, 'mysql'), result);
 assert.deepStrictEqual(JSON.parse(carbon.schemaMetadata(JSON.stringify(schema))), {
   tables: [
     {

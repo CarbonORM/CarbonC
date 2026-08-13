@@ -16,6 +16,27 @@ if (!function_exists('carbon_schema_models')) {
         return $encoded;
     }
 
+    function carbon_codegen_payload_json($payload): string
+    {
+        if (is_string($payload)) {
+            return $payload;
+        }
+        $encoded = json_encode($payload);
+        if ($encoded === false) {
+            throw new InvalidArgumentException('query payload could not be encoded as JSON');
+        }
+        return $encoded;
+    }
+
+    function carbon_compile_query_value($query, $schema = null, string $dialect = 'mysql'): array
+    {
+        return carbon_compile_query(
+            carbon_codegen_payload_json($query),
+            carbon_codegen_schema_json($schema),
+            $dialect
+        );
+    }
+
     function carbon_codegen_string_literal(string $value): string
     {
         return "'" . str_replace(['\\', "'"], ['\\\\', "\\'"], $value) . "'";
