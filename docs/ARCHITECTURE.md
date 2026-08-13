@@ -85,15 +85,15 @@ slice. Joined writes and schema-derived conflict targets remain outside the
 v0.1 compiler boundary.
 
 When `TABLES` metadata is present, the compiler validates `FROM` tables, joined
-tables, dotted column references, join-alias references, and insert/update/upsert
-write columns against C6 `COLUMNS` data. Empty or absent schema metadata keeps
-the previous syntax-only behavior so language bindings can adopt the validator
-incrementally.
+tables, unqualified current-table references, dotted column references,
+join-alias references, and insert/update/upsert write columns against C6
+`COLUMNS` data. Empty or absent schema metadata keeps the previous syntax-only
+behavior so language bindings can adopt the validator incrementally.
 
 ## Direction
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers. The next implementation step is to expand those fixtures to derived
-joins, multi-row writes, PostgreSQL conflict targets, unqualified-reference
-validation, generated type metadata, and package-level ergonomics.
+joins, multi-row writes, PostgreSQL conflict targets, generated type metadata,
+binding-friendly diagnostic paths, and package-level ergonomics.

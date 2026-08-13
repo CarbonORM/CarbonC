@@ -991,6 +991,21 @@ static int carbon_schema_resolve_qualifier(
     return 0;
 }
 
+static int carbon_schema_resolve_unqualified_reference_table(
+        const carbon_compile_state *state,
+        char **table) {
+    const carbon_query_scope *scope;
+
+    *table = NULL;
+    for (scope = state == NULL ? NULL : state->scope; scope != NULL; scope = scope->parent) {
+        if (scope->base_table != NULL) {
+            *table = carbon_strndup_local(scope->base_table, strlen(scope->base_table));
+            return *table == NULL ? -1 : 1;
+        }
+    }
+    return 0;
+}
+
 static carbon_status carbon_schema_validate_reference_identifier(
         const carbon_compile_state *state,
         const char *identifier) {
@@ -1006,7 +1021,17 @@ static carbon_status carbon_schema_validate_reference_identifier(
 
     dot = strrchr(identifier, '.');
     if (dot == NULL) {
-        return CARBON_STATUS_OK;
+        if (!carbon_identifier_alias_valid(identifier)) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        found = carbon_schema_resolve_unqualified_reference_table(state, &table);
+        if (found <= 0) {
+            free(table);
+            return found < 0 ? CARBON_STATUS_OUT_OF_MEMORY : CARBON_STATUS_INVALID_QUERY;
+        }
+        status = carbon_schema_validate_column(state, table, identifier);
+        free(table);
+        return status;
     }
     if (dot[1] == '\0' || !carbon_identifier_alias_valid(dot + 1)) {
         return CARBON_STATUS_INVALID_QUERY;
@@ -1722,7 +1747,7 @@ static carbon_status carbon_append_condition_operand(
         if (identifier == NULL) {
             return CARBON_STATUS_INVALID_QUERY;
         }
-        if (!carbon_identifier_valid(identifier) || !carbon_identifier_is_dotted(identifier)) {
+        if (!carbon_identifier_valid(identifier) || strcmp(identifier, "*") == 0) {
             free(identifier);
             return CARBON_STATUS_INVALID_QUERY;
         }
@@ -2031,7 +2056,7 @@ static carbon_status carbon_build_legacy_column_condition(
     if (!carbon_identifier_valid(column)) {
         return CARBON_STATUS_INVALID_QUERY;
     }
-    if (carbon_identifier_is_dotted(column)) {
+    {
         carbon_status validation_status = carbon_schema_validate_reference_identifier(state, column);
         if (validation_status != CARBON_STATUS_OK) {
             return validation_status;

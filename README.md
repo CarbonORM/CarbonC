@@ -72,8 +72,8 @@ Supported in this slice:
 - MySQL `?` placeholders and PostgreSQL `$1`-style placeholders
 - CarbonNode-style allowlist normalization for whitespace, `LIMIT` forms
   including `LIMIT ... OFFSET ...`, and `IN` bind-list cardinality
-- schema-aware table, dotted-reference, join-alias, and write-column validation
-  when `schema_json` includes a `TABLES` object
+- schema-aware table, unqualified-reference, dotted-reference, join-alias, and
+  write-column validation when `schema_json` includes a `TABLES` object
 
 Write support is intentionally explicit: this slice accepts operation keys such
 as `INSERT`, `REPLACE`, `UPDATE`, and `DELETE`, not CarbonNode's loose root-level
@@ -82,8 +82,9 @@ currently cover simple insert/update/delete forms; joined writes, multi-row POST
 normalization, and schema-derived conflict targets are later work.
 
 Schema validation is opt-in for this slice. Passing `{}` keeps syntax-only
-identifier checks. Passing a `TABLES` object validates against C6-style table
-metadata:
+identifier checks. Passing a `TABLES` object validates unqualified references
+against the current `FROM` table and validates dotted/join-alias references
+against C6-style table metadata:
 
 ```json
 {
@@ -254,8 +255,8 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 1. Expand fixture coverage for derived joins, multi-row writes, PostgreSQL
    conflict targets, and schema-aware write normalization.
-2. Expand schema validation to unqualified references, generated type metadata,
-   and binding-friendly diagnostic paths.
+2. Expand schema validation to generated type metadata and binding-friendly
+   diagnostic paths.
 3. Add package-level ergonomics for each binding without moving DB execution
    into C.
 4. Add structured diagnostic paths for binding-friendly errors.

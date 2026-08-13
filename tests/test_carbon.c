@@ -324,6 +324,103 @@ static void test_schema_rejects_unknown_select_column(void) {
     carbon_context_free(context);
 }
 
+static void test_schema_validates_unqualified_base_table_columns(void) {
+    carbon_context *context = carbon_context_new();
+    const char schema[] =
+            "{\"TABLES\":{\"actor\":{\"COLUMNS\":{"
+            "\"actor.actor_id\":\"actor_id\","
+            "\"actor.first_name\":\"first_name\""
+            "}}}}";
+    const char query[] =
+            "{\"FROM\":\"actor\","
+            "\"SELECT\":[\"actor_id\",\"first_name\"],"
+            "\"WHERE\":{\"actor_id\":[\">\",10]},"
+            "\"PAGINATION\":{\"ORDER\":[[\"first_name\",\"ASC\"]],\"LIMIT\":5}}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = schema,
+            .schema_json_length = sizeof(schema) - 1,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "SELECT actor_id, first_name FROM `actor` WHERE (actor_id) > ? ORDER BY first_name ASC LIMIT 5");
+    assert_buffer_equals(&result.params_json, "[10]");
+    assert_buffer_equals(&result.allowlist_key,
+                         "SELECT actor_id, first_name FROM `actor` WHERE (actor_id) > ? ORDER BY first_name ASC LIMIT ?");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
+static void test_schema_validates_unqualified_reference_operands(void) {
+    carbon_context *context = carbon_context_new();
+    const char schema[] =
+            "{\"TABLES\":{\"actor\":[\"actor_id\",\"first_name\"]}}";
+    const char query[] =
+            "{\"FROM\":\"actor\","
+            "\"SELECT\":[\"actor_id\"],"
+            "\"WHERE\":{\"actor_id\":[\"=\",\"first_name\"]},"
+            "\"PAGINATION\":{\"LIMIT\":1}}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = schema,
+            .schema_json_length = sizeof(schema) - 1,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "SELECT actor_id FROM `actor` WHERE (actor_id) = first_name LIMIT 1");
+    assert_buffer_equals(&result.params_json, "[]");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
+static void test_schema_rejects_unknown_unqualified_columns(void) {
+    carbon_context *context = carbon_context_new();
+    const char schema[] =
+            "{\"TABLES\":{\"actor\":{\"COLUMNS\":{\"actor.actor_id\":\"actor_id\"}}}}";
+    const char select_query[] =
+            "{\"FROM\":\"actor\",\"SELECT\":[\"last_name\"]}";
+    const char where_query[] =
+            "{\"FROM\":\"actor\",\"SELECT\":[\"actor_id\"],\"WHERE\":{\"last_name\":\"SMITH\"}}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = schema,
+            .schema_json_length = sizeof(schema) - 1
+    };
+    carbon_compile_result result;
+
+    assert(context != NULL);
+
+    request.query_json = select_query;
+    request.query_json_length = sizeof(select_query) - 1;
+    carbon_compile_result_init(&result);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
+    assert(result.status == CARBON_STATUS_INVALID_QUERY);
+    carbon_compile_result_free(&result);
+
+    request.query_json = where_query;
+    request.query_json_length = sizeof(where_query) - 1;
+    carbon_compile_result_init(&result);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
+    assert(result.status == CARBON_STATUS_INVALID_QUERY);
+    carbon_compile_result_free(&result);
+
+    carbon_context_free(context);
+}
+
 static void test_schema_rejects_unknown_join_alias_column(void) {
     carbon_context *context = carbon_context_new();
     const char schema[] =
@@ -525,6 +622,9 @@ int main(void) {
     test_schema_validates_c6_table_columns_and_aliases();
     test_schema_rejects_unknown_table();
     test_schema_rejects_unknown_select_column();
+    test_schema_validates_unqualified_base_table_columns();
+    test_schema_validates_unqualified_reference_operands();
+    test_schema_rejects_unknown_unqualified_columns();
     test_schema_rejects_unknown_join_alias_column();
     test_schema_rejects_unknown_write_column();
     test_schema_rejects_unknown_exists_correlation_column();

@@ -60,10 +60,11 @@ void carbon_compile_result_free(carbon_compile_result *result);
 
 /*
  * Compiles the v0.1 canonical query payload into SQL, params JSON, and an
- * allowlist key. If schema_json contains a TABLES object, table names, dotted
- * references, join aliases, and write columns are validated against that schema.
- * The result is initialized by this function. If a caller reuses a prior result
- * object, it must call carbon_compile_result_free() first.
+ * allowlist key. If schema_json contains a TABLES object, table names,
+ * unqualified current-table references, dotted references, join aliases, and
+ * write columns are validated against that schema. The result is initialized by
+ * this function. If a caller reuses a prior result object, it must call
+ * carbon_compile_result_free() first.
  */
 carbon_status carbon_compile_query(
         carbon_context *context,
