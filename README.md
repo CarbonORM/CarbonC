@@ -64,6 +64,7 @@ Supported in this slice:
   `RIGHT_OUTER` table aliases
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
   `BETWEEN`, `IS`, `IS_NOT`, `LIT`, and `PARAM`
+- `GROUP_BY` expression lists and `HAVING` boolean clauses
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL `?` placeholders and PostgreSQL `$1`-style placeholders
 - CarbonNode-style allowlist normalization for whitespace, `LIMIT`, `OFFSET`,
@@ -100,8 +101,8 @@ ctest --test-dir build --output-on-failure
 
 ## Next Milestones
 
-1. Expand fixture coverage for derived joins, `GROUP_BY`, `HAVING`, subselects,
-   insert, update, delete, and upsert payloads.
+1. Expand fixture coverage for derived joins, subselects, insert, update,
+   delete, and upsert payloads.
 2. Add schema metadata checks so identifiers are validated against generated C6
    schema data, not only identifier syntax.
 3. Add structured error codes and paths for binding-friendly diagnostics.

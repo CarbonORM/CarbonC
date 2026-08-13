@@ -782,6 +782,29 @@ static char *carbon_normalize_join_type(const char *raw) {
     return kind;
 }
 
+static int carbon_builder_append_wrapped_expression(carbon_string_builder *builder, const char *expression) {
+    carbon_json_span span;
+
+    if (expression == NULL) {
+        return 1;
+    }
+
+    span.start = expression;
+    span.end = expression + strlen(expression);
+    span = carbon_trim_span(span);
+    if (span.start == span.end) {
+        return 1;
+    }
+
+    if (span.start[0] == '(' && span.end[-1] == ')') {
+        return carbon_builder_append_len(builder, span.start, (size_t) (span.end - span.start));
+    }
+
+    return carbon_builder_append_char(builder, '(')
+           && carbon_builder_append_len(builder, span.start, (size_t) (span.end - span.start))
+           && carbon_builder_append_char(builder, ')');
+}
+
 static int carbon_parse_dialect(const char *value, carbon_dialect *dialect) {
     if (value == NULL || strcmp(value, "mysql") == 0) {
         *dialect = CARBON_DIALECT_MYSQL;
@@ -1578,9 +1601,8 @@ static carbon_status carbon_append_join_clauses(
                 return status;
             }
             if (on_clause.length > 0
-                && (!carbon_builder_append(sql, " ON (")
-                    || !carbon_builder_append(sql, on_clause.data)
-                    || !carbon_builder_append_char(sql, ')'))) {
+                && (!carbon_builder_append(sql, " ON ")
+                    || !carbon_builder_append_wrapped_expression(sql, on_clause.data))) {
                 carbon_builder_free(&on_clause);
                 free(normalized_join_kind);
                 return CARBON_STATUS_OUT_OF_MEMORY;
@@ -1595,6 +1617,86 @@ static carbon_status carbon_append_join_clauses(
     }
 
     return next < 0 ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_append_group_by(
+        carbon_compile_state *state,
+        carbon_json_span query,
+        carbon_string_builder *sql) {
+    static const char *const group_by_names[] = {"GROUP_BY", "group_by"};
+    carbon_json_span group_by;
+    int found = carbon_object_get_any(query, group_by_names, 2, &group_by);
+
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_OK;
+    }
+    if (!carbon_builder_append(sql, " GROUP BY ")) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+
+    if (carbon_span_starts_with(group_by, '[')) {
+        const char *cursor = NULL;
+        carbon_json_span item;
+        int next;
+        int wrote = 0;
+
+        while ((next = carbon_array_next(group_by, &cursor, &item)) == 1) {
+            carbon_status status;
+            if (wrote && !carbon_builder_append(sql, ", ")) {
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+            status = carbon_append_expression(state, item, sql);
+            if (status != CARBON_STATUS_OK) {
+                return status;
+            }
+            wrote = 1;
+        }
+        if (next < 0 || !wrote) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        return CARBON_STATUS_OK;
+    }
+
+    if (!carbon_span_starts_with(group_by, '"')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    return carbon_append_expression(state, group_by, sql);
+}
+
+static carbon_status carbon_append_having(
+        carbon_compile_state *state,
+        carbon_json_span query,
+        carbon_string_builder *sql) {
+    static const char *const having_names[] = {"HAVING", "having"};
+    carbon_json_span having;
+    carbon_string_builder having_clause = {0};
+    carbon_status status;
+    int found = carbon_object_get_any(query, having_names, 2, &having);
+
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_OK;
+    }
+
+    status = carbon_build_where_node(state, having, "AND", &having_clause);
+    if (status != CARBON_STATUS_OK) {
+        carbon_builder_free(&having_clause);
+        return status;
+    }
+    if (having_clause.length > 0
+        && (!carbon_builder_append(sql, " HAVING ")
+            || !carbon_builder_append_wrapped_expression(sql, having_clause.data))) {
+        carbon_builder_free(&having_clause);
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+
+    carbon_builder_free(&having_clause);
+    return CARBON_STATUS_OK;
 }
 
 static carbon_status carbon_append_pagination(
@@ -2156,6 +2258,16 @@ carbon_status carbon_compile_query(
             goto fail;
         }
         carbon_builder_free(&where);
+    }
+
+    status = carbon_append_group_by(&state, query, &sql);
+    if (status != CARBON_STATUS_OK) {
+        goto fail;
+    }
+
+    status = carbon_append_having(&state, query, &sql);
+    if (status != CARBON_STATUS_OK) {
+        goto fail;
     }
 
     status = carbon_append_pagination(&state, query, &sql, &has_pagination);

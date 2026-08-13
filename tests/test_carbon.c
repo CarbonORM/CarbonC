@@ -238,6 +238,7 @@ static void test_golden_fixtures(void) {
     run_fixture("spatial-order");
     run_fixture("where-in-between");
     run_fixture("join-alias");
+    run_fixture("group-having");
 }
 
 int main(void) {

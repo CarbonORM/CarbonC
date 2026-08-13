@@ -61,6 +61,7 @@ The initial compiler supports:
   `RIGHT_OUTER` table aliases
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`,
   `NOT_IN`, `BETWEEN`, `IS`, `IS_NOT`, `LIT`, and `PARAM`
+- `GROUP_BY` expression lists and `HAVING` boolean clauses
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL and PostgreSQL placeholder styles
 
@@ -71,6 +72,6 @@ silently compiling weaker SQL.
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`. The next implementation step is to expand those
-fixtures to derived joins, grouping, subselects, write builders, and
-schema-aware identifier validation. That should happen before expanding
-language bindings beyond smoke wrappers.
+fixtures to derived joins, subselects, write builders, and schema-aware
+identifier validation. That should happen before expanding language bindings
+beyond smoke wrappers.
