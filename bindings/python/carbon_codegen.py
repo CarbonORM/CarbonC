@@ -79,8 +79,35 @@ class Query:
         self._payload["WHERE"] = dict(conditions)
         return self
 
+    def join(self, kind: str, target: Any, on: Mapping[str, Any]) -> "Query":
+        joins = self._payload.setdefault("JOIN", {})
+        if not isinstance(joins, dict):
+            raise TypeError("JOIN must be a mapping")
+        join_group = joins.setdefault(kind, {})
+        if not isinstance(join_group, dict):
+            raise TypeError(f"JOIN.{kind} must be a mapping")
+        join_group[target] = dict(on)
+        return self
+
+    def group_by(self, *expressions: Any) -> "Query":
+        if len(expressions) == 1 and isinstance(expressions[0], (list, tuple)):
+            self._payload["GROUP_BY"] = list(expressions[0])
+        elif len(expressions) == 1:
+            self._payload["GROUP_BY"] = expressions[0]
+        else:
+            self._payload["GROUP_BY"] = list(expressions)
+        return self
+
+    def having(self, conditions: Mapping[str, Any]) -> "Query":
+        self._payload["HAVING"] = dict(conditions)
+        return self
+
     def limit(self, value: int) -> "Query":
         self._pagination()["LIMIT"] = value
+        return self
+
+    def page(self, value: int) -> "Query":
+        self._pagination()["PAGE"] = value
         return self
 
     def order_by(self, column: Any, direction: str = "ASC") -> "Query":

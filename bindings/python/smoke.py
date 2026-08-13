@@ -91,6 +91,32 @@ def main() -> None:
         "SELECT": ["actor.actor_id"],
         "PAGINATION": {"ORDER": [["actor.first_name", "DESC"]], "LIMIT": 5},
     }, ordered_payload
+    join_payload = (
+        carbon_codegen.from_table("actor")
+        .select("actor.actor_id")
+        .join("INNER", "film_actor fa", {"fa.actor_id": ["=", "actor.actor_id"]})
+        .to_payload()
+    )
+    assert join_payload == {
+        "FROM": "actor",
+        "SELECT": ["actor.actor_id"],
+        "JOIN": {"INNER": {"film_actor fa": {"fa.actor_id": ["=", "actor.actor_id"]}}},
+    }, join_payload
+    grouped = (
+        carbon_codegen.query("actor")
+        .select(["DISTINCT", "actor.first_name"], ["AS", ["COUNT", "actor.actor_id"], "cnt"])
+        .group_by("actor.first_name")
+        .having({"cnt": [">", 1]})
+        .page(2)
+        .limit(5)
+        .compile(dialect="mysql")
+    )
+    assert grouped["status"] == 0, grouped
+    assert grouped["sql"] == (
+        "SELECT DISTINCT actor.first_name, COUNT(actor.actor_id) AS cnt FROM `actor` "
+        "GROUP BY actor.first_name HAVING ((cnt) > ?) LIMIT 5, 5"
+    ), grouped
+    assert grouped["params"] == [1], grouped
     metadata = json.loads(carbon.schema_metadata(json.dumps(schema)))
     assert metadata == {
         "tables": [

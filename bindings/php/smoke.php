@@ -104,6 +104,31 @@ carbon_assert(
     ],
     'unexpected ordered builder payload: ' . json_encode($orderedPayload)
 );
+$joinPayload = carbon_query('actor')
+    ->select('actor.actor_id')
+    ->join('INNER', 'film_actor fa', ['fa.actor_id' => ['=', 'actor.actor_id']])
+    ->toPayload();
+carbon_assert(
+    $joinPayload === [
+        'FROM' => 'actor',
+        'SELECT' => ['actor.actor_id'],
+        'JOIN' => ['INNER' => ['film_actor fa' => ['fa.actor_id' => ['=', 'actor.actor_id']]]],
+    ],
+    'unexpected join builder payload: ' . json_encode($joinPayload)
+);
+$grouped = carbon_query('actor')
+    ->select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
+    ->groupBy('actor.first_name')
+    ->having(['cnt' => ['>', 1]])
+    ->page(2)
+    ->limit(5)
+    ->compile(null, 'mysql');
+carbon_assert($grouped['status'] === 0, 'unexpected grouped compile status: ' . json_encode($grouped));
+carbon_assert(
+    $grouped['sql'] === 'SELECT DISTINCT actor.first_name, COUNT(actor.actor_id) AS cnt FROM `actor` GROUP BY actor.first_name HAVING ((cnt) > ?) LIMIT 5, 5',
+    'unexpected grouped sql: ' . $grouped['sql']
+);
+carbon_assert($grouped['params'] === [1], 'unexpected grouped params: ' . json_encode($grouped['params']));
 $metadata = json_decode(carbon_schema_metadata(json_encode($schema)), true);
 carbon_assert(
     $metadata === [

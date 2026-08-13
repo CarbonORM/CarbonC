@@ -70,7 +70,8 @@ Supported in this slice:
 - package-level typed result adapters that add decoded native `params` and
   `diagnostics` values without removing raw JSON fields
 - package-level SELECT query-builder facades that emit the same canonical
-  payloads as the native helper layer
+  payloads as the native helper layer for table/from, select, where, join,
+  group/having, limit/page, and order controls
 - `FROM` / legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
@@ -279,7 +280,9 @@ dataclass_source = carbon_codegen.schema_models({
 })
 ```
 
-`Query.to_payload()` returns the canonical dict sent through the C JSON boundary.
+`Query.to_payload()` returns the canonical dict sent through the C JSON boundary
+for table/from, select, where, join, group/having, limit/page, and order
+controls.
 `compile_query_result()` returns the same fields as the raw result plus decoded
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
 metadata into Python annotations such as
@@ -340,10 +343,11 @@ $modelSource = carbon_schema_models([
 ```
 
 `CarbonQuery::toPayload()` returns the canonical array sent through the C JSON
-boundary. `carbon_compile_query_result()` returns the same fields as the raw
-result plus decoded PHP `params` and `diagnostics` values. The generated PHP
-class source keeps properties untyped for runtime compatibility, adds PHPDoc
-type annotations, and includes `DB_TYPES` and `NULLABLE` constants.
+boundary for table/from, select, where, join, group/having, limit/page, and
+order controls. `carbon_compile_query_result()` returns the same fields as the
+raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
+class source keeps properties untyped for runtime compatibility, adds PHPDoc type
+annotations, and includes `DB_TYPES` and `NULLABLE` constants.
 
 Build and smoke-test it from the repository root:
 
@@ -405,10 +409,11 @@ const typeSource = carbon.schemaModels({
 ```
 
 `CarbonQuery.toPayload()` returns the canonical object sent through the C JSON
-boundary. `compileQueryResult()` returns the same fields as the raw result plus
-decoded JavaScript `params` and `diagnostics` values. The generated TypeScript
-source maps DB metadata into primitive field types and adds `dbTypes` and
-`nullable` metadata beside each generated interface.
+boundary for table/from, select, where, join, group/having, limit/page, and
+order controls. `compileQueryResult()` returns the same fields as the raw result
+plus decoded JavaScript `params` and `diagnostics` values. The generated
+TypeScript source maps DB metadata into primitive field types and adds `dbTypes`
+and `nullable` metadata beside each generated interface.
 
 Build and smoke-test it from the repository root:
 
@@ -472,7 +477,8 @@ model_source = CarbonC.schema_models({
 ```
 
 `CarbonC::Query#to_payload` returns the canonical hash sent through the C JSON
-boundary. `CarbonC.compile_query_result` returns the same fields as the raw
+boundary for table/from, select, where, join, group/having, limit/page, and
+order controls. `CarbonC.compile_query_result` returns the same fields as the raw
 result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
 Struct source includes `TYPES` and `NULLABLE` metadata constants for runtime
 consumers.
@@ -495,4 +501,5 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 1. Expand the remaining CarbonNode C6 grammar behind golden fixtures.
 2. Add richer multi-diagnostic reporting for validation batches.
-3. Add broader query-builder coverage as the remaining C6 grammar lands.
+3. Add write and subselect query-builder coverage as the remaining C6 grammar
+   lands.

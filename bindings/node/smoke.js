@@ -92,6 +92,30 @@ assert.deepStrictEqual(
     PAGINATION: {ORDER: [['actor.first_name', 'DESC']], LIMIT: 5},
   }
 );
+assert.deepStrictEqual(
+  carbon.fromTable('actor')
+    .select('actor.actor_id')
+    .join('INNER', 'film_actor fa', {'fa.actor_id': ['=', 'actor.actor_id']})
+    .toPayload(),
+  {
+    FROM: 'actor',
+    SELECT: ['actor.actor_id'],
+    JOIN: {INNER: {'film_actor fa': {'fa.actor_id': ['=', 'actor.actor_id']}}},
+  }
+);
+const grouped = carbon.query('actor')
+  .select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
+  .groupBy('actor.first_name')
+  .having({cnt: ['>', 1]})
+  .page(2)
+  .limit(5)
+  .compile(undefined, 'mysql');
+assert.strictEqual(grouped.status, 0, JSON.stringify(grouped));
+assert.strictEqual(
+  grouped.sql,
+  'SELECT DISTINCT actor.first_name, COUNT(actor.actor_id) AS cnt FROM `actor` GROUP BY actor.first_name HAVING ((cnt) > ?) LIMIT 5, 5'
+);
+assert.deepStrictEqual(grouped.params, [1]);
 assert.deepStrictEqual(JSON.parse(carbon.schemaMetadata(JSON.stringify(schema))), {
   tables: [
     {

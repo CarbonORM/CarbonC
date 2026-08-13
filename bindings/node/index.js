@@ -102,8 +102,46 @@ class CarbonQuery {
     return this;
   }
 
+  join(kind, target, on) {
+    if (this.payload.JOIN === undefined) {
+      this.payload.JOIN = {};
+    }
+    if (this.payload.JOIN === null || Array.isArray(this.payload.JOIN) || typeof this.payload.JOIN !== 'object') {
+      throw new TypeError('JOIN must be an object');
+    }
+    if (this.payload.JOIN[kind] === undefined) {
+      this.payload.JOIN[kind] = {};
+    }
+    if (this.payload.JOIN[kind] === null || Array.isArray(this.payload.JOIN[kind]) || typeof this.payload.JOIN[kind] !== 'object') {
+      throw new TypeError(`JOIN.${kind} must be an object`);
+    }
+    this.payload.JOIN[kind][target] = {...on};
+    return this;
+  }
+
+  groupBy(...expressions) {
+    if (expressions.length === 1 && Array.isArray(expressions[0])) {
+      this.payload.GROUP_BY = [...expressions[0]];
+    } else if (expressions.length === 1) {
+      this.payload.GROUP_BY = expressions[0];
+    } else {
+      this.payload.GROUP_BY = expressions;
+    }
+    return this;
+  }
+
+  having(conditions) {
+    this.payload.HAVING = {...conditions};
+    return this;
+  }
+
   limit(value) {
     this.pagination().LIMIT = value;
+    return this;
+  }
+
+  page(value) {
+    this.pagination().PAGE = value;
     return this;
   }
 

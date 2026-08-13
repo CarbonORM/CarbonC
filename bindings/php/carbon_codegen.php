@@ -96,10 +96,53 @@ if (!function_exists('carbon_schema_models')) {
                 return $this;
             }
 
+            public function join(string $kind, $target, array $on): self
+            {
+                if (!array_key_exists('JOIN', $this->payload)) {
+                    $this->payload['JOIN'] = [];
+                }
+                if (!is_array($this->payload['JOIN'])) {
+                    throw new RuntimeException('JOIN must be an array');
+                }
+                if (!array_key_exists($kind, $this->payload['JOIN'])) {
+                    $this->payload['JOIN'][$kind] = [];
+                }
+                if (!is_array($this->payload['JOIN'][$kind])) {
+                    throw new RuntimeException('JOIN.' . $kind . ' must be an array');
+                }
+                $this->payload['JOIN'][$kind][$target] = $on;
+                return $this;
+            }
+
+            public function groupBy(...$expressions): self
+            {
+                if (count($expressions) === 1 && is_array($expressions[0])) {
+                    $this->payload['GROUP_BY'] = array_values($expressions[0]);
+                } elseif (count($expressions) === 1) {
+                    $this->payload['GROUP_BY'] = $expressions[0];
+                } else {
+                    $this->payload['GROUP_BY'] = array_values($expressions);
+                }
+                return $this;
+            }
+
+            public function having(array $conditions): self
+            {
+                $this->payload['HAVING'] = $conditions;
+                return $this;
+            }
+
             public function limit(int $value): self
             {
                 $pagination =& $this->pagination();
                 $pagination['LIMIT'] = $value;
+                return $this;
+            }
+
+            public function page(int $value): self
+            {
+                $pagination =& $this->pagination();
+                $pagination['PAGE'] = $value;
                 return $this;
             }
 

@@ -25,8 +25,42 @@ module CarbonC
       self
     end
 
+    def join(kind, target, on)
+      @payload['JOIN'] ||= {}
+      raise TypeError, 'JOIN must be a Hash' unless @payload['JOIN'].is_a?(Hash)
+
+      @payload['JOIN'][kind] ||= {}
+      unless @payload['JOIN'][kind].is_a?(Hash)
+        raise TypeError, "JOIN.#{kind} must be a Hash"
+      end
+
+      @payload['JOIN'][kind][target] = on.dup
+      self
+    end
+
+    def group_by(*expressions)
+      @payload['GROUP_BY'] = if expressions.length == 1 && expressions.first.is_a?(Array)
+                               expressions.first.dup
+                             elsif expressions.length == 1
+                               expressions.first
+                             else
+                               expressions
+                             end
+      self
+    end
+
+    def having(conditions)
+      @payload['HAVING'] = conditions.dup
+      self
+    end
+
     def limit(value)
       pagination['LIMIT'] = value
+      self
+    end
+
+    def page(value)
+      pagination['PAGE'] = value
       self
     end
 

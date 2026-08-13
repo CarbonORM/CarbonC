@@ -92,6 +92,30 @@ expected_ordered_payload = {
 unless ordered_payload == expected_ordered_payload
   raise "unexpected ordered builder payload: #{ordered_payload.inspect}"
 end
+join_payload = CarbonC.query('actor')
+                      .select('actor.actor_id')
+                      .join('INNER', 'film_actor fa', {'fa.actor_id' => ['=', 'actor.actor_id']})
+                      .to_payload
+expected_join_payload = {
+  'FROM' => 'actor',
+  'SELECT' => ['actor.actor_id'],
+  'JOIN' => {'INNER' => {'film_actor fa' => {'fa.actor_id' => ['=', 'actor.actor_id']}}}
+}
+unless join_payload == expected_join_payload
+  raise "unexpected join builder payload: #{join_payload.inspect}"
+end
+grouped = CarbonC.query('actor')
+                 .select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
+                 .group_by('actor.first_name')
+                 .having({'cnt' => ['>', 1]})
+                 .page(2)
+                 .limit(5)
+                 .compile(nil, 'mysql')
+raise "unexpected grouped compile status: #{grouped.inspect}" unless grouped.fetch('status') == 0
+unless grouped.fetch('sql') == 'SELECT DISTINCT actor.first_name, COUNT(actor.actor_id) AS cnt FROM `actor` GROUP BY actor.first_name HAVING ((cnt) > ?) LIMIT 5, 5'
+  raise "unexpected grouped sql: #{grouped.fetch('sql')}"
+end
+raise "unexpected grouped params: #{grouped.fetch('params').inspect}" unless grouped.fetch('params') == [1]
 metadata = JSON.parse(CarbonC.schema_metadata(JSON.generate(schema)))
 expected_metadata = {
   'tables' => [

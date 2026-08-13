@@ -79,7 +79,7 @@ The initial compiler supports:
 - package-level result adapters that retain the raw JSON fields while adding
   decoded native `params` and `diagnostics` values
 - package-level SELECT query-builder facades that emit canonical payloads for
-  table, select, where, limit, and order controls
+  table/from, select, where, join, group/having, limit/page, and order controls
 - `dialect`: `mysql`, `postgresql`, or `postgres`
 - `FROM` or legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
@@ -159,5 +159,5 @@ CarbonC now carries the first CarbonNode-derived golden fixtures under
 wrappers, package-level native payload helpers, typed result adapters,
 query-builder facades, typed source generators, and binding-friendly diagnostic
 JSON. The next implementation step is to cover additional C6 grammar and
-schema-aware write normalization edge cases while expanding the facade coverage
-to match the compiler grammar.
+schema-aware write normalization edge cases while expanding write and subselect
+facade coverage to match the compiler grammar.
