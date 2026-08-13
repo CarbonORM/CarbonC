@@ -188,7 +188,7 @@ def main() -> None:
     sales_query = (
         carbon_codegen.query("parcel_sales")
         .select("parcel_sales.parcel_id")
-        .where_op("parcel_sales.sale_price", ">", 5000)
+        .where_op("parcel_sales.sale_price", carbon_codegen.C6C.GREATER_THAN, 5000)
     )
     assert carbon_codegen.as_(carbon_codegen.call("COUNT", "parcel_sales.parcel_id"), "sale_count") == [
         "AS",
@@ -464,8 +464,12 @@ def main() -> None:
     }, metadata
     models = carbon_codegen.schema_models(schema)
     assert "class Actor:" in models, models
-    assert "__carbon_primary__ = ('actor_id',)" in models, models
-    assert "'actor_id': 'actor.actor_id'" in models, models
+    assert "TABLE = 'actor'" in models, models
+    assert "ACTOR_ID = 'actor.actor_id'" in models, models
+    assert "FIRST_NAME = 'actor.first_name'" in models, models
+    assert "PRIMARY = ('actor_id',)" in models, models
+    assert "__carbon_primary__ = PRIMARY" in models, models
+    assert "'actor_id': ACTOR_ID" in models, models
     assert "__carbon_db_types__ = {" in models, models
     assert "'actor_id': 'smallint'" in models, models
     assert "__carbon_nullable__ = {" in models, models
@@ -475,15 +479,34 @@ def main() -> None:
     generated: dict[str, object] = {}
     exec(models, generated)
     actor_model = generated["Actor"]
+    assert carbon_codegen.C6C.FROM == "FROM"
+    assert carbon_codegen.C6C.GREATER_THAN == ">"
     assert carbon_codegen.model_table(actor_model) == "actor"
+    assert actor_model.TABLE == "actor"
+    assert actor_model.ACTOR_ID == "actor.actor_id"
+    assert actor_model.FIRST_NAME == "actor.first_name"
+    assert actor_model.COLUMNS["actor_id"] == actor_model.ACTOR_ID
     assert carbon_codegen.model_column(actor_model, "first_name") == "actor.first_name"
     assert carbon_codegen.model_select(actor_model).to_payload() == {
         "FROM": "actor",
         "SELECT": ["actor.actor_id", "actor.first_name"],
     }
+    constant_built = (
+        carbon_codegen.query(actor_model.TABLE)
+        .select(actor_model.ACTOR_ID, actor_model.FIRST_NAME)
+        .where_op(actor_model.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 0)
+        .order_by(actor_model.FIRST_NAME, carbon_codegen.C6C.ASC)
+        .limit(1)
+        .compile(schema=schema, dialect="mysql")
+    )
+    assert constant_built["sql"] == (
+        "SELECT actor.actor_id, actor.first_name FROM `actor` "
+        "WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 1"
+    ), constant_built
+    assert constant_built["params"] == [0], constant_built
     model_built = (
         carbon_codegen.model_select(actor_model, "actor_id")
-        .where_op("actor.actor_id", ">", 0)
+        .where_op(actor_model.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 0)
         .limit(1)
         .compile(schema=schema, dialect="mysql")
     )

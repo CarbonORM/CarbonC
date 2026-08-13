@@ -40,9 +40,17 @@ $schema = [
     ],
 ];
 
-$result = carbon_query('actor')
-    ->select('actor.actor_id', 'actor.first_name')
-    ->where(['actor.actor_id' => ['>', 10]])
+$modelSource = carbon_schema_models($schema);
+$globalModelsEval = preg_replace('/^<\\?php\\s*/', '', $modelSource);
+if (!is_string($globalModelsEval)) {
+    fwrite(STDERR, "could not prepare generated model source\n");
+    exit(1);
+}
+eval($globalModelsEval);
+
+$result = carbon_query(Actor::TABLE)
+    ->select(Actor::ACTOR_ID, Actor::FIRST_NAME)
+    ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 10)
     ->limit(5)
     ->compile($schema, 'mysql');
 

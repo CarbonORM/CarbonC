@@ -43,6 +43,8 @@ const query = {
 assert.strictEqual(carbon.version(), '0.1.0');
 assert.strictEqual(carbon.statusCode(3), 'invalid_query');
 assert.strictEqual(carbon.statusMessage(0), 'ok');
+assert.strictEqual(carbon.C6C.FROM, 'FROM');
+assert.strictEqual(carbon.C6.GREATER_THAN, '>');
 
 const result = carbon.compileQuery(JSON.stringify(query), JSON.stringify(schema), 'mysql');
 
@@ -177,7 +179,7 @@ assert.strictEqual(
 assert.deepStrictEqual(derived.params, [10, 100]);
 const salesQuery = carbon.query('parcel_sales')
   .select('parcel_sales.parcel_id')
-  .whereOp('parcel_sales.sale_price', '>', 5000);
+  .whereOp('parcel_sales.sale_price', carbon.C6C.GREATER_THAN, 5000);
 assert.deepStrictEqual(carbon.alias(carbon.call('COUNT', 'parcel_sales.parcel_id'), 'sale_count'), [
   'AS',
   ['COUNT', 'parcel_sales.parcel_id'],
@@ -423,8 +425,13 @@ const modelSource = carbon.schemaModels(schema);
 assert(modelSource.includes('export interface Actor'));
 assert(modelSource.includes('actor_id: number;'));
 assert(modelSource.includes('first_name: string;'));
+assert(modelSource.includes('export const ActorTable = "actor" as const;'));
+assert(modelSource.includes('export const ActorColumns = {'));
+assert(modelSource.includes('actor_id: "actor.actor_id",'));
 assert(modelSource.includes('export const ActorMeta = {'));
+assert(modelSource.includes('table: ActorTable,'));
 assert(modelSource.includes('primary: ["actor_id"],'));
+assert(modelSource.includes('columns: ActorColumns,'));
 assert(modelSource.includes('dbTypes: {'));
 assert(modelSource.includes('actor_id: "smallint",'));
 assert(modelSource.includes('nullable: {'));
@@ -442,8 +449,19 @@ assert.deepStrictEqual(carbon.modelSelect(actorMeta).toPayload(), {
   FROM: 'actor',
   SELECT: ['actor.actor_id', 'actor.first_name'],
 });
+const constantBuilt = carbon.query(actorMeta.table)
+  .select(actorMeta.columns.actor_id, actorMeta.columns.first_name)
+  .whereOp(actorMeta.columns.actor_id, carbon.C6C.GREATER_THAN, 0)
+  .orderBy(actorMeta.columns.first_name, carbon.C6C.ASC)
+  .limit(1)
+  .compile(schema, 'mysql');
+assert.strictEqual(
+  constantBuilt.sql,
+  'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 1'
+);
+assert.deepStrictEqual(constantBuilt.params, [0]);
 const modelBuilt = carbon.modelSelect(actorMeta, 'actor_id')
-  .whereOp('actor.actor_id', '>', 0)
+  .whereOp(actorMeta.columns.actor_id, carbon.C6C.GREATER_THAN, 0)
   .limit(1)
   .compile(schema, 'mysql');
 assert.strictEqual(modelBuilt.sql, 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1');

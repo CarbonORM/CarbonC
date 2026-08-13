@@ -34,9 +34,18 @@ const schema = {
   },
 };
 
-const result = carbon.query('actor')
-  .select('actor.actor_id', 'actor.first_name')
-  .where({'actor.actor_id': ['>', 10]})
+const metadata = JSON.parse(carbon.schemaMetadata(JSON.stringify(schema)));
+const actorMetadata = metadata.tables[0];
+const Actor = Object.freeze({
+  TABLE: actorMetadata.name,
+  COLUMNS: Object.freeze(Object.fromEntries(
+    actorMetadata.columns.map((column) => [column.name, column.qualified])
+  )),
+});
+
+const result = carbon.query(Actor.TABLE)
+  .select(Actor.COLUMNS.actor_id, Actor.COLUMNS.first_name)
+  .whereOp(Actor.COLUMNS.actor_id, carbon.C6C.GREATER_THAN, 10)
   .limit(5)
   .compile(schema, 'mysql');
 
@@ -49,5 +58,5 @@ console.log(result.sql);
 console.log(JSON.stringify(result.params));
 console.log(result.allowlist_key);
 console.log(JSON.stringify(result.diagnostics));
-console.log(carbon.schemaMetadata(JSON.stringify(schema)));
+console.log(JSON.stringify(metadata));
 console.log(carbon.schemaModels(schema));

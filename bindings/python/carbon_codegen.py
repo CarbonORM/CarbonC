@@ -12,6 +12,86 @@ import carbon
 
 _CLASS_SPLIT_RE = re.compile(r"[^0-9A-Za-z]+")
 _FIELD_RE = re.compile(r"[^0-9A-Za-z_]")
+_MODEL_CONSTANT_RESERVED = {"TABLE", "PRIMARY", "COLUMNS", "COLUMN_NAMES", "DB_TYPES", "NULLABLE"}
+
+
+class C6C:
+    """CarbonNode-compatible C6 token constants."""
+
+    ADDDATE = "ADDDATE"
+    ADDTIME = "ADDTIME"
+    AS = "AS"
+    ASC = "ASC"
+    AND = "AND"
+    BETWEEN = "BETWEEN"
+    CALL = "CALL"
+    CONCAT = "CONCAT"
+    COUNT = "COUNT"
+    COUNT_ALL = "COUNT_ALL"
+    CURRENT_DATE = "CURRENT_DATE"
+    CURRENT_TIMESTAMP = "CURRENT_TIMESTAMP"
+    DATE = "DATE"
+    DATE_ADD = "DATE_ADD"
+    DATE_FORMAT = "DATE_FORMAT"
+    DATE_SUB = "DATE_SUB"
+    DATEDIFF = "DATEDIFF"
+    DELETE = "DELETE"
+    DESC = "DESC"
+    DISTINCT = "DISTINCT"
+    EXISTS = "EXISTS"
+    FALSE = "FALSE"
+    FORCE_INDEX = "FORCE INDEX"
+    FROM = "FROM"
+    GREATER_THAN = ">"
+    GREATER_THAN_OR_EQUAL_TO = ">="
+    GROUP_BY = "GROUP_BY"
+    GROUP_CONCAT = "GROUP_CONCAT"
+    HAVING = "HAVING"
+    IGNORE_INDEX = "IGNORE INDEX"
+    IN = "IN"
+    INDEX_HINTS = "INDEX_HINTS"
+    INNER = "INNER"
+    INSERT = "INSERT"
+    IS = "IS"
+    IS_NOT = "IS_NOT"
+    JOIN = "JOIN"
+    LEFT = "LEFT"
+    LEFT_OUTER = "LEFT_OUTER"
+    LESS_THAN = "<"
+    LESS_THAN_OR_EQUAL_TO = "<="
+    LIKE = "LIKE"
+    LIMIT = "LIMIT"
+    LIT = "LIT"
+    MATCH_AGAINST = "MATCH_AGAINST"
+    MBRCONTAINS = "MBRContains"
+    MIN = "MIN"
+    MAX = "MAX"
+    NOT_BETWEEN = "NOT BETWEEN"
+    NOT_EQUAL = "<>"
+    NOT_EXISTS = "NOT_EXISTS"
+    NOT_IN = "NOT_IN"
+    NOT_LIKE = "NOT_LIKE"
+    NULL = "NULL"
+    OR = "OR"
+    ORDER = "ORDER"
+    PAGE = "PAGE"
+    PAGINATION = "PAGINATION"
+    PARAM = "PARAM"
+    REPLACE = "REPLACE"
+    RIGHT = "RIGHT"
+    RIGHT_OUTER = "RIGHT_OUTER"
+    SELECT = "SELECT"
+    ST_CONTAINS = "ST_Contains"
+    ST_GEOMFROMTEXT = "ST_GeomFromText"
+    ST_WITHIN = "ST_Within"
+    SUBSELECT = "SUBSELECT"
+    SUM = "SUM"
+    UPDATE = "UPDATE"
+    USE_INDEX = "USE INDEX"
+    WHERE = "WHERE"
+
+
+C6 = C6C
 
 
 def _schema_json(schema: Any) -> str:
@@ -62,21 +142,21 @@ class Query:
     def __init__(self, table: Any = None) -> None:
         self._payload: dict[str, Any] = {}
         if table is not None:
-            self._payload["FROM"] = table
+            self._payload[C6C.FROM] = table
 
     def from_table(self, table: Any) -> "Query":
-        self._payload["FROM"] = table
+        self._payload[C6C.FROM] = table
         return self
 
     def select(self, *columns: Any) -> "Query":
         if len(columns) == 1 and isinstance(columns[0], (list, tuple)):
-            self._payload["SELECT"] = list(columns[0])
+            self._payload[C6C.SELECT] = list(columns[0])
         else:
-            self._payload["SELECT"] = list(columns)
+            self._payload[C6C.SELECT] = list(columns)
         return self
 
     def where(self, conditions: Mapping[str, Any]) -> "Query":
-        self._payload["WHERE"] = dict(conditions)
+        self._payload[C6C.WHERE] = dict(conditions)
         return self
 
     def where_op(self, column: str, operator: str, value: Any) -> "Query":
@@ -104,11 +184,11 @@ class Query:
         return self
 
     def where_exists(self, outer_column: str, subquery: Any, inner_column: str | None = None) -> "Query":
-        self._append_exists("EXISTS", exists_spec(outer_column, subquery, inner_column))
+        self._append_exists(C6C.EXISTS, exists_spec(outer_column, subquery, inner_column))
         return self
 
     def where_not_exists(self, outer_column: str, subquery: Any, inner_column: str | None = None) -> "Query":
-        self._append_exists("NOT_EXISTS", exists_spec(outer_column, subquery, inner_column))
+        self._append_exists(C6C.NOT_EXISTS, exists_spec(outer_column, subquery, inner_column))
         return self
 
     def where_group(self, operator: str, *conditions: Any) -> "Query":
@@ -122,7 +202,7 @@ class Query:
         return self.where_group("OR", *conditions)
 
     def join(self, kind: str, target: Any, on: Mapping[str, Any]) -> "Query":
-        joins = self._payload.setdefault("JOIN", {})
+        joins = self._payload.setdefault(C6C.JOIN, {})
         if not isinstance(joins, dict):
             raise TypeError("JOIN must be a mapping")
         join_group = joins.setdefault(kind, {})
@@ -135,69 +215,69 @@ class Query:
         return self.join(kind, derived_target(alias, subquery), on)
 
     def index_hints(self, hints: Any) -> "Query":
-        self._payload["INDEX_HINTS"] = self._copy_payload_value(hints)
+        self._payload[C6C.INDEX_HINTS] = self._copy_payload_value(hints)
         return self
 
     def force_index(self, *indexes: Any) -> "Query":
-        self._payload["INDEX_HINTS"] = force_index(*indexes)
+        self._payload[C6C.INDEX_HINTS] = force_index(*indexes)
         return self
 
     def use_index(self, *indexes: Any) -> "Query":
-        self._payload["INDEX_HINTS"] = use_index(*indexes)
+        self._payload[C6C.INDEX_HINTS] = use_index(*indexes)
         return self
 
     def ignore_index(self, *indexes: Any) -> "Query":
-        self._payload["INDEX_HINTS"] = ignore_index(*indexes)
+        self._payload[C6C.INDEX_HINTS] = ignore_index(*indexes)
         return self
 
     def group_by(self, *expressions: Any) -> "Query":
         if len(expressions) == 1 and isinstance(expressions[0], (list, tuple)):
-            self._payload["GROUP_BY"] = list(expressions[0])
+            self._payload[C6C.GROUP_BY] = list(expressions[0])
         elif len(expressions) == 1:
-            self._payload["GROUP_BY"] = expressions[0]
+            self._payload[C6C.GROUP_BY] = expressions[0]
         else:
-            self._payload["GROUP_BY"] = list(expressions)
+            self._payload[C6C.GROUP_BY] = list(expressions)
         return self
 
     def having(self, conditions: Mapping[str, Any]) -> "Query":
-        self._payload["HAVING"] = dict(conditions)
+        self._payload[C6C.HAVING] = dict(conditions)
         return self
 
     def insert(self, values: Any) -> "Query":
-        self._payload["INSERT"] = self._copy_payload_value(values)
+        self._payload[C6C.INSERT] = self._copy_payload_value(values)
         return self
 
     def replace(self, values: Any) -> "Query":
-        self._payload["REPLACE"] = self._copy_payload_value(values)
+        self._payload[C6C.REPLACE] = self._copy_payload_value(values)
         return self
 
     def update(self, values: Mapping[str, Any]) -> "Query":
-        self._payload["UPDATE"] = dict(values)
+        self._payload[C6C.UPDATE] = dict(values)
         return self
 
     def delete(self, enabled: bool = True) -> "Query":
-        self._payload["DELETE"] = enabled
+        self._payload[C6C.DELETE] = enabled
         return self
 
     def upsert(self, columns: Sequence[Any]) -> "Query":
-        self._payload["UPDATE"] = list(columns)
+        self._payload[C6C.UPDATE] = list(columns)
         return self
 
     def do_nothing(self) -> "Query":
-        self._payload["UPDATE"] = []
+        self._payload[C6C.UPDATE] = []
         return self
 
     def limit(self, value: int) -> "Query":
-        self._pagination()["LIMIT"] = value
+        self._pagination()[C6C.LIMIT] = value
         return self
 
     def page(self, value: int) -> "Query":
-        self._pagination()["PAGE"] = value
+        self._pagination()[C6C.PAGE] = value
         return self
 
-    def order_by(self, column: Any, direction: str = "ASC") -> "Query":
+    def order_by(self, column: Any, direction: str = C6C.ASC) -> "Query":
         pagination = self._pagination()
-        order = pagination.setdefault("ORDER", [])
+        order = pagination.setdefault(C6C.ORDER, [])
         if not isinstance(order, list):
             raise TypeError("PAGINATION.ORDER must be a list")
         order.append([column, direction])
@@ -210,7 +290,7 @@ class Query:
         return compile_query_result(self._payload, schema=schema, dialect=dialect)
 
     def _where(self) -> dict[str, Any]:
-        where = self._payload.setdefault("WHERE", {})
+        where = self._payload.setdefault(C6C.WHERE, {})
         if not isinstance(where, dict):
             raise TypeError("WHERE must be a mapping")
         return where
@@ -224,7 +304,7 @@ class Query:
 
     def _append_boolean(self, operator: str, conditions: Sequence[Any]) -> None:
         op_key = operator.upper().replace(" ", "_")
-        if op_key not in {"AND", "OR"}:
+        if op_key not in {C6C.AND, C6C.OR}:
             raise ValueError("operator must be AND or OR")
         where = self._where()
         parts = where.setdefault(op_key, [])
@@ -233,7 +313,7 @@ class Query:
         parts.extend(_condition_payload(condition) for condition in conditions)
 
     def _pagination(self) -> dict[str, Any]:
-        pagination = self._payload.setdefault("PAGINATION", {})
+        pagination = self._payload.setdefault(C6C.PAGINATION, {})
         if not isinstance(pagination, dict):
             raise TypeError("PAGINATION must be a mapping")
         return pagination
@@ -257,11 +337,15 @@ def from_table(table: Any) -> Query:
 
 def model_table(model: Any) -> str:
     if isinstance(model, Mapping):
-        table = model.get("table", model.get("TABLE"))
+        table = model.get("table", model.get(C6C.FROM, model.get("TABLE")))
     else:
         table = getattr(model, "__carbon_table__", None)
+        if table is None:
+            table = getattr(model, "TABLE", None)
         if table is None and not isinstance(model, type):
             table = getattr(type(model), "__carbon_table__", None)
+            if table is None:
+                table = getattr(type(model), "TABLE", None)
     if not isinstance(table, str) or not table:
         raise TypeError("model must provide a Carbon table name")
     return table
@@ -272,8 +356,12 @@ def model_columns(model: Any) -> dict[str, str]:
         columns = model.get("columns", model.get("COLUMNS"))
     else:
         columns = getattr(model, "__carbon_columns__", None)
+        if columns is None:
+            columns = getattr(model, "COLUMNS", None)
         if columns is None and not isinstance(model, type):
             columns = getattr(type(model), "__carbon_columns__", None)
+            if columns is None:
+                columns = getattr(type(model), "COLUMNS", None)
     if not isinstance(columns, Mapping):
         raise TypeError("model must provide Carbon columns")
     return {str(field): str(column) for field, column in columns.items()}
@@ -297,11 +385,11 @@ def model_select(model: Any, *fields: str) -> Query:
 
 
 def subselect(query: Any) -> list[Any]:
-    return ["SUBSELECT", _query_payload(query)]
+    return [C6C.SUBSELECT, _query_payload(query)]
 
 
 def derived_target(alias: str, query: Any) -> str:
-    return json.dumps({"SUBSELECT": _query_payload(query), "AS": alias}, separators=(",", ":"))
+    return json.dumps({C6C.SUBSELECT: _query_payload(query), C6C.AS: alias}, separators=(",", ":"))
 
 
 def op(operator: str, *operands: Any) -> list[Any]:
@@ -309,11 +397,11 @@ def op(operator: str, *operands: Any) -> list[Any]:
 
 
 def lit(value: Any) -> list[Any]:
-    return ["LIT", value]
+    return [C6C.LIT, value]
 
 
 def param(value: Any) -> list[Any]:
-    return ["PARAM", value]
+    return [C6C.PARAM, value]
 
 
 def call(name: str, *arguments: Any) -> list[Any]:
@@ -325,50 +413,50 @@ def fn(name: str, *arguments: Any) -> list[Any]:
 
 
 def custom_call(name: str, *arguments: Any) -> list[Any]:
-    return ["CALL", name, *[Query._copy_payload_value(argument) for argument in arguments]]
+    return [C6C.CALL, name, *[Query._copy_payload_value(argument) for argument in arguments]]
 
 
 def st_contains(envelope: Any, shape: Any) -> list[Any]:
-    return fn("ST_Contains", envelope, shape)
+    return fn(C6C.ST_CONTAINS, envelope, shape)
 
 
 def st_within(shape: Any, envelope: Any) -> list[Any]:
-    return fn("ST_Within", shape, envelope)
+    return fn(C6C.ST_WITHIN, shape, envelope)
 
 
 def mbr_contains(envelope: Any, shape: Any) -> list[Any]:
-    return fn("MBRContains", envelope, shape)
+    return fn(C6C.MBRCONTAINS, envelope, shape)
 
 
 def as_(expression: Any, alias: str) -> list[Any]:
-    return ["AS", Query._copy_payload_value(expression), alias]
+    return [C6C.AS, Query._copy_payload_value(expression), alias]
 
 
 def distinct(expression: Any) -> list[Any]:
-    return ["DISTINCT", Query._copy_payload_value(expression)]
+    return [C6C.DISTINCT, Query._copy_payload_value(expression)]
 
 
 def between(start: Any, end: Any) -> list[Any]:
-    return ["BETWEEN", [Query._copy_payload_value(start), Query._copy_payload_value(end)]]
+    return [C6C.BETWEEN, [Query._copy_payload_value(start), Query._copy_payload_value(end)]]
 
 
 def not_between(start: Any, end: Any) -> list[Any]:
-    return ["NOT BETWEEN", [Query._copy_payload_value(start), Query._copy_payload_value(end)]]
+    return [C6C.NOT_BETWEEN, [Query._copy_payload_value(start), Query._copy_payload_value(end)]]
 
 
 def in_(values: Any) -> list[Any]:
-    return ["IN", _set_operand(values)]
+    return [C6C.IN, _set_operand(values)]
 
 
 def not_in(values: Any) -> list[Any]:
-    return ["NOT_IN", _set_operand(values)]
+    return [C6C.NOT_IN, _set_operand(values)]
 
 
 def match_against(search: Any, mode: str | None = None) -> list[Any]:
     payload = [_match_search_operand(search)]
     if mode is not None:
         payload.append(mode)
-    return ["MATCH_AGAINST", payload]
+    return [C6C.MATCH_AGAINST, payload]
 
 
 def index_hint(kind: str, *indexes: Any) -> dict[str, list[Any]]:
@@ -380,15 +468,15 @@ def index_hint(kind: str, *indexes: Any) -> dict[str, list[Any]]:
 
 
 def force_index(*indexes: Any) -> dict[str, list[Any]]:
-    return index_hint("FORCE INDEX", *indexes)
+    return index_hint(C6C.FORCE_INDEX, *indexes)
 
 
 def use_index(*indexes: Any) -> dict[str, list[Any]]:
-    return index_hint("USE INDEX", *indexes)
+    return index_hint(C6C.USE_INDEX, *indexes)
 
 
 def ignore_index(*indexes: Any) -> dict[str, list[Any]]:
-    return index_hint("IGNORE INDEX", *indexes)
+    return index_hint(C6C.IGNORE_INDEX, *indexes)
 
 
 def exists_spec(outer_column: str, query: Any, inner_column: str | None = None) -> list[Any]:
@@ -399,11 +487,11 @@ def exists_spec(outer_column: str, query: Any, inner_column: str | None = None) 
 
 
 def exists(*specs: Sequence[Any]) -> dict[str, list[Any]]:
-    return {"EXISTS": [list(spec) for spec in specs]}
+    return {C6C.EXISTS: [list(spec) for spec in specs]}
 
 
 def not_exists(*specs: Sequence[Any]) -> dict[str, list[Any]]:
-    return {"NOT_EXISTS": [list(spec) for spec in specs]}
+    return {C6C.NOT_EXISTS: [list(spec) for spec in specs]}
 
 
 def condition(column: str, value: Any) -> dict[str, Any]:
@@ -412,17 +500,17 @@ def condition(column: str, value: Any) -> dict[str, Any]:
 
 def group(operator: str, *conditions: Any) -> dict[str, list[Any]]:
     op_key = operator.upper().replace(" ", "_")
-    if op_key not in {"AND", "OR"}:
+    if op_key not in {C6C.AND, C6C.OR}:
         raise ValueError("operator must be AND or OR")
     return {op_key: [_condition_payload(condition) for condition in conditions]}
 
 
 def and_(*conditions: Any) -> dict[str, list[Any]]:
-    return group("AND", *conditions)
+    return group(C6C.AND, *conditions)
 
 
 def or_(*conditions: Any) -> dict[str, list[Any]]:
-    return group("OR", *conditions)
+    return group(C6C.OR, *conditions)
 
 
 def _query_payload(query: Any) -> Any:
@@ -436,9 +524,9 @@ def _condition_payload(condition: Any) -> Any:
 
 
 def _subselect_operand(query: Any) -> Any:
-    if isinstance(query, (list, tuple)) and len(query) == 2 and str(query[0]).upper() == "SUBSELECT":
+    if isinstance(query, (list, tuple)) and len(query) == 2 and str(query[0]).upper() == C6C.SUBSELECT:
         return Query._copy_payload_value(query)
-    if isinstance(query, Mapping) and ("SUBSELECT" in query or "subselect" in query):
+    if isinstance(query, Mapping) and (C6C.SUBSELECT in query or "subselect" in query):
         return dict(query)
     return subselect(query)
 
@@ -484,6 +572,15 @@ def _field_name(column_name: str, used: MutableSet[str]) -> str:
     return _dedupe(name, used)
 
 
+def _constant_name(field_name: str, used: MutableSet[str]) -> str:
+    name = _FIELD_RE.sub("_", field_name).strip("_").upper() or "COLUMN"
+    if name[0].isdigit():
+        name = f"COLUMN_{name}"
+    if name in _MODEL_CONSTANT_RESERVED:
+        name = f"{name}_COLUMN"
+    return _dedupe(name, used)
+
+
 def _tuple_literal(values: Sequence[str]) -> str:
     if not values:
         return "()"
@@ -499,6 +596,16 @@ def _append_dict_literal(lines: list[str], name: str, values: Mapping[str, str])
     lines.append(f"    {name} = {{")
     for key, value in values.items():
         lines.append(f"        {key!r}: {value!r},")
+    lines.append("    }")
+
+
+def _append_column_dict_literal(lines: list[str], name: str, values: Mapping[str, str]) -> None:
+    if not values:
+        lines.append(f"    {name} = {{}}")
+        return
+    lines.append(f"    {name} = {{")
+    for key, constant in values.items():
+        lines.append(f"        {key!r}: {constant},")
     lines.append("    }")
 
 
@@ -550,10 +657,12 @@ def schema_models(schema: Any = None) -> str:
         table_name = str(table.get("name", ""))
         class_name = _class_name(table_name, used_classes)
         used_fields: set[str] = set()
-        fields: list[tuple[str, str, str, str, str | None, bool | None]] = []
+        used_constants: set[str] = set(_MODEL_CONSTANT_RESERVED)
+        fields: list[tuple[str, str, str, str, str | None, bool | None, str]] = []
         for column in table.get("columns", []):
             original_name = str(column.get("name", ""))
             field_name = _field_name(original_name, used_fields)
+            constant_name = _constant_name(field_name, used_constants)
             db_type = column.get("db_type")
             nullable = column.get("nullable")
             fields.append((
@@ -563,26 +672,35 @@ def schema_models(schema: Any = None) -> str:
                 _python_type(column),
                 str(db_type) if db_type is not None else None,
                 nullable if isinstance(nullable, bool) else None,
+                constant_name,
             ))
 
         lines.append("@dataclass")
         lines.append(f"class {class_name}:")
-        lines.append(f"    __carbon_table__ = {table_name!r}")
-        lines.append(f"    __carbon_primary__ = {_tuple_literal([str(value) for value in table.get('primary', [])])}")
-        _append_dict_literal(lines, "__carbon_columns__", {field: qualified for field, _, qualified, _, _, _ in fields})
-        _append_dict_literal(lines, "__carbon_column_names__", {field: original for field, original, _, _, _, _ in fields})
+        lines.append(f"    TABLE = {table_name!r}")
+        lines.append("    __carbon_table__ = TABLE")
+        lines.append(f"    PRIMARY = {_tuple_literal([str(value) for value in table.get('primary', [])])}")
+        lines.append("    __carbon_primary__ = PRIMARY")
+        for _, _, qualified, _, _, _, constant in fields:
+            lines.append(f"    {constant} = {qualified!r}")
+        _append_column_dict_literal(lines, "__carbon_columns__", {field: constant for field, _, _, _, _, _, constant in fields})
+        lines.append("    COLUMNS = __carbon_columns__")
+        _append_dict_literal(lines, "__carbon_column_names__", {field: original for field, original, _, _, _, _, _ in fields})
+        lines.append("    COLUMN_NAMES = __carbon_column_names__")
         _append_dict_literal(
             lines,
             "__carbon_db_types__",
-            {field: db_type for field, _, _, _, db_type, _ in fields if db_type is not None},
+            {field: db_type for field, _, _, _, db_type, _, _ in fields if db_type is not None},
         )
+        lines.append("    DB_TYPES = __carbon_db_types__")
         _append_bool_dict_literal(
             lines,
             "__carbon_nullable__",
-            {field: nullable for field, _, _, _, _, nullable in fields if nullable is not None},
+            {field: nullable for field, _, _, _, _, nullable, _ in fields if nullable is not None},
         )
+        lines.append("    NULLABLE = __carbon_nullable__")
         if fields:
-            for field, _, _, python_type, _, _ in fields:
+            for field, _, _, python_type, _, _, _ in fields:
                 lines.append(f"    {field}: {python_type} = None")
         lines.append("")
 
@@ -593,6 +711,8 @@ schema_dataclasses = schema_models
 compile_query = compile_query_value
 
 __all__ = [
+    "C6",
+    "C6C",
     "Query",
     "adapt_compile_result",
     "and_",

@@ -4,24 +4,100 @@ require 'json'
 require_relative 'carbon'
 
 module CarbonC
+  module C6C
+    ADDDATE = 'ADDDATE'
+    ADDTIME = 'ADDTIME'
+    AS = 'AS'
+    ASC = 'ASC'
+    AND = 'AND'
+    BETWEEN = 'BETWEEN'
+    CALL = 'CALL'
+    CONCAT = 'CONCAT'
+    COUNT = 'COUNT'
+    COUNT_ALL = 'COUNT_ALL'
+    CURRENT_DATE = 'CURRENT_DATE'
+    CURRENT_TIMESTAMP = 'CURRENT_TIMESTAMP'
+    DATE = 'DATE'
+    DATE_ADD = 'DATE_ADD'
+    DATE_FORMAT = 'DATE_FORMAT'
+    DATE_SUB = 'DATE_SUB'
+    DATEDIFF = 'DATEDIFF'
+    DELETE = 'DELETE'
+    DESC = 'DESC'
+    DISTINCT = 'DISTINCT'
+    EXISTS = 'EXISTS'
+    FALSE = 'FALSE'
+    FORCE_INDEX = 'FORCE INDEX'
+    FROM = 'FROM'
+    GREATER_THAN = '>'
+    GREATER_THAN_OR_EQUAL_TO = '>='
+    GROUP_BY = 'GROUP_BY'
+    GROUP_CONCAT = 'GROUP_CONCAT'
+    HAVING = 'HAVING'
+    IGNORE_INDEX = 'IGNORE INDEX'
+    IN = 'IN'
+    INDEX_HINTS = 'INDEX_HINTS'
+    INNER = 'INNER'
+    INSERT = 'INSERT'
+    IS = 'IS'
+    IS_NOT = 'IS_NOT'
+    JOIN = 'JOIN'
+    LEFT = 'LEFT'
+    LEFT_OUTER = 'LEFT_OUTER'
+    LESS_THAN = '<'
+    LESS_THAN_OR_EQUAL_TO = '<='
+    LIKE = 'LIKE'
+    LIMIT = 'LIMIT'
+    LIT = 'LIT'
+    MATCH_AGAINST = 'MATCH_AGAINST'
+    MBRCONTAINS = 'MBRContains'
+    MIN = 'MIN'
+    MAX = 'MAX'
+    NOT_BETWEEN = 'NOT BETWEEN'
+    NOT_EQUAL = '<>'
+    NOT_EXISTS = 'NOT_EXISTS'
+    NOT_IN = 'NOT_IN'
+    NOT_LIKE = 'NOT_LIKE'
+    NULL = 'NULL'
+    OR = 'OR'
+    ORDER = 'ORDER'
+    PAGE = 'PAGE'
+    PAGINATION = 'PAGINATION'
+    PARAM = 'PARAM'
+    REPLACE = 'REPLACE'
+    RIGHT = 'RIGHT'
+    RIGHT_OUTER = 'RIGHT_OUTER'
+    SELECT = 'SELECT'
+    ST_CONTAINS = 'ST_Contains'
+    ST_GEOMFROMTEXT = 'ST_GeomFromText'
+    ST_WITHIN = 'ST_Within'
+    SUBSELECT = 'SUBSELECT'
+    SUM = 'SUM'
+    UPDATE = 'UPDATE'
+    USE_INDEX = 'USE INDEX'
+    WHERE = 'WHERE'
+  end
+
+  C6 = C6C
+
   class Query
     def initialize(table = nil)
       @payload = {}
-      @payload['FROM'] = table unless table.nil?
+      @payload[C6C::FROM] = table unless table.nil?
     end
 
     def from_table(table)
-      @payload['FROM'] = table
+      @payload[C6C::FROM] = table
       self
     end
 
     def select(*columns)
-      @payload['SELECT'] = columns.length == 1 && columns.first.is_a?(Array) ? columns.first.dup : columns
+      @payload[C6C::SELECT] = columns.length == 1 && columns.first.is_a?(Array) ? columns.first.dup : columns
       self
     end
 
     def where(conditions)
-      @payload['WHERE'] = conditions.dup
+      @payload[C6C::WHERE] = conditions.dup
       self
     end
 
@@ -56,11 +132,11 @@ module CarbonC
     end
 
     def where_exists(outer_column, subquery, inner_column = nil)
-      append_exists('EXISTS', CarbonC.exists_spec(outer_column, subquery, inner_column))
+      append_exists(C6C::EXISTS, CarbonC.exists_spec(outer_column, subquery, inner_column))
     end
 
     def where_not_exists(outer_column, subquery, inner_column = nil)
-      append_exists('NOT_EXISTS', CarbonC.exists_spec(outer_column, subquery, inner_column))
+      append_exists(C6C::NOT_EXISTS, CarbonC.exists_spec(outer_column, subquery, inner_column))
     end
 
     def where_group(operator, *conditions)
@@ -76,15 +152,15 @@ module CarbonC
     end
 
     def join(kind, target, on)
-      @payload['JOIN'] ||= {}
-      raise TypeError, 'JOIN must be a Hash' unless @payload['JOIN'].is_a?(Hash)
+      @payload[C6C::JOIN] ||= {}
+      raise TypeError, 'JOIN must be a Hash' unless @payload[C6C::JOIN].is_a?(Hash)
 
-      @payload['JOIN'][kind] ||= {}
-      unless @payload['JOIN'][kind].is_a?(Hash)
+      @payload[C6C::JOIN][kind] ||= {}
+      unless @payload[C6C::JOIN][kind].is_a?(Hash)
         raise TypeError, "JOIN.#{kind} must be a Hash"
       end
 
-      @payload['JOIN'][kind][target] = on.dup
+      @payload[C6C::JOIN][kind][target] = on.dup
       self
     end
 
@@ -93,84 +169,84 @@ module CarbonC
     end
 
     def index_hints(hints)
-      @payload['INDEX_HINTS'] = copy_payload_value(hints)
+      @payload[C6C::INDEX_HINTS] = copy_payload_value(hints)
       self
     end
 
     def force_index(*indexes)
-      @payload['INDEX_HINTS'] = CarbonC.force_index(*indexes)
+      @payload[C6C::INDEX_HINTS] = CarbonC.force_index(*indexes)
       self
     end
 
     def use_index(*indexes)
-      @payload['INDEX_HINTS'] = CarbonC.use_index(*indexes)
+      @payload[C6C::INDEX_HINTS] = CarbonC.use_index(*indexes)
       self
     end
 
     def ignore_index(*indexes)
-      @payload['INDEX_HINTS'] = CarbonC.ignore_index(*indexes)
+      @payload[C6C::INDEX_HINTS] = CarbonC.ignore_index(*indexes)
       self
     end
 
     def group_by(*expressions)
-      @payload['GROUP_BY'] = if expressions.length == 1 && expressions.first.is_a?(Array)
-                               expressions.first.dup
-                             elsif expressions.length == 1
-                               expressions.first
-                             else
-                               expressions
-                             end
+      @payload[C6C::GROUP_BY] = if expressions.length == 1 && expressions.first.is_a?(Array)
+                                  expressions.first.dup
+                                elsif expressions.length == 1
+                                  expressions.first
+                                else
+                                  expressions
+                                end
       self
     end
 
     def having(conditions)
-      @payload['HAVING'] = conditions.dup
+      @payload[C6C::HAVING] = conditions.dup
       self
     end
 
     def insert(values)
-      @payload['INSERT'] = copy_payload_value(values)
+      @payload[C6C::INSERT] = copy_payload_value(values)
       self
     end
 
     def replace(values)
-      @payload['REPLACE'] = copy_payload_value(values)
+      @payload[C6C::REPLACE] = copy_payload_value(values)
       self
     end
 
     def update(values)
-      @payload['UPDATE'] = values.dup
+      @payload[C6C::UPDATE] = values.dup
       self
     end
 
     def delete(enabled = true)
-      @payload['DELETE'] = enabled
+      @payload[C6C::DELETE] = enabled
       self
     end
 
     def upsert(columns)
-      @payload['UPDATE'] = columns.dup
+      @payload[C6C::UPDATE] = columns.dup
       self
     end
 
     def do_nothing
-      @payload['UPDATE'] = []
+      @payload[C6C::UPDATE] = []
       self
     end
 
     def limit(value)
-      pagination['LIMIT'] = value
+      pagination[C6C::LIMIT] = value
       self
     end
 
     def page(value)
-      pagination['PAGE'] = value
+      pagination[C6C::PAGE] = value
       self
     end
 
-    def order_by(column, direction = 'ASC')
-      pagination['ORDER'] ||= []
-      pagination['ORDER'] << [column, direction]
+    def order_by(column, direction = C6C::ASC)
+      pagination[C6C::ORDER] ||= []
+      pagination[C6C::ORDER] << [column, direction]
       self
     end
 
@@ -185,17 +261,17 @@ module CarbonC
     private
 
     def pagination
-      @payload['PAGINATION'] ||= {}
-      raise TypeError, 'PAGINATION must be a Hash' unless @payload['PAGINATION'].is_a?(Hash)
+      @payload[C6C::PAGINATION] ||= {}
+      raise TypeError, 'PAGINATION must be a Hash' unless @payload[C6C::PAGINATION].is_a?(Hash)
 
-      @payload['PAGINATION']
+      @payload[C6C::PAGINATION]
     end
 
     def where_payload
-      @payload['WHERE'] ||= {}
-      raise TypeError, 'WHERE must be a Hash' unless @payload['WHERE'].is_a?(Hash)
+      @payload[C6C::WHERE] ||= {}
+      raise TypeError, 'WHERE must be a Hash' unless @payload[C6C::WHERE].is_a?(Hash)
 
-      @payload['WHERE']
+      @payload[C6C::WHERE]
     end
 
     def append_exists(operator, spec)
@@ -208,7 +284,7 @@ module CarbonC
 
     def append_boolean_group(operator, conditions)
       operator_key = operator.to_s.upcase.gsub(/\s+/, '_')
-      raise ArgumentError, 'operator must be AND or OR' unless %w[AND OR].include?(operator_key)
+      raise ArgumentError, 'operator must be AND or OR' unless [C6C::AND, C6C::OR].include?(operator_key)
 
       where_payload[operator_key] ||= []
       raise TypeError, "WHERE.#{operator_key} must be an Array" unless where_payload[operator_key].is_a?(Array)
@@ -239,11 +315,11 @@ module CarbonC
     end
 
     def subselect(query)
-      ['SUBSELECT', carbon_codegen_query_payload(query)]
+      [C6C::SUBSELECT, carbon_codegen_query_payload(query)]
     end
 
     def derived_target(alias_name, query)
-      JSON.generate('SUBSELECT' => carbon_codegen_query_payload(query), 'AS' => alias_name)
+      JSON.generate(C6C::SUBSELECT => carbon_codegen_query_payload(query), C6C::AS => alias_name)
     end
 
     def op(operator, *operands)
@@ -251,11 +327,11 @@ module CarbonC
     end
 
     def lit(value)
-      ['LIT', value]
+      [C6C::LIT, value]
     end
 
     def param(value)
-      ['PARAM', value]
+      [C6C::PARAM, value]
     end
 
     def call(name, *arguments)
@@ -267,49 +343,49 @@ module CarbonC
     end
 
     def custom_call(name, *arguments)
-      ['CALL', name, *arguments.map { |argument| carbon_codegen_query_payload(argument) }]
+      [C6C::CALL, name, *arguments.map { |argument| carbon_codegen_query_payload(argument) }]
     end
 
     def st_contains(envelope, shape)
-      fn('ST_Contains', envelope, shape)
+      fn(C6C::ST_CONTAINS, envelope, shape)
     end
 
     def st_within(shape, envelope)
-      fn('ST_Within', shape, envelope)
+      fn(C6C::ST_WITHIN, shape, envelope)
     end
 
     def mbr_contains(envelope, shape)
-      fn('MBRContains', envelope, shape)
+      fn(C6C::MBRCONTAINS, envelope, shape)
     end
 
     def alias_expression(expression, alias_name)
-      ['AS', carbon_codegen_query_payload(expression), alias_name]
+      [C6C::AS, carbon_codegen_query_payload(expression), alias_name]
     end
 
     def distinct(expression)
-      ['DISTINCT', carbon_codegen_query_payload(expression)]
+      [C6C::DISTINCT, carbon_codegen_query_payload(expression)]
     end
 
     def between(start_value, end_value)
-      ['BETWEEN', [carbon_codegen_query_payload(start_value), carbon_codegen_query_payload(end_value)]]
+      [C6C::BETWEEN, [carbon_codegen_query_payload(start_value), carbon_codegen_query_payload(end_value)]]
     end
 
     def not_between(start_value, end_value)
-      ['NOT BETWEEN', [carbon_codegen_query_payload(start_value), carbon_codegen_query_payload(end_value)]]
+      [C6C::NOT_BETWEEN, [carbon_codegen_query_payload(start_value), carbon_codegen_query_payload(end_value)]]
     end
 
     def in_list(values)
-      ['IN', carbon_codegen_set_operand(values)]
+      [C6C::IN, carbon_codegen_set_operand(values)]
     end
 
     def not_in_list(values)
-      ['NOT_IN', carbon_codegen_set_operand(values)]
+      [C6C::NOT_IN, carbon_codegen_set_operand(values)]
     end
 
     def match_against(search_value, mode = nil)
       payload = [carbon_codegen_match_search_operand(search_value)]
       payload << mode unless mode.nil?
-      ['MATCH_AGAINST', payload]
+      [C6C::MATCH_AGAINST, payload]
     end
 
     def index_hint(kind, *indexes)
@@ -318,15 +394,15 @@ module CarbonC
     end
 
     def force_index(*indexes)
-      index_hint('FORCE INDEX', *indexes)
+      index_hint(C6C::FORCE_INDEX, *indexes)
     end
 
     def use_index(*indexes)
-      index_hint('USE INDEX', *indexes)
+      index_hint(C6C::USE_INDEX, *indexes)
     end
 
     def ignore_index(*indexes)
-      index_hint('IGNORE INDEX', *indexes)
+      index_hint(C6C::IGNORE_INDEX, *indexes)
     end
 
     def exists_spec(outer_column, query, inner_column = nil)
@@ -336,11 +412,11 @@ module CarbonC
     end
 
     def exists(*specs)
-      {'EXISTS' => specs.map { |spec| carbon_codegen_query_payload(spec) }}
+      {C6C::EXISTS => specs.map { |spec| carbon_codegen_query_payload(spec) }}
     end
 
     def not_exists(*specs)
-      {'NOT_EXISTS' => specs.map { |spec| carbon_codegen_query_payload(spec) }}
+      {C6C::NOT_EXISTS => specs.map { |spec| carbon_codegen_query_payload(spec) }}
     end
 
     def condition(column, value)
@@ -349,17 +425,17 @@ module CarbonC
 
     def group(operator, *conditions)
       operator_key = operator.to_s.upcase.gsub(/\s+/, '_')
-      raise ArgumentError, 'operator must be AND or OR' unless %w[AND OR].include?(operator_key)
+      raise ArgumentError, 'operator must be AND or OR' unless [C6C::AND, C6C::OR].include?(operator_key)
 
       {operator_key => conditions.map { |condition| carbon_codegen_query_payload(condition) }}
     end
 
     def and_group(*conditions)
-      group('AND', *conditions)
+      group(C6C::AND, *conditions)
     end
 
     def or_group(*conditions)
-      group('OR', *conditions)
+      group(C6C::OR, *conditions)
     end
 
     def model_table(model)
@@ -437,38 +513,50 @@ module CarbonC
       metadata.fetch('tables', []).each do |table|
         class_name = carbon_codegen_class_name(table.fetch('name', ''), used_classes)
         used_fields = {}
+        used_constants = {
+          'TABLE' => true,
+          'PRIMARY' => true,
+          'COLUMNS' => true,
+          'COLUMN_NAMES' => true,
+          'TYPES' => true,
+          'NULLABLE' => true
+        }
         fields = table.fetch('columns', []).map do |column|
           field = carbon_codegen_field_name(column.fetch('name', ''), used_fields)
-          [field, column.fetch('name', ''), column.fetch('qualified', ''), column]
+          constant = carbon_codegen_constant_name(field, used_constants)
+          [field, column.fetch('name', ''), column.fetch('qualified', ''), column, constant]
         end
 
         if fields.empty?
           lines << "#{base_indent}#{class_name} = Class.new"
         else
-          field_list = fields.map { |field, _, _| ":#{field}" }.join(', ')
+          field_list = fields.map { |field, _, _, _, _| ":#{field}" }.join(', ')
           lines << "#{base_indent}#{class_name} = Struct.new(#{field_list}, keyword_init: true)"
         end
         lines << "#{base_indent}#{class_name}::TABLE = #{JSON.generate(table.fetch('name', ''))}"
         lines << "#{base_indent}#{class_name}::PRIMARY = #{JSON.generate(table.fetch('primary', []))}.freeze"
+        fields.each do |_, _, qualified, _, constant|
+          lines << "#{base_indent}#{class_name}::#{constant} = #{JSON.generate(qualified)}"
+        end
         lines << "#{base_indent}#{class_name}::COLUMNS = {"
-        fields.each do |field, _, qualified, _|
-          lines << "#{base_indent}  #{JSON.generate(field)} => #{JSON.generate(qualified)},"
+        fields.each do |field, _, _, _, constant|
+          lines << "#{base_indent}  #{JSON.generate(field)} => #{class_name}::#{constant},"
         end
         lines << "#{base_indent}}.freeze"
         lines << "#{base_indent}#{class_name}::COLUMN_NAMES = {"
-        fields.each do |field, original, _, _|
+        fields.each do |field, original, _, _, _|
           lines << "#{base_indent}  #{JSON.generate(field)} => #{JSON.generate(original)},"
         end
         lines << "#{base_indent}}.freeze"
         lines << "#{base_indent}#{class_name}::TYPES = {"
-        fields.each do |field, _, _, column|
+        fields.each do |field, _, _, column, _|
           next unless column.key?('db_type')
 
           lines << "#{base_indent}  #{JSON.generate(field)} => :#{carbon_codegen_ruby_type(column)},"
         end
         lines << "#{base_indent}}.freeze"
         lines << "#{base_indent}#{class_name}::NULLABLE = {"
-        fields.each do |field, _, _, column|
+        fields.each do |field, _, _, column, _|
           next unless column.key?('nullable')
 
           lines << "#{base_indent}  #{JSON.generate(field)} => #{column.fetch('nullable') ? 'true' : 'false'},"
@@ -513,10 +601,10 @@ module CarbonC
     end
 
     def carbon_codegen_subselect_operand(query)
-      if query.is_a?(Array) && query.length == 2 && query.first.to_s.upcase == 'SUBSELECT'
+      if query.is_a?(Array) && query.length == 2 && query.first.to_s.upcase == C6C::SUBSELECT
         return carbon_codegen_query_payload(query)
       end
-      if query.is_a?(Hash) && (query.key?('SUBSELECT') || query.key?('subselect'))
+      if query.is_a?(Hash) && (query.key?(C6C::SUBSELECT) || query.key?('subselect'))
         return query.dup
       end
 
@@ -573,6 +661,14 @@ module CarbonC
       name = 'field' if name.empty?
       name = "_#{name}" if name.match?(/\A[0-9]/)
       name = "#{name}_" if %w[class module def end].include?(name)
+      carbon_codegen_dedupe(name, used)
+    end
+
+    def carbon_codegen_constant_name(field_name, used)
+      name = field_name.to_s.gsub(/[^0-9A-Za-z_]/, '_').gsub(/\A_+|_+\z/, '').upcase
+      name = 'COLUMN' if name.empty?
+      name = "COLUMN_#{name}" if name.match?(/\A[0-9]/)
+      name = "#{name}_COLUMN" if used.key?(name)
       carbon_codegen_dedupe(name, used)
     end
 

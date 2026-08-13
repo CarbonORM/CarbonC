@@ -42,6 +42,10 @@ static void test_version(void) {
     assert(strcmp(carbon_status_code(CARBON_STATUS_UNSUPPORTED_QUERY), "unsupported_query") == 0);
     assert(strcmp(carbon_status_code(CARBON_STATUS_OUT_OF_MEMORY), "out_of_memory") == 0);
     assert(strcmp(carbon_status_code((carbon_status) 999), "unknown_status") == 0);
+    assert(strcmp(CARBON_C6_FROM, "FROM") == 0);
+    assert(strcmp(CARBON_C6_SELECT, "SELECT") == 0);
+    assert(strcmp(CARBON_C6_GREATER_THAN, ">") == 0);
+    assert(strcmp(CARBON_C6_FORCE_INDEX, "FORCE INDEX") == 0);
 }
 
 static void test_mysql_select_where_limit(void) {

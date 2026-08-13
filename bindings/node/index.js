@@ -25,6 +25,80 @@ const RESERVED_TYPESCRIPT_NAMES = new Set([
   'let',
   'type',
 ]);
+const C6C = Object.freeze({
+  ADDDATE: 'ADDDATE',
+  ADDTIME: 'ADDTIME',
+  AS: 'AS',
+  ASC: 'ASC',
+  AND: 'AND',
+  BETWEEN: 'BETWEEN',
+  CALL: 'CALL',
+  CONCAT: 'CONCAT',
+  COUNT: 'COUNT',
+  COUNT_ALL: 'COUNT_ALL',
+  CURRENT_DATE: 'CURRENT_DATE',
+  CURRENT_TIMESTAMP: 'CURRENT_TIMESTAMP',
+  DATE: 'DATE',
+  DATE_ADD: 'DATE_ADD',
+  DATE_FORMAT: 'DATE_FORMAT',
+  DATE_SUB: 'DATE_SUB',
+  DATEDIFF: 'DATEDIFF',
+  DELETE: 'DELETE',
+  DESC: 'DESC',
+  DISTINCT: 'DISTINCT',
+  EXISTS: 'EXISTS',
+  FALSE: 'FALSE',
+  FORCE_INDEX: 'FORCE INDEX',
+  FROM: 'FROM',
+  GREATER_THAN: '>',
+  GREATER_THAN_OR_EQUAL_TO: '>=',
+  GROUP_BY: 'GROUP_BY',
+  GROUP_CONCAT: 'GROUP_CONCAT',
+  HAVING: 'HAVING',
+  IGNORE_INDEX: 'IGNORE INDEX',
+  IN: 'IN',
+  INDEX_HINTS: 'INDEX_HINTS',
+  INNER: 'INNER',
+  INSERT: 'INSERT',
+  IS: 'IS',
+  IS_NOT: 'IS_NOT',
+  JOIN: 'JOIN',
+  LEFT: 'LEFT',
+  LEFT_OUTER: 'LEFT_OUTER',
+  LESS_THAN: '<',
+  LESS_THAN_OR_EQUAL_TO: '<=',
+  LIKE: 'LIKE',
+  LIMIT: 'LIMIT',
+  LIT: 'LIT',
+  MATCH_AGAINST: 'MATCH_AGAINST',
+  MBRCONTAINS: 'MBRContains',
+  MIN: 'MIN',
+  MAX: 'MAX',
+  NOT_BETWEEN: 'NOT BETWEEN',
+  NOT_EQUAL: '<>',
+  NOT_EXISTS: 'NOT_EXISTS',
+  NOT_IN: 'NOT_IN',
+  NOT_LIKE: 'NOT_LIKE',
+  NULL: 'NULL',
+  OR: 'OR',
+  ORDER: 'ORDER',
+  PAGE: 'PAGE',
+  PAGINATION: 'PAGINATION',
+  PARAM: 'PARAM',
+  REPLACE: 'REPLACE',
+  RIGHT: 'RIGHT',
+  RIGHT_OUTER: 'RIGHT_OUTER',
+  SELECT: 'SELECT',
+  ST_CONTAINS: 'ST_Contains',
+  ST_GEOMFROMTEXT: 'ST_GeomFromText',
+  ST_WITHIN: 'ST_Within',
+  SUBSELECT: 'SUBSELECT',
+  SUM: 'SUM',
+  UPDATE: 'UPDATE',
+  USE_INDEX: 'USE INDEX',
+  WHERE: 'WHERE',
+});
+const C6 = C6C;
 
 function schemaJson(schema) {
   if (schema === undefined || schema === null) {
@@ -98,11 +172,11 @@ function queryPayload(query) {
 }
 
 function subselect(query) {
-  return ['SUBSELECT', queryPayload(query)];
+  return [C6C.SUBSELECT, queryPayload(query)];
 }
 
 function derivedTarget(alias, query) {
-  return JSON.stringify({SUBSELECT: queryPayload(query), AS: alias});
+  return JSON.stringify({[C6C.SUBSELECT]: queryPayload(query), [C6C.AS]: alias});
 }
 
 function op(operator, ...operands) {
@@ -110,11 +184,11 @@ function op(operator, ...operands) {
 }
 
 function lit(value) {
-  return ['LIT', value];
+  return [C6C.LIT, value];
 }
 
 function param(value) {
-  return ['PARAM', value];
+  return [C6C.PARAM, value];
 }
 
 function call(name, ...args) {
@@ -126,43 +200,43 @@ function fn(name, ...args) {
 }
 
 function customCall(name, ...args) {
-  return ['CALL', name, ...args.map(copyPayloadValue)];
+  return [C6C.CALL, name, ...args.map(copyPayloadValue)];
 }
 
 function stContains(envelope, shape) {
-  return fn('ST_Contains', envelope, shape);
+  return fn(C6C.ST_CONTAINS, envelope, shape);
 }
 
 function stWithin(shape, envelope) {
-  return fn('ST_Within', shape, envelope);
+  return fn(C6C.ST_WITHIN, shape, envelope);
 }
 
 function mbrContains(envelope, shape) {
-  return fn('MBRContains', envelope, shape);
+  return fn(C6C.MBRCONTAINS, envelope, shape);
 }
 
 function alias(expression, name) {
-  return ['AS', copyPayloadValue(expression), name];
+  return [C6C.AS, copyPayloadValue(expression), name];
 }
 
 function distinct(expression) {
-  return ['DISTINCT', copyPayloadValue(expression)];
+  return [C6C.DISTINCT, copyPayloadValue(expression)];
 }
 
 function between(start, end) {
-  return ['BETWEEN', [copyPayloadValue(start), copyPayloadValue(end)]];
+  return [C6C.BETWEEN, [copyPayloadValue(start), copyPayloadValue(end)]];
 }
 
 function notBetween(start, end) {
-  return ['NOT BETWEEN', [copyPayloadValue(start), copyPayloadValue(end)]];
+  return [C6C.NOT_BETWEEN, [copyPayloadValue(start), copyPayloadValue(end)]];
 }
 
 function inList(values) {
-  return ['IN', setOperand(values)];
+  return [C6C.IN, setOperand(values)];
 }
 
 function notInList(values) {
-  return ['NOT_IN', setOperand(values)];
+  return [C6C.NOT_IN, setOperand(values)];
 }
 
 function matchAgainst(search, mode) {
@@ -170,7 +244,7 @@ function matchAgainst(search, mode) {
   if (mode !== undefined && mode !== null) {
     payload.push(mode);
   }
-  return ['MATCH_AGAINST', payload];
+  return [C6C.MATCH_AGAINST, payload];
 }
 
 function indexValues(indexes) {
@@ -185,15 +259,15 @@ function indexHint(kind, ...indexes) {
 }
 
 function forceIndex(...indexes) {
-  return indexHint('FORCE INDEX', ...indexes);
+  return indexHint(C6C.FORCE_INDEX, ...indexes);
 }
 
 function useIndex(...indexes) {
-  return indexHint('USE INDEX', ...indexes);
+  return indexHint(C6C.USE_INDEX, ...indexes);
 }
 
 function ignoreIndex(...indexes) {
-  return indexHint('IGNORE INDEX', ...indexes);
+  return indexHint(C6C.IGNORE_INDEX, ...indexes);
 }
 
 function existsSpec(outerColumn, query, innerColumn) {
@@ -205,11 +279,11 @@ function existsSpec(outerColumn, query, innerColumn) {
 }
 
 function exists(...specs) {
-  return {EXISTS: specs.map(copyPayloadValue)};
+  return {[C6C.EXISTS]: specs.map(copyPayloadValue)};
 }
 
 function notExists(...specs) {
-  return {NOT_EXISTS: specs.map(copyPayloadValue)};
+  return {[C6C.NOT_EXISTS]: specs.map(copyPayloadValue)};
 }
 
 function condition(column, value) {
@@ -218,18 +292,18 @@ function condition(column, value) {
 
 function group(operator, ...conditions) {
   const operatorKey = operator.toUpperCase().replace(/\s+/g, '_');
-  if (operatorKey !== 'AND' && operatorKey !== 'OR') {
+  if (operatorKey !== C6C.AND && operatorKey !== C6C.OR) {
     throw new TypeError('operator must be AND or OR');
   }
   return {[operatorKey]: conditions.map(copyPayloadValue)};
 }
 
 function andGroup(...conditions) {
-  return group('AND', ...conditions);
+  return group(C6C.AND, ...conditions);
 }
 
 function orGroup(...conditions) {
-  return group('OR', ...conditions);
+  return group(C6C.OR, ...conditions);
 }
 
 function modelTable(model) {
@@ -272,13 +346,13 @@ function subselectOperand(query) {
   if (Array.isArray(query)
     && query.length === 2
     && typeof query[0] === 'string'
-    && query[0].toUpperCase() === 'SUBSELECT') {
+    && query[0].toUpperCase() === C6C.SUBSELECT) {
     return copyPayloadValue(query);
   }
   if (query !== null
     && !Array.isArray(query)
     && typeof query === 'object'
-    && (Object.prototype.hasOwnProperty.call(query, 'SUBSELECT')
+    && (Object.prototype.hasOwnProperty.call(query, C6C.SUBSELECT)
       || Object.prototype.hasOwnProperty.call(query, 'subselect'))) {
     return {...query};
   }
@@ -303,26 +377,26 @@ class CarbonQuery {
   constructor(table) {
     this.payload = {};
     if (table !== undefined && table !== null) {
-      this.payload.FROM = table;
+      this.payload[C6C.FROM] = table;
     }
   }
 
   from(table) {
-    this.payload.FROM = table;
+    this.payload[C6C.FROM] = table;
     return this;
   }
 
   select(...columns) {
     if (columns.length === 1 && Array.isArray(columns[0])) {
-      this.payload.SELECT = [...columns[0]];
+      this.payload[C6C.SELECT] = [...columns[0]];
     } else {
-      this.payload.SELECT = columns;
+      this.payload[C6C.SELECT] = columns;
     }
     return this;
   }
 
   where(conditions) {
-    this.payload.WHERE = {...conditions};
+    this.payload[C6C.WHERE] = {...conditions};
     return this;
   }
 
@@ -357,11 +431,11 @@ class CarbonQuery {
   }
 
   whereExists(outerColumn, subquery, innerColumn) {
-    return this.appendExists('EXISTS', existsSpec(outerColumn, subquery, innerColumn));
+    return this.appendExists(C6C.EXISTS, existsSpec(outerColumn, subquery, innerColumn));
   }
 
   whereNotExists(outerColumn, subquery, innerColumn) {
-    return this.appendExists('NOT_EXISTS', existsSpec(outerColumn, subquery, innerColumn));
+    return this.appendExists(C6C.NOT_EXISTS, existsSpec(outerColumn, subquery, innerColumn));
   }
 
   whereGroup(operator, ...conditions) {
@@ -377,19 +451,19 @@ class CarbonQuery {
   }
 
   join(kind, target, on) {
-    if (this.payload.JOIN === undefined) {
-      this.payload.JOIN = {};
+    if (this.payload[C6C.JOIN] === undefined) {
+      this.payload[C6C.JOIN] = {};
     }
-    if (this.payload.JOIN === null || Array.isArray(this.payload.JOIN) || typeof this.payload.JOIN !== 'object') {
+    if (this.payload[C6C.JOIN] === null || Array.isArray(this.payload[C6C.JOIN]) || typeof this.payload[C6C.JOIN] !== 'object') {
       throw new TypeError('JOIN must be an object');
     }
-    if (this.payload.JOIN[kind] === undefined) {
-      this.payload.JOIN[kind] = {};
+    if (this.payload[C6C.JOIN][kind] === undefined) {
+      this.payload[C6C.JOIN][kind] = {};
     }
-    if (this.payload.JOIN[kind] === null || Array.isArray(this.payload.JOIN[kind]) || typeof this.payload.JOIN[kind] !== 'object') {
+    if (this.payload[C6C.JOIN][kind] === null || Array.isArray(this.payload[C6C.JOIN][kind]) || typeof this.payload[C6C.JOIN][kind] !== 'object') {
       throw new TypeError(`JOIN.${kind} must be an object`);
     }
-    this.payload.JOIN[kind][target] = {...on};
+    this.payload[C6C.JOIN][kind][target] = {...on};
     return this;
   }
 
@@ -398,87 +472,87 @@ class CarbonQuery {
   }
 
   indexHints(hints) {
-    this.payload.INDEX_HINTS = copyPayloadValue(hints);
+    this.payload[C6C.INDEX_HINTS] = copyPayloadValue(hints);
     return this;
   }
 
   forceIndex(...indexes) {
-    this.payload.INDEX_HINTS = forceIndex(...indexes);
+    this.payload[C6C.INDEX_HINTS] = forceIndex(...indexes);
     return this;
   }
 
   useIndex(...indexes) {
-    this.payload.INDEX_HINTS = useIndex(...indexes);
+    this.payload[C6C.INDEX_HINTS] = useIndex(...indexes);
     return this;
   }
 
   ignoreIndex(...indexes) {
-    this.payload.INDEX_HINTS = ignoreIndex(...indexes);
+    this.payload[C6C.INDEX_HINTS] = ignoreIndex(...indexes);
     return this;
   }
 
   groupBy(...expressions) {
     if (expressions.length === 1 && Array.isArray(expressions[0])) {
-      this.payload.GROUP_BY = [...expressions[0]];
+      this.payload[C6C.GROUP_BY] = [...expressions[0]];
     } else if (expressions.length === 1) {
-      this.payload.GROUP_BY = expressions[0];
+      this.payload[C6C.GROUP_BY] = expressions[0];
     } else {
-      this.payload.GROUP_BY = expressions;
+      this.payload[C6C.GROUP_BY] = expressions;
     }
     return this;
   }
 
   having(conditions) {
-    this.payload.HAVING = {...conditions};
+    this.payload[C6C.HAVING] = {...conditions};
     return this;
   }
 
   insert(values) {
-    this.payload.INSERT = copyPayloadValue(values);
+    this.payload[C6C.INSERT] = copyPayloadValue(values);
     return this;
   }
 
   replace(values) {
-    this.payload.REPLACE = copyPayloadValue(values);
+    this.payload[C6C.REPLACE] = copyPayloadValue(values);
     return this;
   }
 
   update(values) {
-    this.payload.UPDATE = {...values};
+    this.payload[C6C.UPDATE] = {...values};
     return this;
   }
 
   delete(enabled = true) {
-    this.payload.DELETE = enabled;
+    this.payload[C6C.DELETE] = enabled;
     return this;
   }
 
   upsert(columns) {
-    this.payload.UPDATE = [...columns];
+    this.payload[C6C.UPDATE] = [...columns];
     return this;
   }
 
   doNothing() {
-    this.payload.UPDATE = [];
+    this.payload[C6C.UPDATE] = [];
     return this;
   }
 
   limit(value) {
-    this.pagination().LIMIT = value;
+    this.pagination()[C6C.LIMIT] = value;
     return this;
   }
 
   page(value) {
-    this.pagination().PAGE = value;
+    this.pagination()[C6C.PAGE] = value;
     return this;
   }
 
-  orderBy(column, direction = 'ASC') {
+  orderBy(column, direction = C6C.ASC) {
     const pagination = this.pagination();
-    if (!Array.isArray(pagination.ORDER)) {
-      pagination.ORDER = [];
+    if (!Array.isArray(pagination[C6C.ORDER])) {
+      pagination[C6C.ORDER] = [];
     }
-    pagination.ORDER.push([column, direction]);
+    pagination[C6C.ORDER].push([column, direction]);
     return this;
   }
 
@@ -491,23 +565,23 @@ class CarbonQuery {
   }
 
   pagination() {
-    if (this.payload.PAGINATION === undefined) {
-      this.payload.PAGINATION = {};
+    if (this.payload[C6C.PAGINATION] === undefined) {
+      this.payload[C6C.PAGINATION] = {};
     }
-    if (this.payload.PAGINATION === null || Array.isArray(this.payload.PAGINATION) || typeof this.payload.PAGINATION !== 'object') {
+    if (this.payload[C6C.PAGINATION] === null || Array.isArray(this.payload[C6C.PAGINATION]) || typeof this.payload[C6C.PAGINATION] !== 'object') {
       throw new TypeError('PAGINATION must be an object');
     }
-    return this.payload.PAGINATION;
+    return this.payload[C6C.PAGINATION];
   }
 
   whereMap() {
-    if (this.payload.WHERE === undefined) {
-      this.payload.WHERE = {};
+    if (this.payload[C6C.WHERE] === undefined) {
+      this.payload[C6C.WHERE] = {};
     }
-    if (this.payload.WHERE === null || Array.isArray(this.payload.WHERE) || typeof this.payload.WHERE !== 'object') {
+    if (this.payload[C6C.WHERE] === null || Array.isArray(this.payload[C6C.WHERE]) || typeof this.payload[C6C.WHERE] !== 'object') {
       throw new TypeError('WHERE must be an object');
     }
-    return this.payload.WHERE;
+    return this.payload[C6C.WHERE];
   }
 
   appendExists(operator, spec) {
@@ -524,7 +598,7 @@ class CarbonQuery {
 
   appendBooleanGroup(operator, conditions) {
     const operatorKey = operator.toUpperCase().replace(/\s+/g, '_');
-    if (operatorKey !== 'AND' && operatorKey !== 'OR') {
+    if (operatorKey !== C6C.AND && operatorKey !== C6C.OR) {
       throw new TypeError('operator must be AND or OR');
     }
     const where = this.whereMap();
@@ -643,14 +717,17 @@ function schemaModels(schema) {
     }
     lines.push('}');
     lines.push('');
-    lines.push(`export const ${name}Meta = {`);
-    lines.push(`  table: ${JSON.stringify(table.name || '')},`);
-    lines.push(`  primary: ${JSON.stringify(table.primary || [])},`);
-    lines.push('  columns: {');
+    lines.push(`export const ${name}Table = ${JSON.stringify(table.name || '')} as const;`);
+    lines.push(`export const ${name}Columns = {`);
     for (const column of table.columns || []) {
-      lines.push(`    ${propertyName(column.name)}: ${JSON.stringify(column.qualified || '')},`);
+      lines.push(`  ${propertyName(column.name)}: ${JSON.stringify(column.qualified || '')},`);
     }
-    lines.push('  },');
+    lines.push('} as const;');
+    lines.push('');
+    lines.push(`export const ${name}Meta = {`);
+    lines.push(`  table: ${name}Table,`);
+    lines.push(`  primary: ${JSON.stringify(table.primary || [])},`);
+    lines.push(`  columns: ${name}Columns,`);
     lines.push('  dbTypes: {');
     for (const column of table.columns || []) {
       if (column.db_type !== undefined) {
@@ -675,6 +752,8 @@ function schemaModels(schema) {
 
 native.schemaModels = schemaModels;
 native.schema_models = schemaModels;
+native.C6C = C6C;
+native.C6 = C6;
 native.compileQueryValue = compileQueryValue;
 native.compile_query_value = compileQueryValue;
 native.adaptCompileResult = adaptCompileResult;

@@ -41,6 +41,10 @@ payloads:
 }
 ```
 
+This JSON is the stable ABI shape. Normal package code should build it through
+generated table/column constants plus the `C6C` token constants so query authors
+do not hand-type grammar strings or schema identifiers.
+
 The compiler returns a numeric `status`, stable string `status_code`, SQL, a
 JSON array of bound parameter values, and a normalized allowlist key:
 
@@ -63,8 +67,13 @@ Supported in this slice:
 - schema metadata enrichment from CarbonNode-style `TYPE_VALIDATION` entries,
   including DB type, max length, nullability, auto-increment, and insert-skip
   flags
+- CarbonNode-compatible C6 token constants exposed idiomatically in each binding
+  as `C6C`/`C6`
+- C consumers can use the matching `CARBON_C6_*` token macros from
+  `include/carbon.h`
 - package-level typed source generation helpers for Python dataclasses,
-  TypeScript interfaces, PHP model classes, and Ruby Struct models
+  TypeScript interfaces, PHP model classes, and Ruby Struct models, including
+  generated table and column constants
 - package-level native payload compile helpers that serialize idiomatic
   dict/array/object/hash inputs into the stable C JSON boundary
 - package-level typed result adapters that add decoded native `params` and
@@ -265,25 +274,7 @@ import json
 import carbon
 import carbon_codegen
 
-typed_result = (
-    carbon_codegen.query("actor")
-    .select("actor.actor_id")
-    .where({"actor.actor_id": [">", 10]})
-    .limit(5)
-    .compile(
-        schema={"TABLES": {"actor": {"COLUMNS": {"actor.actor_id": "actor_id"}}}},
-        dialect="mysql",
-    )
-)
-metadata_json = carbon.schema_metadata(json.dumps({
-    "TABLES": {
-        "actor": {
-            "PRIMARY_SHORT": ["actor_id"],
-            "COLUMNS": {"actor.actor_id": "actor_id"}
-        }
-    }
-}))
-dataclass_source = carbon_codegen.schema_models({
+schema = {
     "TABLES": {
         "actor": {
             "PRIMARY_SHORT": ["actor_id"],
@@ -292,12 +283,25 @@ dataclass_source = carbon_codegen.schema_models({
                 "actor.actor_id": {
                     "COLUMN_NAME": "actor_id",
                     "MYSQL_TYPE": "smallint",
-                    "NOT_NULL": True
+                    "NOT_NULL": True,
                 }
-            }
+            },
         }
     }
-})
+}
+generated: dict[str, object] = {}
+exec(carbon_codegen.schema_models(schema), generated)
+Actor = generated["Actor"]
+
+typed_result = (
+    carbon_codegen.query(Actor.TABLE)
+    .select(Actor.ACTOR_ID)
+    .where_op(Actor.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 10)
+    .limit(5)
+    .compile(schema=schema, dialect="mysql")
+)
+metadata_json = carbon.schema_metadata(json.dumps(schema))
+dataclass_source = carbon_codegen.schema_models(schema)
 ```
 
 `Query.to_payload()` returns the canonical dict sent through the C JSON boundary
@@ -308,15 +312,17 @@ subselect helpers, derived `join_subselect` targets, advanced predicate helpers
 `where_match_against`, `where_exists`, `where_not_exists`), composable boolean group helpers
 (`condition`, `and_`, `or_`, `where_and`, `where_or`), expression helpers
 (`fn`, `custom_call`, `call`, `lit`, `param`, `st_contains`, `st_within`,
-`mbr_contains`), index hint helpers (`index_hints`, `force_index`,
+`mbr_contains`), CarbonNode-compatible token constants (`C6C` / `C6`), index hint helpers (`index_hints`, `force_index`,
 `use_index`, `ignore_index`), limit/page, and order controls.
 `compile_query_result()` returns the same fields as the raw result plus decoded
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
 metadata into Python annotations such as
 `int`, `float`, `str`, `bool`, `bytes`, `Dict[str, Any]`, and `Optional[...]`,
-and includes `__carbon_db_types__` and `__carbon_nullable__` metadata. Runtime
-helpers such as `model_query()`, `model_select()`, and `model_column()` consume
-that generated metadata to build schema-backed `Query` payloads.
+includes `TABLE`, `PRIMARY`, `COLUMNS`, direct column constants such as
+`Actor.ACTOR_ID`, and retains `__carbon_db_types__` /
+`__carbon_nullable__` metadata. Runtime helpers such as `model_query()`,
+`model_select()`, and `model_column()` consume that generated metadata to build
+schema-backed `Query` payloads.
 
 Build and smoke-test it from the repository root:
 
@@ -330,7 +336,7 @@ PYTHONPATH=bindings/python python3 bindings/python/smoke.py
 The PHP extension wraps the same compile result shape from
 `bindings/php/carbon_php.c` as an associative array, including
 `diagnostics_json`. The
-`bindings/php/carbon_codegen.php` helper adds `CarbonQuery`,
+`bindings/php/carbon_codegen.php` helper adds `C6C` / `C6`, `CarbonQuery`,
 `carbon_compile_query_value()` for native arrays, typed result adapters, and
 native PHP model class source over
 `carbon_schema_metadata()`:
@@ -338,23 +344,7 @@ native PHP model class source over
 ```php
 require_once __DIR__ . "/bindings/php/carbon_codegen.php";
 
-$typedResult = carbon_query("actor")
-    ->select("actor.actor_id")
-    ->where(["actor.actor_id" => [">", 10]])
-    ->limit(5)
-    ->compile(
-        ["TABLES" => ["actor" => ["COLUMNS" => ["actor.actor_id" => "actor_id"]]]],
-        "mysql"
-    );
-$metadataJson = carbon_schema_metadata(json_encode([
-    "TABLES" => [
-        "actor" => [
-            "PRIMARY_SHORT" => ["actor_id"],
-            "COLUMNS" => ["actor.actor_id" => "actor_id"],
-        ],
-    ],
-]));
-$modelSource = carbon_schema_models([
+$schema = [
     "TABLES" => [
         "actor" => [
             "PRIMARY_SHORT" => ["actor_id"],
@@ -368,7 +358,17 @@ $modelSource = carbon_schema_models([
             ],
         ],
     ],
-], "CarbonORM\\Generated");
+];
+$modelSource = carbon_schema_models($schema);
+eval(preg_replace('/^<\\?php\\s*/', '', $modelSource));
+
+$typedResult = carbon_query(Actor::TABLE)
+    ->select(Actor::ACTOR_ID)
+    ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 10)
+    ->limit(5)
+    ->compile($schema, "mysql");
+$metadataJson = carbon_schema_metadata(json_encode($schema));
+$namespacedModelSource = carbon_schema_models($schema, "CarbonORM\\Generated");
 ```
 
 `CarbonQuery::toPayload()` returns the canonical array sent through the C JSON
@@ -387,8 +387,9 @@ helpers (`carbon_condition`, `carbon_and_group`, `carbon_or_group`, `whereAnd`,
 returns the same fields as the
 raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
 class source keeps properties untyped for runtime compatibility, adds PHPDoc type
-annotations, and includes `DB_TYPES` and `NULLABLE` constants. Runtime helpers
-such as `carbon_model_query()`, `carbon_model_select()`, and
+annotations, and includes `TABLE`, `PRIMARY`, `COLUMNS`, direct column constants
+such as `Actor::ACTOR_ID`, `DB_TYPES`, and `NULLABLE`. Runtime helpers such as
+`carbon_model_query()`, `carbon_model_select()`, and
 `carbon_model_column()` consume generated class constants or metadata arrays to
 build schema-backed `CarbonQuery` payloads.
 
@@ -400,11 +401,11 @@ php -d extension=bindings/php/modules/carbon.so bindings/php/smoke.php
 php -d extension=bindings/php/modules/carbon.so examples/php/index.php
 ```
 
-The extension exposes `carbon_version()`, `carbon_hello_world()`,
+The PHP surface exposes `carbon_version()`, `carbon_hello_world()`,
 `carbon_status_code()`, `carbon_status_message()`, `carbon_compile_query()`,
 `carbon_compile_query_value()`, `carbon_compile_query_result()`,
 `carbon_adapt_compile_result()`, `carbon_query()`, `carbon_force_index()`,
-`carbon_use_index()`, `carbon_ignore_index()`, `carbon_schema_metadata()`,
+`carbon_use_index()`, `carbon_ignore_index()`, `C6C`, `C6`, `carbon_schema_metadata()`,
 and `carbon_normalize_allowlist_sql()`.
 
 ## Node Binding
@@ -419,23 +420,7 @@ generator. Compile results include
 ```js
 const carbon = require('./bindings/node');
 
-const typedResult = carbon.query('actor')
-  .select('actor.actor_id')
-  .where({'actor.actor_id': ['>', 10]})
-  .limit(5)
-  .compile(
-    {TABLES: {actor: {COLUMNS: {'actor.actor_id': 'actor_id'}}}},
-    'mysql'
-  );
-const metadataJson = carbon.schemaMetadata(JSON.stringify({
-  TABLES: {
-    actor: {
-      PRIMARY_SHORT: ['actor_id'],
-      COLUMNS: {'actor.actor_id': 'actor_id'},
-    },
-  },
-}));
-const typeSource = carbon.schemaModels({
+const schema = {
   TABLES: {
     actor: {
       PRIMARY_SHORT: ['actor_id'],
@@ -449,7 +434,22 @@ const typeSource = carbon.schemaModels({
       },
     },
   },
-});
+};
+const metadata = JSON.parse(carbon.schemaMetadata(JSON.stringify(schema)));
+const typeSource = carbon.schemaModels(schema);
+// The generated TypeScript module exports the same ActorTable/ActorColumns shape.
+const actorMetadata = metadata.tables[0];
+const ActorTable = actorMetadata.name;
+const ActorColumns = Object.freeze(Object.fromEntries(
+  actorMetadata.columns.map((column) => [column.name, column.qualified])
+));
+
+const typedResult = carbon.query(ActorTable)
+  .select(ActorColumns.actor_id)
+  .whereOp(ActorColumns.actor_id, carbon.C6C.GREATER_THAN, 10)
+  .limit(5)
+  .compile(schema, 'mysql');
+const metadataJson = JSON.stringify(metadata);
 ```
 
 `CarbonQuery.toPayload()` returns the canonical object sent through the C JSON
@@ -464,8 +464,9 @@ helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
 `ignoreIndex`), limit/page, and order controls.
 `compileQueryResult()` returns the same fields as the raw result
 plus decoded JavaScript `params` and `diagnostics` values. The generated
-TypeScript source maps DB metadata into primitive field types and adds `dbTypes`
-and `nullable` metadata beside each generated interface. Runtime helpers such as
+TypeScript source maps DB metadata into primitive field types, exports
+`ActorTable` / `ActorColumns` constants beside each interface, and adds `dbTypes`
+and `nullable` metadata to the generated `*Meta` object. Runtime helpers such as
 `modelQuery()`, `modelSelect()`, and `modelColumn()` consume generated `*Meta`
 objects to build schema-backed `CarbonQuery` payloads.
 
@@ -479,7 +480,7 @@ node examples/node/index.js
 
 The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `statusCode()`, `compileQuery()`, `compileQueryValue()`,
-`compileQueryResult()`, `adaptCompileResult()`, `CarbonQuery`, `query()`,
+`compileQueryResult()`, `adaptCompileResult()`, `C6C`, `C6`, `CarbonQuery`, `query()`,
 `fromTable()`, `subselect()`, `derivedTarget()`, `op()`, `lit()`, `param()`,
 `call()`, `alias()`, `distinct()`, `between()`, `inList()`, `existsSpec()`,
 `exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
@@ -492,7 +493,7 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 The Ruby extension wraps the same compile result shape from
 `bindings/ruby/carbon_ruby.c` as a `Hash` with string keys, including
 `diagnostics_json`. The
-`bindings/ruby/carbon_codegen.rb` helper adds `CarbonC::Query`,
+`bindings/ruby/carbon_codegen.rb` helper adds `CarbonC::C6C` / `CarbonC::C6`, `CarbonC::Query`,
 `CarbonC.compile_query_value` for native hashes, typed result adapters, and Ruby
 Struct model source over
 `CarbonC.schema_metadata`:
@@ -501,23 +502,7 @@ Struct model source over
 require 'json'
 require_relative './bindings/ruby/carbon_codegen'
 
-typed_result = CarbonC.query('actor')
-                      .select('actor.actor_id')
-                      .where({'actor.actor_id' => ['>', 10]})
-                      .limit(5)
-                      .compile(
-                        {'TABLES' => {'actor' => {'COLUMNS' => {'actor.actor_id' => 'actor_id'}}}},
-                        'mysql'
-                      )
-metadata_json = CarbonC.schema_metadata(JSON.generate({
-  'TABLES' => {
-    'actor' => {
-      'PRIMARY_SHORT' => ['actor_id'],
-      'COLUMNS' => {'actor.actor_id' => 'actor_id'}
-    }
-  }
-}))
-model_source = CarbonC.schema_models({
+schema = {
   'TABLES' => {
     'actor' => {
       'PRIMARY_SHORT' => ['actor_id'],
@@ -531,7 +516,20 @@ model_source = CarbonC.schema_models({
       }
     }
   }
-})
+}
+eval(CarbonC.schema_models(schema))
+
+typed_result = CarbonC.query(CarbonModels::Actor::TABLE)
+                      .select(CarbonModels::Actor::ACTOR_ID)
+                      .where_op(
+                        CarbonModels::Actor::ACTOR_ID,
+                        CarbonC::C6C::GREATER_THAN,
+                        10
+                      )
+                      .limit(5)
+                      .compile(schema, 'mysql')
+metadata_json = CarbonC.schema_metadata(JSON.generate(schema))
+model_source = CarbonC.schema_models(schema)
 ```
 
 `CarbonC::Query#to_payload` returns the canonical hash sent through the C JSON
@@ -548,8 +546,9 @@ helpers (`index_hints`, `force_index`, `use_index`, `ignore_index`), limit/page,
 and order controls.
 `CarbonC.compile_query_result` returns the same fields as the raw
 result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
-Struct source includes `TYPES` and `NULLABLE` metadata constants for runtime
-consumers. Runtime helpers such as `CarbonC.model_query`,
+Struct source includes `TABLE`, `PRIMARY`, `COLUMNS`, direct column constants
+such as `CarbonModels::Actor::ACTOR_ID`, plus `TYPES` and `NULLABLE` metadata
+constants for runtime consumers. Runtime helpers such as `CarbonC.model_query`,
 `CarbonC.model_select`, and `CarbonC.model_column` consume generated constants
 or metadata hashes to build schema-backed `CarbonC::Query` payloads.
 
@@ -564,7 +563,8 @@ ruby examples/ruby/example.rb
 The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.status_code`, `CarbonC.status_message`, `CarbonC.compile_query`,
 `CarbonC.compile_query_value`, `CarbonC.compile_query_result`,
-`CarbonC.adapt_compile_result`, `CarbonC.query`, `CarbonC.from_table`,
+`CarbonC.adapt_compile_result`, `CarbonC::C6C`, `CarbonC::C6`,
+`CarbonC.query`, `CarbonC.from_table`,
 `CarbonC.subselect`, `CarbonC.derived_target`, `CarbonC.op`, `CarbonC.lit`,
 `CarbonC.param`, `CarbonC.call`, `CarbonC.alias_expression`,
 `CarbonC.distinct`, `CarbonC.between`, `CarbonC.in_list`,

@@ -35,9 +35,11 @@ schema = {
   }
 }
 
-result = CarbonC.query('actor')
-                .select('actor.actor_id', 'actor.first_name')
-                .where({'actor.actor_id' => ['>', 10]})
+eval(CarbonC.schema_models(schema))
+
+result = CarbonC.query(CarbonModels::Actor::TABLE)
+                .select(CarbonModels::Actor::ACTOR_ID, CarbonModels::Actor::FIRST_NAME)
+                .where_op(CarbonModels::Actor::ACTOR_ID, CarbonC::C6C::GREATER_THAN, 10)
                 .limit(5)
                 .compile(schema, 'mysql')
 

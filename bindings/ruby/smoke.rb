@@ -43,6 +43,8 @@ query = {
 raise 'unexpected version' unless CarbonC.version == '0.1.0'
 raise 'unexpected status code' unless CarbonC.status_code(3) == 'invalid_query'
 raise 'unexpected status message' unless CarbonC.status_message(0) == 'ok'
+raise 'unexpected C6C FROM constant' unless CarbonC::C6C::FROM == 'FROM'
+raise 'unexpected C6C GREATER_THAN constant' unless CarbonC::C6C::GREATER_THAN == '>'
 
 result = CarbonC.compile_query(JSON.generate(query), JSON.generate(schema), 'mysql')
 
@@ -181,7 +183,7 @@ end
 raise "unexpected derived params: #{derived.fetch('params').inspect}" unless derived.fetch('params') == [10, 100]
 sales_query = CarbonC.query('parcel_sales')
                      .select('parcel_sales.parcel_id')
-                     .where_op('parcel_sales.sale_price', '>', 5000)
+                     .where_op('parcel_sales.sale_price', CarbonC::C6C::GREATER_THAN, 5000)
 expected_alias_payload = [
   'AS',
   ['COUNT', 'parcel_sales.parcel_id'],
@@ -460,14 +462,20 @@ raise "unexpected metadata: #{metadata.inspect}" unless metadata == expected_met
 models = CarbonC.schema_models(schema)
 raise "unexpected model source: #{models}" unless models.include?('module CarbonModels')
 raise "unexpected model source: #{models}" unless models.include?('Actor = Struct.new(:actor_id, :first_name, keyword_init: true)')
+raise "unexpected model source: #{models}" unless models.include?('Actor::ACTOR_ID = "actor.actor_id"')
+raise "unexpected model source: #{models}" unless models.include?('Actor::FIRST_NAME = "actor.first_name"')
 raise "unexpected model source: #{models}" unless models.include?('PRIMARY = ["actor_id"].freeze')
-raise "unexpected model source: #{models}" unless models.include?('"actor_id" => "actor.actor_id"')
+raise "unexpected model source: #{models}" unless models.include?('"actor_id" => Actor::ACTOR_ID')
 raise "unexpected model source: #{models}" unless models.include?('TYPES = {')
 raise "unexpected model source: #{models}" unless models.include?('"actor_id" => :integer')
 raise "unexpected model source: #{models}" unless models.include?('NULLABLE = {')
 raise "unexpected model source: #{models}" unless models.include?('"actor_id" => false')
 eval(models)
 raise 'unexpected model table' unless CarbonC.model_table(CarbonModels::Actor) == 'actor'
+raise 'unexpected generated TABLE constant' unless CarbonModels::Actor::TABLE == 'actor'
+raise 'unexpected generated ACTOR_ID constant' unless CarbonModels::Actor::ACTOR_ID == 'actor.actor_id'
+raise 'unexpected generated FIRST_NAME constant' unless CarbonModels::Actor::FIRST_NAME == 'actor.first_name'
+raise 'unexpected generated COLUMNS constant value' unless CarbonModels::Actor::COLUMNS['actor_id'] == CarbonModels::Actor::ACTOR_ID
 unless CarbonC.model_column(CarbonModels::Actor, 'first_name') == 'actor.first_name'
   raise 'unexpected model column'
 end
@@ -478,8 +486,18 @@ expected_model_select_payload = {
 unless CarbonC.model_select(CarbonModels::Actor).to_payload == expected_model_select_payload
   raise "unexpected model select payload: #{CarbonC.model_select(CarbonModels::Actor).to_payload.inspect}"
 end
+constant_built = CarbonC.query(CarbonModels::Actor::TABLE)
+                        .select(CarbonModels::Actor::ACTOR_ID, CarbonModels::Actor::FIRST_NAME)
+                        .where_op(CarbonModels::Actor::ACTOR_ID, CarbonC::C6C::GREATER_THAN, 0)
+                        .order_by(CarbonModels::Actor::FIRST_NAME, CarbonC::C6C::ASC)
+                        .limit(1)
+                        .compile(schema, 'mysql')
+unless constant_built.fetch('sql') == 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 1'
+  raise "unexpected constant-built query sql: #{constant_built.fetch('sql')}"
+end
+raise "unexpected constant-built query params: #{constant_built.fetch('params').inspect}" unless constant_built.fetch('params') == [0]
 model_built = CarbonC.model_select(CarbonModels::Actor, 'actor_id')
-                     .where_op('actor.actor_id', '>', 0)
+                     .where_op(CarbonModels::Actor::ACTOR_ID, CarbonC::C6C::GREATER_THAN, 0)
                      .limit(1)
                      .compile(schema, 'mysql')
 unless model_built.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1'
