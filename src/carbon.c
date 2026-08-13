@@ -5367,6 +5367,147 @@ void carbon_compile_result_free(carbon_compile_result *result) {
     result->status = CARBON_STATUS_OK;
 }
 
+static const char *carbon_diagnostic_message(const carbon_compile_result *result) {
+    if (result == NULL) {
+        return "compile result is required";
+    }
+    if (result->error.data != NULL && result->error.length > 0) {
+        return result->error.data;
+    }
+    return carbon_status_message(result->status);
+}
+
+static const char *carbon_diagnostic_source(carbon_status status, const char *message) {
+    if (status == CARBON_STATUS_UNSUPPORTED_DIALECT) {
+        return "dialect";
+    }
+    if (message == NULL) {
+        return "query";
+    }
+    if (strstr(message, "schema") != NULL
+        || strstr(message, "primary key metadata") != NULL
+        || strstr(message, "not present in schema") != NULL) {
+        return "schema";
+    }
+    if (strstr(message, "dialect") != NULL) {
+        return "dialect";
+    }
+    if (status == CARBON_STATUS_OUT_OF_MEMORY) {
+        return "runtime";
+    }
+    return "query";
+}
+
+static const char *carbon_diagnostic_path(carbon_status status, const char *message) {
+    if (status == CARBON_STATUS_UNSUPPORTED_DIALECT
+        || (message != NULL && strstr(message, "dialect") != NULL)) {
+        return "$.dialect";
+    }
+    if (message == NULL) {
+        return "$";
+    }
+    if (strcmp(message, "schema_json must be an object") == 0) {
+        return "$schema";
+    }
+    if (strcmp(message, "schema C6 must be an object") == 0) {
+        return "$schema.C6";
+    }
+    if (strcmp(message, "schema TABLES must be an object") == 0) {
+        return "$schema.TABLES";
+    }
+    if (strstr(message, "primary key metadata") != NULL) {
+        return "$schema.TABLES.*.PRIMARY_SHORT";
+    }
+    if (strcmp(message, "FROM/table is required") == 0
+        || strcmp(message, "invalid table identifier") == 0
+        || strcmp(message, "table is not present in schema") == 0) {
+        return "$.FROM";
+    }
+    if (strstr(message, "JOIN") != NULL || strstr(message, "joined writes") != NULL) {
+        return "$.JOIN";
+    }
+    if (strstr(message, "query_json") != NULL || strstr(message, "query json") != NULL) {
+        return "$";
+    }
+    return "$";
+}
+
+carbon_status carbon_compile_result_diagnostics_json(
+        const carbon_compile_result *result,
+        carbon_buffer *out,
+        carbon_buffer *error) {
+    carbon_string_builder json = {0};
+    carbon_status status;
+    const char *status_code;
+    const char *message;
+
+    if (out == NULL) {
+        if (error != NULL) {
+            carbon_buffer_init(error);
+            carbon_buffer_set(error, "diagnostics output buffer is required");
+        }
+        return CARBON_STATUS_INVALID_ARGUMENT;
+    }
+    carbon_buffer_init(out);
+    if (error != NULL) {
+        carbon_buffer_init(error);
+    }
+    if (result == NULL) {
+        if (error != NULL) {
+            carbon_buffer_set(error, "compile result is required");
+        }
+        return CARBON_STATUS_INVALID_ARGUMENT;
+    }
+
+    status = result->status;
+    status_code = carbon_status_code(status);
+    message = carbon_diagnostic_message(result);
+
+    if (!carbon_builder_append(&json, "{\"status\":")
+        || !carbon_builder_append_format(&json, "%d", (int) status)
+        || !carbon_builder_append(&json, ",\"status_code\":")
+        || !carbon_builder_append_json_string(&json, status_code)
+        || !carbon_builder_append(&json, status == CARBON_STATUS_OK ? ",\"ok\":true" : ",\"ok\":false")
+        || !carbon_builder_append(&json, ",\"diagnostics\":[")) {
+        carbon_builder_free(&json);
+        if (error != NULL) {
+            carbon_buffer_set(error, carbon_status_message(CARBON_STATUS_OUT_OF_MEMORY));
+        }
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+
+    if (status != CARBON_STATUS_OK) {
+        if (!carbon_builder_append(&json, "{\"severity\":\"error\",\"code\":")
+            || !carbon_builder_append_json_string(&json, status_code)
+            || !carbon_builder_append(&json, ",\"message\":")
+            || !carbon_builder_append_json_string(&json, message)
+            || !carbon_builder_append(&json, ",\"source\":")
+            || !carbon_builder_append_json_string(&json, carbon_diagnostic_source(status, message))
+            || !carbon_builder_append(&json, ",\"path\":")
+            || !carbon_builder_append_json_string(&json, carbon_diagnostic_path(status, message))
+            || !carbon_builder_append_char(&json, '}')) {
+            carbon_builder_free(&json);
+            if (error != NULL) {
+                carbon_buffer_set(error, carbon_status_message(CARBON_STATUS_OUT_OF_MEMORY));
+            }
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+    }
+
+    if (!carbon_builder_append(&json, "]}")
+        || !carbon_buffer_take_builder(out, &json)) {
+        carbon_builder_free(&json);
+        if (error != NULL) {
+            carbon_buffer_set(error, carbon_status_message(CARBON_STATUS_OUT_OF_MEMORY));
+        }
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    if (error != NULL) {
+        carbon_buffer_set(error, "");
+    }
+    return CARBON_STATUS_OK;
+}
+
 carbon_status carbon_schema_metadata(
         const char *schema_json,
         size_t schema_json_length,

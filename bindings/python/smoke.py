@@ -53,6 +53,12 @@ def main() -> None:
         "SELECT actor.actor_id, actor.first_name FROM `actor` "
         "WHERE (actor.actor_id) > ? LIMIT ?"
     )
+    assert json.loads(result["diagnostics_json"]) == {
+        "status": 0,
+        "status_code": "ok",
+        "ok": True,
+        "diagnostics": [],
+    }
     metadata = json.loads(carbon.schema_metadata(json.dumps(schema)))
     assert metadata == {
         "tables": [
@@ -100,6 +106,29 @@ def main() -> None:
     )
     assert rejected["status"] == 3, rejected
     assert rejected["status_code"] == "invalid_query", rejected
+
+    rejected_table = carbon.compile_query(
+        json.dumps({"FROM": "film", "SELECT": ["film.film_id"]}),
+        schema_json=json.dumps(schema),
+        dialect="mysql",
+    )
+    assert rejected_table["status"] == 3, rejected_table
+    assert rejected_table["status_code"] == "invalid_query", rejected_table
+    assert rejected_table["error"] == "table is not present in schema", rejected_table
+    assert json.loads(rejected_table["diagnostics_json"]) == {
+        "status": 3,
+        "status_code": "invalid_query",
+        "ok": False,
+        "diagnostics": [
+            {
+                "severity": "error",
+                "code": "invalid_query",
+                "message": "table is not present in schema",
+                "source": "schema",
+                "path": "$.FROM",
+            }
+        ],
+    }
 
     assert carbon.status_code(3) == "invalid_query"
     assert carbon.normalize_allowlist_sql("SELECT * FROM `actor` LIMIT 10") == "SELECT * FROM `actor` LIMIT ?"

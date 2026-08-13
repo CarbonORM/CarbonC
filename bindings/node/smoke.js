@@ -57,6 +57,12 @@ assert.strictEqual(
   result.allowlist_key,
   'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? LIMIT ?'
 );
+assert.deepStrictEqual(JSON.parse(result.diagnostics_json), {
+  status: 0,
+  status_code: 'ok',
+  ok: true,
+  diagnostics: [],
+});
 assert.deepStrictEqual(JSON.parse(carbon.schemaMetadata(JSON.stringify(schema))), {
   tables: [
     {
@@ -112,6 +118,29 @@ const rejected = carbon.compileQuery(
 assert.strictEqual(rejected.status, 3, JSON.stringify(rejected));
 assert.strictEqual(rejected.status_code, 'invalid_query', JSON.stringify(rejected));
 assert.strictEqual(rejected.error, 'invalid query');
+
+const rejectedTable = carbon.compileQuery(
+  JSON.stringify({FROM: 'film', SELECT: ['film.film_id']}),
+  JSON.stringify(schema),
+  'mysql'
+);
+assert.strictEqual(rejectedTable.status, 3, JSON.stringify(rejectedTable));
+assert.strictEqual(rejectedTable.status_code, 'invalid_query', JSON.stringify(rejectedTable));
+assert.strictEqual(rejectedTable.error, 'table is not present in schema');
+assert.deepStrictEqual(JSON.parse(rejectedTable.diagnostics_json), {
+  status: 3,
+  status_code: 'invalid_query',
+  ok: false,
+  diagnostics: [
+    {
+      severity: 'error',
+      code: 'invalid_query',
+      message: 'table is not present in schema',
+      source: 'schema',
+      path: '$.FROM',
+    },
+  ],
+});
 
 assert.strictEqual(
   carbon.normalizeAllowlistSql('SELECT * FROM `actor` LIMIT 10'),

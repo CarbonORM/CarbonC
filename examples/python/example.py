@@ -49,5 +49,6 @@ if result["status"] != 0:
 print(result["sql"])
 print(result["params_json"])
 print(result["allowlist_key"])
+print(result["diagnostics_json"])
 print(carbon.schema_metadata(json.dumps(schema)))
 print(carbon_codegen.schema_models(schema))

@@ -51,5 +51,6 @@ if (result.status !== 0) {
 console.log(result.sql);
 console.log(result.params_json);
 console.log(result.allowlist_key);
+console.log(result.diagnostics_json);
 console.log(carbon.schemaMetadata(JSON.stringify(schema)));
 console.log(carbon.schemaModels(schema));

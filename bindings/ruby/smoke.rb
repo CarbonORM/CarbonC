@@ -55,6 +55,14 @@ raise "unexpected params: #{result.fetch('params_json')}" unless result.fetch('p
 unless result.fetch('allowlist_key') == 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? LIMIT ?'
   raise "unexpected allowlist: #{result.fetch('allowlist_key')}"
 end
+diagnostics = JSON.parse(result.fetch('diagnostics_json'))
+expected_diagnostics = {
+  'status' => 0,
+  'status_code' => 'ok',
+  'ok' => true,
+  'diagnostics' => []
+}
+raise "unexpected success diagnostics: #{diagnostics.inspect}" unless diagnostics == expected_diagnostics
 metadata = JSON.parse(CarbonC.schema_metadata(JSON.generate(schema)))
 expected_metadata = {
   'tables' => [
@@ -103,6 +111,37 @@ rejected = CarbonC.compile_query(
 raise "expected invalid query rejection: #{rejected.inspect}" unless rejected.fetch('status') == 3
 raise "unexpected rejection status code: #{rejected.inspect}" unless rejected.fetch('status_code') == 'invalid_query'
 raise "unexpected rejection message: #{rejected.inspect}" unless rejected.fetch('error') == 'invalid query'
+
+rejected_table = CarbonC.compile_query(
+  JSON.generate({'FROM' => 'film', 'SELECT' => ['film.film_id']}),
+  JSON.generate(schema),
+  'mysql'
+)
+raise "expected invalid table rejection: #{rejected_table.inspect}" unless rejected_table.fetch('status') == 3
+unless rejected_table.fetch('status_code') == 'invalid_query'
+  raise "unexpected table rejection status code: #{rejected_table.inspect}"
+end
+unless rejected_table.fetch('error') == 'table is not present in schema'
+  raise "unexpected table rejection message: #{rejected_table.inspect}"
+end
+rejected_diagnostics = JSON.parse(rejected_table.fetch('diagnostics_json'))
+expected_rejected_diagnostics = {
+  'status' => 3,
+  'status_code' => 'invalid_query',
+  'ok' => false,
+  'diagnostics' => [
+    {
+      'severity' => 'error',
+      'code' => 'invalid_query',
+      'message' => 'table is not present in schema',
+      'source' => 'schema',
+      'path' => '$.FROM'
+    }
+  ]
+}
+unless rejected_diagnostics == expected_rejected_diagnostics
+  raise "unexpected table rejection diagnostics: #{rejected_diagnostics.inspect}"
+end
 
 unless CarbonC.normalize_allowlist_sql('SELECT * FROM `actor` LIMIT 10') == 'SELECT * FROM `actor` LIMIT ?'
   raise 'unexpected allowlist normalization'

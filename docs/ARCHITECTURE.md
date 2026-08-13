@@ -39,7 +39,7 @@ This keeps the C ABI stable and keeps each language package idiomatic.
 native binding object
   -> canonical JSON or MessagePack payload
   -> CarbonC compile/validate function
-  -> SQL + params + allowlist key + status/status_code diagnostics
+  -> SQL + params + allowlist key + status/status_code + diagnostics JSON
   -> native driver executes prepared statement
 
 schema JSON -> CarbonC schema metadata normalizer -> native type generator
@@ -137,11 +137,16 @@ qualified or short keys for the same normalized column. Derived aliases are
 validated as JOIN-visible qualifiers while their projected columns stay owned by
 the nested `SUBSELECT`. Empty or absent schema metadata keeps the previous
 syntax-only behavior so language bindings can adopt the validator incrementally.
+Compile failures can be projected through `carbon_compile_result_diagnostics_json()`
+as deterministic JSON with severity, machine code, source, and JSON-style path
+fields so bindings can display actionable errors without depending on C struct
+layout changes.
 
 ## Direction
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
-wrappers and package-level typed source generators. The next implementation
-step is to add binding-friendly diagnostic paths, cover schema-aware write
-normalization edge cases, and improve package-level ergonomics.
+wrappers, package-level typed source generators, and binding-friendly diagnostic
+JSON. The next implementation step is to cover additional C6 grammar and
+schema-aware write normalization edge cases while improving package-level
+ergonomics.

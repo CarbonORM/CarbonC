@@ -57,5 +57,6 @@ if ($result['status'] !== 0) {
 echo $result['sql'] . PHP_EOL;
 echo $result['params_json'] . PHP_EOL;
 echo $result['allowlist_key'] . PHP_EOL;
+echo $result['diagnostics_json'] . PHP_EOL;
 echo carbon_schema_metadata(json_encode($schema)) . PHP_EOL;
 echo carbon_schema_models($schema, 'CarbonORM\\Generated') . PHP_EOL;

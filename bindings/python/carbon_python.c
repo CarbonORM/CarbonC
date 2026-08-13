@@ -36,8 +36,31 @@ static PyObject *carbon_py_status_code(PyObject *self, PyObject *args) {
 }
 
 static PyObject *carbon_py_result_dict(const carbon_compile_result *result) {
-    return Py_BuildValue(
-            "{s:i,s:s,s:s#,s:s#,s:s#,s:s#}",
+    carbon_buffer diagnostics;
+    carbon_buffer error;
+    carbon_status status;
+    PyObject *dict;
+
+    status = carbon_compile_result_diagnostics_json(result, &diagnostics, &error);
+    if (status == CARBON_STATUS_OUT_OF_MEMORY) {
+        carbon_buffer_free(&diagnostics);
+        carbon_buffer_free(&error);
+        return PyErr_NoMemory();
+    }
+    if (status != CARBON_STATUS_OK) {
+        PyObject *message = PyUnicode_FromString(error.data == NULL ? carbon_status_message(status) : error.data);
+        carbon_buffer_free(&diagnostics);
+        carbon_buffer_free(&error);
+        if (message == NULL) {
+            return NULL;
+        }
+        PyErr_SetObject(PyExc_ValueError, message);
+        Py_DECREF(message);
+        return NULL;
+    }
+
+    dict = Py_BuildValue(
+            "{s:i,s:s,s:s#,s:s#,s:s#,s:s#,s:s#}",
             "status", (int) result->status,
             "status_code", carbon_status_code(result->status),
             "sql", result->sql.data == NULL ? "" : result->sql.data, (Py_ssize_t) result->sql.length,
@@ -45,7 +68,11 @@ static PyObject *carbon_py_result_dict(const carbon_compile_result *result) {
             (Py_ssize_t) result->params_json.length,
             "allowlist_key", result->allowlist_key.data == NULL ? "" : result->allowlist_key.data,
             (Py_ssize_t) result->allowlist_key.length,
-            "error", result->error.data == NULL ? "" : result->error.data, (Py_ssize_t) result->error.length);
+            "error", result->error.data == NULL ? "" : result->error.data, (Py_ssize_t) result->error.length,
+            "diagnostics_json", diagnostics.data == NULL ? "" : diagnostics.data, (Py_ssize_t) diagnostics.length);
+    carbon_buffer_free(&diagnostics);
+    carbon_buffer_free(&error);
+    return dict;
 }
 
 static PyObject *carbon_py_compile_query(PyObject *self, PyObject *args, PyObject *kwargs) {

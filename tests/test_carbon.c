@@ -19,6 +19,18 @@ static void assert_buffer_equals(const carbon_buffer *buffer, const char *expect
     assert(buffer->length == strlen(expected));
 }
 
+static void assert_compile_diagnostics_equals(const carbon_compile_result *result, const char *expected) {
+    carbon_buffer diagnostics;
+    carbon_buffer error;
+
+    assert(carbon_compile_result_diagnostics_json(result, &diagnostics, &error) == CARBON_STATUS_OK);
+    assert_buffer_equals(&diagnostics, expected);
+    assert_buffer_equals(&error, "");
+
+    carbon_buffer_free(&diagnostics);
+    carbon_buffer_free(&error);
+}
+
 static void test_version(void) {
     assert(strcmp(carbon_version(), "0.1.0") == 0);
     assert(strcmp(carbon_hello_world(), "CarbonC portable kernel") == 0);
@@ -56,6 +68,9 @@ static void test_mysql_select_where_limit(void) {
     assert_buffer_equals(&result.params_json, "[42]");
     assert_buffer_equals(&result.allowlist_key,
                          "SELECT user_id, user_email FROM `carbon_users` WHERE (user_id) = ? LIMIT ?");
+    assert_compile_diagnostics_equals(
+            &result,
+            "{\"status\":0,\"status_code\":\"ok\",\"ok\":true,\"diagnostics\":[]}");
 
     carbon_compile_result_free(&result);
     carbon_context_free(context);
@@ -915,6 +930,11 @@ static void test_schema_rejects_unknown_table(void) {
     assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
     assert(result.status == CARBON_STATUS_INVALID_QUERY);
     assert_buffer_equals(&result.error, "table is not present in schema");
+    assert_compile_diagnostics_equals(
+            &result,
+            "{\"status\":3,\"status_code\":\"invalid_query\",\"ok\":false,"
+            "\"diagnostics\":[{\"severity\":\"error\",\"code\":\"invalid_query\","
+            "\"message\":\"table is not present in schema\",\"source\":\"schema\",\"path\":\"$.FROM\"}]}");
 
     carbon_compile_result_free(&result);
     carbon_context_free(context);

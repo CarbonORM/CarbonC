@@ -150,12 +150,35 @@ Primary entrypoints:
 - `carbon_status_code()`
 - `carbon_status_message()`
 - `carbon_compile_query()`
+- `carbon_compile_result_diagnostics_json()`
 - `carbon_schema_metadata()`
 - `carbon_compile_result_free()`
 - `carbon_normalize_allowlist_sql()`
 
 All buffers returned by CarbonC are owned by the caller and must be released
 with `carbon_buffer_free()` or `carbon_compile_result_free()`.
+
+`carbon_compile_result_diagnostics_json()` returns a deterministic diagnostic
+document for language bindings. Successful compiles include an empty
+`diagnostics` array; failed compiles include a stable status code plus a
+binding-friendly `source` and JSON-style `path`:
+
+```json
+{
+  "status": 3,
+  "status_code": "invalid_query",
+  "ok": false,
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "invalid_query",
+      "message": "table is not present in schema",
+      "source": "schema",
+      "path": "$.FROM"
+    }
+  ]
+}
+```
 
 `carbon_schema_metadata()` returns a canonical JSON shape that package-level
 generators can turn into native models or types. When the input schema includes
@@ -205,9 +228,9 @@ ctest --test-dir build --output-on-failure
 
 The Python binding wraps the same C ABI from
 `bindings/python/carbon_python.c` and returns a plain Python `dict` with
-`status`, `status_code`, `sql`, `params_json`, `allowlist_key`, and `error`
-fields. `bindings/python/carbon_codegen.py` adds package-level source
-generation helpers over the normalized schema metadata:
+`status`, `status_code`, `sql`, `params_json`, `allowlist_key`, `error`, and
+`diagnostics_json` fields. `bindings/python/carbon_codegen.py` adds
+package-level source generation helpers over the normalized schema metadata:
 
 ```python
 import json
@@ -262,7 +285,8 @@ PYTHONPATH=bindings/python python3 bindings/python/smoke.py
 ## PHP Binding
 
 The PHP extension wraps the same compile result shape from
-`bindings/php/carbon_php.c` as an associative array. The
+`bindings/php/carbon_php.c` as an associative array, including
+`diagnostics_json`. The
 `bindings/php/carbon_codegen.php` helper generates native PHP model class
 source over `carbon_schema_metadata()`:
 
@@ -326,7 +350,8 @@ The extension exposes `carbon_version()`, `carbon_hello_world()`,
 
 The Node binding uses plain N-API from `bindings/node/carbon_node.cpp` and
 exports camelCase methods plus snake_case aliases. `bindings/node/index.js`
-adds a package-level TypeScript source generator:
+adds a package-level TypeScript source generator. Compile results include
+`diagnostics_json` beside the status, SQL, params, allowlist, and error fields:
 
 ```js
 const carbon = require('./bindings/node');
@@ -386,7 +411,8 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 ## Ruby Binding
 
 The Ruby extension wraps the same compile result shape from
-`bindings/ruby/carbon_ruby.c` as a `Hash` with string keys. The
+`bindings/ruby/carbon_ruby.c` as a `Hash` with string keys, including
+`diagnostics_json`. The
 `bindings/ruby/carbon_codegen.rb` helper generates Ruby Struct model source
 over `CarbonC.schema_metadata`:
 
@@ -448,7 +474,7 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 ## Next Milestones
 
-1. Expand schema validation to binding-friendly diagnostic paths.
-2. Add package-level ergonomics for each binding without moving DB execution
+1. Add package-level ergonomics for each binding without moving DB execution
    into C.
-3. Add structured diagnostic paths for binding-friendly errors.
+2. Expand the remaining CarbonNode C6 grammar behind golden fixtures.
+3. Add richer multi-diagnostic reporting for validation batches.

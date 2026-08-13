@@ -78,6 +78,16 @@ carbon_status carbon_compile_query(
         carbon_compile_result *result);
 
 /*
+ * Builds a binding-friendly diagnostic JSON document from a compile result.
+ * The result struct layout stays unchanged; language bindings can expose this
+ * string alongside the existing status, status_code, and error fields.
+ */
+carbon_status carbon_compile_result_diagnostics_json(
+        const carbon_compile_result *result,
+        carbon_buffer *out,
+        carbon_buffer *error);
+
+/*
  * Normalizes C6 schema metadata into a deterministic JSON shape for generated
  * binding types. The output contains a tables array, each with name, ordered
  * columns, and primary key columns. The output buffers are initialized by this

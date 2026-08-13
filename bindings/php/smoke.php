@@ -65,6 +65,16 @@ carbon_assert(
     $result['allowlist_key'] === 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? LIMIT ?',
     'unexpected allowlist: ' . $result['allowlist_key']
 );
+$diagnostics = json_decode($result['diagnostics_json'], true);
+carbon_assert(
+    $diagnostics === [
+        'status' => 0,
+        'status_code' => 'ok',
+        'ok' => true,
+        'diagnostics' => [],
+    ],
+    'unexpected success diagnostics: ' . $result['diagnostics_json']
+);
 $metadata = json_decode(carbon_schema_metadata(json_encode($schema)), true);
 carbon_assert(
     $metadata === [
@@ -116,6 +126,39 @@ carbon_assert($rejected['status'] === 3, 'expected invalid query rejection: ' . 
 carbon_assert(
     $rejected['status_code'] === 'invalid_query',
     'unexpected rejection status code: ' . json_encode($rejected)
+);
+
+$rejectedTable = carbon_compile_query(
+    json_encode(['FROM' => 'film', 'SELECT' => ['film.film_id']]),
+    json_encode($schema),
+    'mysql'
+);
+carbon_assert($rejectedTable['status'] === 3, 'expected invalid table rejection: ' . json_encode($rejectedTable));
+carbon_assert(
+    $rejectedTable['status_code'] === 'invalid_query',
+    'unexpected table rejection status code: ' . json_encode($rejectedTable)
+);
+carbon_assert(
+    $rejectedTable['error'] === 'table is not present in schema',
+    'unexpected table rejection message: ' . json_encode($rejectedTable)
+);
+$rejectedDiagnostics = json_decode($rejectedTable['diagnostics_json'], true);
+carbon_assert(
+    $rejectedDiagnostics === [
+        'status' => 3,
+        'status_code' => 'invalid_query',
+        'ok' => false,
+        'diagnostics' => [
+            [
+                'severity' => 'error',
+                'code' => 'invalid_query',
+                'message' => 'table is not present in schema',
+                'source' => 'schema',
+                'path' => '$.FROM',
+            ],
+        ],
+    ],
+    'unexpected table rejection diagnostics: ' . $rejectedTable['diagnostics_json']
 );
 
 carbon_assert(carbon_status_code(3) === 'invalid_query', 'unexpected direct status code');

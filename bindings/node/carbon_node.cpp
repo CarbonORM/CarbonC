@@ -228,7 +228,10 @@ static napi_value carbon_node_compile_query(napi_env env, napi_callback_info inf
     carbon_context *context = NULL;
     carbon_compile_request request;
     carbon_compile_result result;
+    carbon_buffer diagnostics = {NULL, 0};
+    carbon_buffer diagnostic_error = {NULL, 0};
     carbon_status status;
+    carbon_status diagnostic_status;
     napi_value object;
     bool ok = false;
 
@@ -302,6 +305,14 @@ static napi_value carbon_node_compile_query(napi_env env, napi_callback_info inf
         napi_throw_error(env, NULL, carbon_status_message(CARBON_STATUS_OUT_OF_MEMORY));
         goto cleanup;
     }
+    diagnostic_status = carbon_compile_result_diagnostics_json(&result, &diagnostics, &diagnostic_error);
+    if (diagnostic_status != CARBON_STATUS_OK) {
+        napi_throw_error(
+                env,
+                NULL,
+                diagnostic_error.data == NULL ? carbon_status_message(diagnostic_status) : diagnostic_error.data);
+        goto cleanup;
+    }
 
     if (napi_create_object(env, &object) != napi_ok) {
         napi_throw_error(env, NULL, "CarbonC failed to allocate result object");
@@ -313,9 +324,12 @@ static napi_value carbon_node_compile_query(napi_env env, napi_callback_info inf
             && carbon_node_set_string(env, object, "sql", &result.sql)
             && carbon_node_set_string(env, object, "params_json", &result.params_json)
             && carbon_node_set_string(env, object, "allowlist_key", &result.allowlist_key)
-            && carbon_node_set_string(env, object, "error", &result.error);
+            && carbon_node_set_string(env, object, "error", &result.error)
+            && carbon_node_set_string(env, object, "diagnostics_json", &diagnostics);
 
 cleanup:
+    carbon_buffer_free(&diagnostics);
+    carbon_buffer_free(&diagnostic_error);
     carbon_compile_result_free(&result);
     carbon_context_free(context);
     free(query_json);

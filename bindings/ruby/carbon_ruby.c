@@ -43,7 +43,10 @@ static VALUE carbon_ruby_compile_query(int argc, VALUE *argv, VALUE self) {
     carbon_context *context;
     carbon_compile_request request;
     carbon_compile_result result;
+    carbon_buffer diagnostics;
+    carbon_buffer diagnostic_error;
     carbon_status status;
+    carbon_status diagnostic_status;
     VALUE hash;
 
     (void) self;
@@ -81,6 +84,17 @@ static VALUE carbon_ruby_compile_query(int argc, VALUE *argv, VALUE self) {
         carbon_context_free(context);
         rb_memerror();
     }
+    diagnostic_status = carbon_compile_result_diagnostics_json(&result, &diagnostics, &diagnostic_error);
+    if (diagnostic_status != CARBON_STATUS_OK) {
+        VALUE exception = rb_exc_new2(
+                diagnostic_status == CARBON_STATUS_OUT_OF_MEMORY ? rb_eNoMemError : rb_eArgError,
+                diagnostic_error.data == NULL ? carbon_status_message(diagnostic_status) : diagnostic_error.data);
+        carbon_buffer_free(&diagnostics);
+        carbon_buffer_free(&diagnostic_error);
+        carbon_compile_result_free(&result);
+        carbon_context_free(context);
+        rb_exc_raise(exception);
+    }
 
     hash = rb_hash_new();
     carbon_ruby_hash_set(hash, "status", INT2NUM(result.status));
@@ -89,7 +103,10 @@ static VALUE carbon_ruby_compile_query(int argc, VALUE *argv, VALUE self) {
     carbon_ruby_hash_set(hash, "params_json", carbon_ruby_buffer_to_string(&result.params_json));
     carbon_ruby_hash_set(hash, "allowlist_key", carbon_ruby_buffer_to_string(&result.allowlist_key));
     carbon_ruby_hash_set(hash, "error", carbon_ruby_buffer_to_string(&result.error));
+    carbon_ruby_hash_set(hash, "diagnostics_json", carbon_ruby_buffer_to_string(&diagnostics));
 
+    carbon_buffer_free(&diagnostics);
+    carbon_buffer_free(&diagnostic_error);
     carbon_compile_result_free(&result);
     carbon_context_free(context);
 

@@ -76,7 +76,10 @@ PHP_FUNCTION(carbon_compile_query) {
         carbon_context *context;
         carbon_compile_request request;
         carbon_compile_result result;
+        carbon_buffer diagnostics;
+        carbon_buffer diagnostic_error;
         carbon_status status;
+        carbon_status diagnostic_status;
 
         ZEND_PARSE_PARAMETERS_START(1, 3)
                 Z_PARAM_STRING(query_json, query_json_length)
@@ -105,6 +108,18 @@ PHP_FUNCTION(carbon_compile_query) {
                 zend_throw_error(NULL, "%s", carbon_status_message(CARBON_STATUS_OUT_OF_MEMORY));
                 RETURN_THROWS();
         }
+        diagnostic_status = carbon_compile_result_diagnostics_json(&result, &diagnostics, &diagnostic_error);
+        if (diagnostic_status != CARBON_STATUS_OK) {
+                const char *message = diagnostic_error.data == NULL
+                        ? carbon_status_message(diagnostic_status)
+                        : diagnostic_error.data;
+                zend_throw_error(NULL, "%s", message);
+                carbon_buffer_free(&diagnostics);
+                carbon_buffer_free(&diagnostic_error);
+                carbon_compile_result_free(&result);
+                carbon_context_free(context);
+                RETURN_THROWS();
+        }
 
         array_init(return_value);
         add_assoc_long(return_value, "status", result.status);
@@ -113,7 +128,10 @@ PHP_FUNCTION(carbon_compile_query) {
         carbon_add_assoc_buffer(return_value, "params_json", &result.params_json);
         carbon_add_assoc_buffer(return_value, "allowlist_key", &result.allowlist_key);
         carbon_add_assoc_buffer(return_value, "error", &result.error);
+        carbon_add_assoc_buffer(return_value, "diagnostics_json", &diagnostics);
 
+        carbon_buffer_free(&diagnostics);
+        carbon_buffer_free(&diagnostic_error);
         carbon_compile_result_free(&result);
         carbon_context_free(context);
 }
