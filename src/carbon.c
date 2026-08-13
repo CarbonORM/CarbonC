@@ -884,6 +884,63 @@ static carbon_status carbon_append_condition_operand(
         carbon_json_span value,
         carbon_string_builder *sql);
 
+static carbon_status carbon_compile_select_statement(
+        carbon_compile_state *state,
+        carbon_json_span query,
+        int is_subselect,
+        carbon_string_builder *sql,
+        const char **error_message);
+
+static int carbon_extract_subselect_payload(carbon_json_span value, carbon_json_span *payload) {
+    carbon_json_span head_span;
+    char *head = NULL;
+    char *token = NULL;
+    size_t length;
+    int matched = 0;
+
+    value = carbon_trim_span(value);
+    if (!carbon_span_starts_with(value, '[')) {
+        return 0;
+    }
+    if (!carbon_array_count(value, &length)) {
+        return -1;
+    }
+    if (length != 2 || carbon_array_get(value, 0, &head_span) != 1) {
+        return 0;
+    }
+
+    head = carbon_span_string_copy(head_span);
+    token = head == NULL ? NULL : carbon_upper_copy(head);
+    if (token != NULL && strcmp(token, "SUBSELECT") == 0) {
+        matched = carbon_array_get(value, 1, payload) == 1 ? 1 : -1;
+    }
+
+    free(head);
+    free(token);
+    return matched;
+}
+
+static carbon_status carbon_append_scalar_subselect(
+        carbon_compile_state *state,
+        carbon_json_span payload,
+        carbon_string_builder *sql) {
+    carbon_status status;
+
+    payload = carbon_trim_span(payload);
+    if (!carbon_span_starts_with(payload, '{')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    if (!carbon_builder_append_char(sql, '(')) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    status = carbon_compile_select_statement(state, payload, 1, sql, NULL);
+    if (status != CARBON_STATUS_OK) {
+        return status;
+    }
+    return carbon_builder_append_char(sql, ')') ? CARBON_STATUS_OK : CARBON_STATUS_OUT_OF_MEMORY;
+}
+
 static carbon_status carbon_append_expression(
         carbon_compile_state *state,
         carbon_json_span value,
@@ -967,6 +1024,16 @@ static carbon_status carbon_append_expression(
             goto cleanup;
         }
 
+        if (strcmp(token, "SUBSELECT") == 0) {
+            carbon_json_span payload;
+            if (length != 2 || carbon_array_get(value, 1, &payload) != 1) {
+                status = CARBON_STATUS_INVALID_QUERY;
+                goto cleanup;
+            }
+            status = carbon_append_scalar_subselect(state, payload, sql);
+            goto cleanup;
+        }
+
         if (!carbon_identifier_valid(token) || strcmp(token, "*") == 0) {
             status = CARBON_STATUS_INVALID_QUERY;
             goto cleanup;
@@ -1044,6 +1111,18 @@ static carbon_status carbon_append_condition_operand(
         }
         free(identifier);
         return CARBON_STATUS_OK;
+    }
+
+    if (carbon_span_starts_with(value, '{')) {
+        static const char *const subselect_names[] = {"SUBSELECT", "subselect"};
+        carbon_json_span payload;
+        int found = carbon_object_get_any(value, subselect_names, 2, &payload);
+        if (found < 0) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        if (found > 0) {
+            return carbon_append_scalar_subselect(state, payload, sql);
+        }
     }
 
     if (carbon_span_is_scalar_json(value)) {
@@ -1126,10 +1205,12 @@ static carbon_status carbon_build_operator(
 
     if (strcmp(operator_sql, "IN") == 0 || strcmp(operator_sql, "NOT IN") == 0) {
         carbon_json_span values = right;
+        carbon_json_span subselect_payload;
         const char *cursor = NULL;
         carbon_json_span item;
         int next;
         int wrote = 0;
+        int subselect_match;
 
         if (!carbon_builder_append(sql, "( ")) {
             return CARBON_STATUS_OUT_OF_MEMORY;
@@ -1144,11 +1225,27 @@ static carbon_status carbon_build_operator(
                 return status;
             }
         }
-        if (!carbon_builder_append_format(sql, " %s (", operator_sql)) {
-            return CARBON_STATUS_OUT_OF_MEMORY;
-        }
         if (!carbon_span_starts_with(values, '[')) {
             return CARBON_STATUS_INVALID_QUERY;
+        }
+
+        subselect_match = carbon_extract_subselect_payload(values, &subselect_payload);
+        if (subselect_match < 0) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        if (subselect_match > 0) {
+            if (!carbon_builder_append_format(sql, " %s ", operator_sql)) {
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+            status = carbon_append_scalar_subselect(state, subselect_payload, sql);
+            if (status != CARBON_STATUS_OK) {
+                return status;
+            }
+            return carbon_builder_append(sql, " )") ? CARBON_STATUS_OK : CARBON_STATUS_OUT_OF_MEMORY;
+        }
+
+        if (!carbon_builder_append_format(sql, " %s (", operator_sql)) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
         }
         while ((next = carbon_array_next(values, &cursor, &item)) == 1) {
             if (wrote && !carbon_builder_append(sql, ", ")) {
@@ -2137,25 +2234,125 @@ carbon_status carbon_normalize_allowlist_sql(
     return CARBON_STATUS_OK;
 }
 
+static carbon_status carbon_compile_select_statement(
+        carbon_compile_state *state,
+        carbon_json_span query,
+        int is_subselect,
+        carbon_string_builder *sql,
+        const char **error_message) {
+    static const char *const table_names[] = {"FROM", "table"};
+    static const char *const where_names[] = {"WHERE", "where"};
+    carbon_json_span table_span;
+    carbon_json_span where_span;
+    char *table = NULL;
+    carbon_status status;
+    int has_pagination = 0;
+    int found;
+
+    query = carbon_trim_span(query);
+    if (!carbon_span_starts_with(query, '{')) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+
+    found = carbon_object_get_any(query, table_names, 2, &table_span);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        if (error_message != NULL) {
+            *error_message = "FROM/table is required";
+        }
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    table = carbon_span_string_copy(table_span);
+    if (table == NULL || !carbon_identifier_valid(table) || strcmp(table, "*") == 0) {
+        if (error_message != NULL) {
+            *error_message = "invalid table identifier";
+        }
+        free(table);
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    if (!carbon_builder_append(sql, "SELECT ")) {
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+
+    status = carbon_append_select_list(state, query, sql);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+
+    if (!carbon_builder_append(sql, " FROM ")
+        || !carbon_append_quoted_table(sql, state->dialect, table)) {
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+
+    status = carbon_append_join_clauses(state, query, sql);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+
+    found = carbon_object_get_any(query, where_names, 2, &where_span);
+    if (found < 0) {
+        status = CARBON_STATUS_INVALID_JSON;
+        goto cleanup;
+    }
+    if (found > 0) {
+        carbon_string_builder where = {0};
+        status = carbon_build_where_node(state, where_span, "AND", &where);
+        if (status != CARBON_STATUS_OK) {
+            carbon_builder_free(&where);
+            goto cleanup;
+        }
+        if (where.length > 0 && (!carbon_builder_append(sql, " WHERE ")
+                                 || !carbon_builder_append(sql, where.data))) {
+            carbon_builder_free(&where);
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto cleanup;
+        }
+        carbon_builder_free(&where);
+    }
+
+    status = carbon_append_group_by(state, query, sql);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+
+    status = carbon_append_having(state, query, sql);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+
+    status = carbon_append_pagination(state, query, sql, &has_pagination);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+    if (!is_subselect && !has_pagination && !carbon_builder_append(sql, " LIMIT 100")) {
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+
+cleanup:
+    free(table);
+    return status;
+}
+
 carbon_status carbon_compile_query(
         carbon_context *context,
         const carbon_compile_request *request,
         carbon_compile_result *result) {
     static const char *const dialect_names[] = {"dialect", "DIALECT"};
-    static const char *const table_names[] = {"FROM", "table"};
-    static const char *const where_names[] = {"WHERE", "where"};
     carbon_json_span query;
     carbon_json_span dialect_span;
-    carbon_json_span table_span;
-    carbon_json_span where_span;
     char *dialect_string = NULL;
-    char *table = NULL;
     carbon_dialect dialect;
     carbon_status status;
     carbon_string_builder sql = {0};
     carbon_string_builder params = {0};
     carbon_compile_state state;
-    int has_pagination = 0;
+    const char *error_message = NULL;
     int found;
 
     if (result == NULL) {
@@ -2196,86 +2393,18 @@ carbon_status carbon_compile_query(
                                        "%s", carbon_status_message(CARBON_STATUS_UNSUPPORTED_DIALECT));
     }
 
-    found = carbon_object_get_any(query, table_names, 2, &table_span);
-    if (found < 0) {
-        free(dialect_string);
-        return carbon_set_result_error(result, CARBON_STATUS_INVALID_JSON, "invalid query json");
-    }
-    if (found == 0) {
-        free(dialect_string);
-        return carbon_set_result_error(result, CARBON_STATUS_INVALID_QUERY, "FROM/table is required");
-    }
-    table = carbon_span_string_copy(table_span);
-    if (table == NULL || !carbon_identifier_valid(table) || strcmp(table, "*") == 0) {
-        free(dialect_string);
-        free(table);
-        return carbon_set_result_error(result, CARBON_STATUS_INVALID_QUERY, "invalid table identifier");
-    }
-
     state.dialect = dialect;
     state.sql = &sql;
     state.params = &params;
     state.param_count = 0;
 
-    if (!carbon_builder_append(&params, "[")
-        || !carbon_builder_append(&sql, "SELECT ")) {
+    if (!carbon_builder_append(&params, "[")) {
         status = CARBON_STATUS_OUT_OF_MEMORY;
         goto fail;
     }
 
-    status = carbon_append_select_list(&state, query, &sql);
+    status = carbon_compile_select_statement(&state, query, 0, &sql, &error_message);
     if (status != CARBON_STATUS_OK) {
-        goto fail;
-    }
-
-    if (!carbon_builder_append(&sql, " FROM ")
-        || !carbon_append_quoted_table(&sql, dialect, table)) {
-        status = CARBON_STATUS_OUT_OF_MEMORY;
-        goto fail;
-    }
-
-    status = carbon_append_join_clauses(&state, query, &sql);
-    if (status != CARBON_STATUS_OK) {
-        goto fail;
-    }
-
-    found = carbon_object_get_any(query, where_names, 2, &where_span);
-    if (found < 0) {
-        status = CARBON_STATUS_INVALID_JSON;
-        goto fail;
-    }
-    if (found > 0) {
-        carbon_string_builder where = {0};
-        status = carbon_build_where_node(&state, where_span, "AND", &where);
-        if (status != CARBON_STATUS_OK) {
-            carbon_builder_free(&where);
-            goto fail;
-        }
-        if (where.length > 0 && (!carbon_builder_append(&sql, " WHERE ")
-                                 || !carbon_builder_append(&sql, where.data))) {
-            carbon_builder_free(&where);
-            status = CARBON_STATUS_OUT_OF_MEMORY;
-            goto fail;
-        }
-        carbon_builder_free(&where);
-    }
-
-    status = carbon_append_group_by(&state, query, &sql);
-    if (status != CARBON_STATUS_OK) {
-        goto fail;
-    }
-
-    status = carbon_append_having(&state, query, &sql);
-    if (status != CARBON_STATUS_OK) {
-        goto fail;
-    }
-
-    status = carbon_append_pagination(&state, query, &sql, &has_pagination);
-    if (status != CARBON_STATUS_OK) {
-        goto fail;
-    }
-    if (!has_pagination && !carbon_builder_append(&sql, " LIMIT 100")) {
-        status = CARBON_STATUS_OUT_OF_MEMORY;
         goto fail;
     }
 
@@ -2294,14 +2423,13 @@ carbon_status carbon_compile_query(
     result->status = CARBON_STATUS_OK;
     carbon_buffer_set(&result->error, "");
     free(dialect_string);
-    free(table);
     return CARBON_STATUS_OK;
 
 fail:
     carbon_builder_free(&sql);
     carbon_builder_free(&params);
     free(dialect_string);
-    free(table);
     carbon_compile_result_free(result);
-    return carbon_set_result_error(result, status, "%s", carbon_status_message(status));
+    return carbon_set_result_error(result, status, "%s",
+                                   error_message == NULL ? carbon_status_message(status) : error_message);
 }

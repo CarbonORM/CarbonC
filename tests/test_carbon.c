@@ -239,6 +239,7 @@ static void test_golden_fixtures(void) {
     run_fixture("where-in-between");
     run_fixture("join-alias");
     run_fixture("group-having");
+    run_fixture("scalar-subselect");
 }
 
 int main(void) {
