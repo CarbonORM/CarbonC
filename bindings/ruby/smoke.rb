@@ -312,6 +312,26 @@ raise "unexpected model source: #{models}" unless models.include?('TYPES = {')
 raise "unexpected model source: #{models}" unless models.include?('"actor_id" => :integer')
 raise "unexpected model source: #{models}" unless models.include?('NULLABLE = {')
 raise "unexpected model source: #{models}" unless models.include?('"actor_id" => false')
+eval(models)
+raise 'unexpected model table' unless CarbonC.model_table(CarbonModels::Actor) == 'actor'
+unless CarbonC.model_column(CarbonModels::Actor, 'first_name') == 'actor.first_name'
+  raise 'unexpected model column'
+end
+expected_model_select_payload = {
+  'FROM' => 'actor',
+  'SELECT' => ['actor.actor_id', 'actor.first_name']
+}
+unless CarbonC.model_select(CarbonModels::Actor).to_payload == expected_model_select_payload
+  raise "unexpected model select payload: #{CarbonC.model_select(CarbonModels::Actor).to_payload.inspect}"
+end
+model_built = CarbonC.model_select(CarbonModels::Actor, 'actor_id')
+                     .where_op('actor.actor_id', '>', 0)
+                     .limit(1)
+                     .compile(schema, 'mysql')
+unless model_built.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1'
+  raise "unexpected model query sql: #{model_built.fetch('sql')}"
+end
+raise "unexpected model query params: #{model_built.fetch('params').inspect}" unless model_built.fetch('params') == [0]
 
 rejected = CarbonC.compile_query(
   JSON.generate({'FROM' => 'actor', 'SELECT' => ['actor.last_name']}),

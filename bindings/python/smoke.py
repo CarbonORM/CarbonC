@@ -314,6 +314,23 @@ def main() -> None:
     assert "'actor_id': False" in models, models
     assert "actor_id: int = None" in models, models
     assert "first_name: str = None" in models, models
+    generated: dict[str, object] = {}
+    exec(models, generated)
+    actor_model = generated["Actor"]
+    assert carbon_codegen.model_table(actor_model) == "actor"
+    assert carbon_codegen.model_column(actor_model, "first_name") == "actor.first_name"
+    assert carbon_codegen.model_select(actor_model).to_payload() == {
+        "FROM": "actor",
+        "SELECT": ["actor.actor_id", "actor.first_name"],
+    }
+    model_built = (
+        carbon_codegen.model_select(actor_model, "actor_id")
+        .where_op("actor.actor_id", ">", 0)
+        .limit(1)
+        .compile(schema=schema, dialect="mysql")
+    )
+    assert model_built["sql"] == "SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1", model_built
+    assert model_built["params"] == [0], model_built
 
     rejected = carbon.compile_query(
         json.dumps({"FROM": "actor", "SELECT": ["actor.last_name"]}),

@@ -181,6 +181,42 @@ function orGroup(...conditions) {
   return group('OR', ...conditions);
 }
 
+function modelTable(model) {
+  const table = model && (model.table || model.TABLE);
+  if (typeof table !== 'string' || table.length === 0) {
+    throw new TypeError('model must provide a Carbon table name');
+  }
+  return table;
+}
+
+function modelColumns(model) {
+  const columns = model && (model.columns || model.COLUMNS);
+  if (columns === null || Array.isArray(columns) || typeof columns !== 'object') {
+    throw new TypeError('model must provide Carbon columns');
+  }
+  return {...columns};
+}
+
+function modelColumn(model, field) {
+  const columns = modelColumns(model);
+  if (!Object.prototype.hasOwnProperty.call(columns, field)) {
+    throw new TypeError(`unknown model field: ${field}`);
+  }
+  return columns[field];
+}
+
+function modelQuery(model) {
+  return query(modelTable(model));
+}
+
+function modelSelect(model, ...fields) {
+  const columns = modelColumns(model);
+  const selected = fields.length === 0
+    ? Object.values(columns)
+    : fields.map((field) => modelColumn(model, field));
+  return modelQuery(model).select(selected);
+}
+
 function subselectOperand(query) {
   if (Array.isArray(query)
     && query.length === 2
@@ -594,5 +630,15 @@ native.andGroup = andGroup;
 native.and_group = andGroup;
 native.orGroup = orGroup;
 native.or_group = orGroup;
+native.modelTable = modelTable;
+native.model_table = modelTable;
+native.modelColumns = modelColumns;
+native.model_columns = modelColumns;
+native.modelColumn = modelColumn;
+native.model_column = modelColumn;
+native.modelQuery = modelQuery;
+native.model_query = modelQuery;
+native.modelSelect = modelSelect;
+native.model_select = modelSelect;
 
 module.exports = native;

@@ -176,6 +176,75 @@ if (!function_exists('carbon_schema_models')) {
         return carbon_group('OR', ...$conditions);
     }
 
+    function carbon_model_table($model): string
+    {
+        if (is_array($model)) {
+            $table = $model['table'] ?? $model['TABLE'] ?? null;
+            if (is_string($table) && $table !== '') {
+                return $table;
+            }
+        }
+
+        $class = is_object($model) ? get_class($model) : (is_string($model) ? ltrim($model, '\\') : null);
+        if ($class !== null && defined($class . '::TABLE')) {
+            $table = constant($class . '::TABLE');
+            if (is_string($table) && $table !== '') {
+                return $table;
+            }
+        }
+        throw new InvalidArgumentException('model must provide a Carbon table name');
+    }
+
+    function carbon_model_columns($model): array
+    {
+        if (is_array($model)) {
+            $columns = $model['columns'] ?? $model['COLUMNS'] ?? null;
+            if (is_array($columns)) {
+                return $columns;
+            }
+        }
+
+        $class = is_object($model) ? get_class($model) : (is_string($model) ? ltrim($model, '\\') : null);
+        if ($class !== null && defined($class . '::COLUMNS')) {
+            $columns = constant($class . '::COLUMNS');
+            if (is_array($columns)) {
+                return $columns;
+            }
+        }
+        throw new InvalidArgumentException('model must provide Carbon columns');
+    }
+
+    function carbon_model_column($model, string $field): string
+    {
+        $columns = carbon_model_columns($model);
+        if (!array_key_exists($field, $columns)) {
+            throw new InvalidArgumentException('unknown model field: ' . $field);
+        }
+        return (string) $columns[$field];
+    }
+
+    function carbon_model_query($model): CarbonQuery
+    {
+        return carbon_query(carbon_model_table($model));
+    }
+
+    function carbon_model_select($model, ...$fields): CarbonQuery
+    {
+        if (count($fields) === 1 && is_array($fields[0])) {
+            $fields = array_values($fields[0]);
+        }
+        $columns = carbon_model_columns($model);
+        $selected = $fields === []
+            ? array_values($columns)
+            : array_map(
+                static function ($field) use ($model): string {
+                    return carbon_model_column($model, (string) $field);
+                },
+                $fields
+            );
+        return carbon_model_query($model)->select($selected);
+    }
+
     function carbon_codegen_subselect_operand($query)
     {
         if (is_array($query)) {

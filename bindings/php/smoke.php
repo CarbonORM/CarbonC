@@ -333,6 +333,28 @@ carbon_assert(strpos($models, "public const NULLABLE = ['actor_id' => false, 'fi
 carbon_assert(strpos($models, '/** @var int */') !== false, 'expected generated int docblock');
 carbon_assert(strpos($models, '/** @var string */') !== false, 'expected generated string docblock');
 carbon_assert(strpos($models, 'public $actor_id;') !== false, 'expected generated actor_id property');
+$globalModels = carbon_schema_models($schema);
+$globalModelsEval = preg_replace('/^<\\?php\\s*/', '', $globalModels);
+carbon_assert(is_string($globalModelsEval), 'expected generated global model source');
+eval($globalModelsEval);
+carbon_assert(carbon_model_table(Actor::class) === 'actor', 'unexpected model table');
+carbon_assert(carbon_model_column(Actor::class, 'first_name') === 'actor.first_name', 'unexpected model column');
+carbon_assert(
+    carbon_model_select(Actor::class)->toPayload() === [
+        'FROM' => 'actor',
+        'SELECT' => ['actor.actor_id', 'actor.first_name'],
+    ],
+    'unexpected model select payload'
+);
+$modelBuilt = carbon_model_select(Actor::class, 'actor_id')
+    ->whereOp('actor.actor_id', '>', 0)
+    ->limit(1)
+    ->compile($schema, 'mysql');
+carbon_assert(
+    $modelBuilt['sql'] === 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1',
+    'unexpected model query sql: ' . $modelBuilt['sql']
+);
+carbon_assert($modelBuilt['params'] === [0], 'unexpected model query params: ' . json_encode($modelBuilt['params']));
 
 $rejected = carbon_compile_query(
     json_encode(['FROM' => 'actor', 'SELECT' => ['actor.last_name']]),

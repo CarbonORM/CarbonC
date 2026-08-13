@@ -297,6 +297,25 @@ assert(modelSource.includes('dbTypes: {'));
 assert(modelSource.includes('actor_id: "smallint",'));
 assert(modelSource.includes('nullable: {'));
 assert(modelSource.includes('actor_id: false,'));
+const actorMeta = {
+  table: 'actor',
+  columns: {
+    actor_id: 'actor.actor_id',
+    first_name: 'actor.first_name',
+  },
+};
+assert.strictEqual(carbon.modelTable(actorMeta), 'actor');
+assert.strictEqual(carbon.modelColumn(actorMeta, 'first_name'), 'actor.first_name');
+assert.deepStrictEqual(carbon.modelSelect(actorMeta).toPayload(), {
+  FROM: 'actor',
+  SELECT: ['actor.actor_id', 'actor.first_name'],
+});
+const modelBuilt = carbon.modelSelect(actorMeta, 'actor_id')
+  .whereOp('actor.actor_id', '>', 0)
+  .limit(1)
+  .compile(schema, 'mysql');
+assert.strictEqual(modelBuilt.sql, 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1');
+assert.deepStrictEqual(modelBuilt.params, [0]);
 assert.strictEqual(carbon.schema_models({}), '');
 
 const aliasResult = carbon.compile_query(JSON.stringify(query), JSON.stringify(schema), 'mysql');

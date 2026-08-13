@@ -235,6 +235,47 @@ def from_table(table: Any) -> Query:
     return Query(table)
 
 
+def model_table(model: Any) -> str:
+    if isinstance(model, Mapping):
+        table = model.get("table", model.get("TABLE"))
+    else:
+        table = getattr(model, "__carbon_table__", None)
+        if table is None and not isinstance(model, type):
+            table = getattr(type(model), "__carbon_table__", None)
+    if not isinstance(table, str) or not table:
+        raise TypeError("model must provide a Carbon table name")
+    return table
+
+
+def model_columns(model: Any) -> dict[str, str]:
+    if isinstance(model, Mapping):
+        columns = model.get("columns", model.get("COLUMNS"))
+    else:
+        columns = getattr(model, "__carbon_columns__", None)
+        if columns is None and not isinstance(model, type):
+            columns = getattr(type(model), "__carbon_columns__", None)
+    if not isinstance(columns, Mapping):
+        raise TypeError("model must provide Carbon columns")
+    return {str(field): str(column) for field, column in columns.items()}
+
+
+def model_column(model: Any, field: str) -> str:
+    columns = model_columns(model)
+    if field not in columns:
+        raise KeyError(f"unknown model field: {field}")
+    return columns[field]
+
+
+def model_query(model: Any) -> Query:
+    return query(model_table(model))
+
+
+def model_select(model: Any, *fields: str) -> Query:
+    columns = model_columns(model)
+    selected = [model_column(model, field) for field in fields] if fields else list(columns.values())
+    return model_query(model).select(selected)
+
+
 def subselect(query: Any) -> list[Any]:
     return ["SUBSELECT", _query_payload(query)]
 
@@ -481,11 +522,35 @@ compile_query = compile_query_value
 __all__ = [
     "Query",
     "adapt_compile_result",
+    "and_",
+    "as_",
+    "between",
+    "call",
     "compile_query",
     "compile_query_result",
     "compile_query_value",
+    "condition",
+    "derived_target",
+    "distinct",
+    "exists",
+    "exists_spec",
     "from_table",
+    "group",
+    "in_",
+    "lit",
+    "model_column",
+    "model_columns",
+    "model_query",
+    "model_select",
+    "model_table",
+    "not_between",
+    "not_exists",
+    "not_in",
+    "op",
+    "or_",
+    "param",
     "query",
     "schema_dataclasses",
     "schema_models",
+    "subselect",
 ]

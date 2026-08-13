@@ -292,7 +292,9 @@ controls.
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
 metadata into Python annotations such as
 `int`, `float`, `str`, `bool`, `bytes`, `Dict[str, Any]`, and `Optional[...]`,
-and includes `__carbon_db_types__` and `__carbon_nullable__` metadata.
+and includes `__carbon_db_types__` and `__carbon_nullable__` metadata. Runtime
+helpers such as `model_query()`, `model_select()`, and `model_column()` consume
+that generated metadata to build schema-backed `Query` payloads.
 
 Build and smoke-test it from the repository root:
 
@@ -358,7 +360,10 @@ helpers (`carbon_condition`, `carbon_and_group`, `carbon_or_group`, `whereAnd`,
 returns the same fields as the
 raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
 class source keeps properties untyped for runtime compatibility, adds PHPDoc type
-annotations, and includes `DB_TYPES` and `NULLABLE` constants.
+annotations, and includes `DB_TYPES` and `NULLABLE` constants. Runtime helpers
+such as `carbon_model_query()`, `carbon_model_select()`, and
+`carbon_model_column()` consume generated class constants or metadata arrays to
+build schema-backed `CarbonQuery` payloads.
 
 Build and smoke-test it from the repository root:
 
@@ -429,7 +434,9 @@ helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
 `compileQueryResult()` returns the same fields as the raw result
 plus decoded JavaScript `params` and `diagnostics` values. The generated
 TypeScript source maps DB metadata into primitive field types and adds `dbTypes`
-and `nullable` metadata beside each generated interface.
+and `nullable` metadata beside each generated interface. Runtime helpers such as
+`modelQuery()`, `modelSelect()`, and `modelColumn()` consume generated `*Meta`
+objects to build schema-backed `CarbonQuery` payloads.
 
 Build and smoke-test it from the repository root:
 
@@ -445,7 +452,8 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `fromTable()`, `subselect()`, `derivedTarget()`, `op()`, `lit()`, `param()`,
 `call()`, `alias()`, `distinct()`, `between()`, `inList()`, `existsSpec()`,
 `exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
-`schemaMetadata()`, `schemaModels()`, and
+`modelQuery()`, `modelSelect()`, `modelColumn()`, `schemaMetadata()`,
+`schemaModels()`, and
 `normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
 
 ## Ruby Binding
@@ -506,7 +514,9 @@ group helpers (`CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
 `CarbonC.compile_query_result` returns the same fields as the raw
 result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
 Struct source includes `TYPES` and `NULLABLE` metadata constants for runtime
-consumers.
+consumers. Runtime helpers such as `CarbonC.model_query`,
+`CarbonC.model_select`, and `CarbonC.model_column` consume generated constants
+or metadata hashes to build schema-backed `CarbonC::Query` payloads.
 
 Build and smoke-test it from the repository root:
 
@@ -525,6 +535,7 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.distinct`, `CarbonC.between`, `CarbonC.in_list`,
 `CarbonC.exists_spec`, `CarbonC.exists`, `CarbonC.not_exists`,
 `CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
+`CarbonC.model_query`, `CarbonC.model_select`, `CarbonC.model_column`,
 `CarbonC.schema_metadata`, and
 `CarbonC.normalize_allowlist_sql`.
 
@@ -532,5 +543,5 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 1. Expand the remaining CarbonNode C6 grammar behind golden fixtures.
 2. Add richer multi-diagnostic reporting for validation batches.
-3. Add model-aware builder scaffolds over generated schema metadata as the
-   remaining C6 grammar lands.
+3. Add higher-level package examples and fixture imports from production C6
+   query shapes as the remaining grammar lands.

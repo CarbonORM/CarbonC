@@ -294,6 +294,48 @@ module CarbonC
       group('OR', *conditions)
     end
 
+    def model_table(model)
+      table = if model.is_a?(Hash)
+                model['table'] || model[:table] || model['TABLE'] || model[:TABLE]
+              else
+                model_class = model.is_a?(Class) ? model : model.class
+                model_class.const_defined?(:TABLE, false) ? model_class.const_get(:TABLE) : nil
+              end
+      raise ArgumentError, 'model must provide a Carbon table name' unless table.is_a?(String) && !table.empty?
+
+      table
+    end
+
+    def model_columns(model)
+      columns = if model.is_a?(Hash)
+                  model['columns'] || model[:columns] || model['COLUMNS'] || model[:COLUMNS]
+                else
+                  model_class = model.is_a?(Class) ? model : model.class
+                  model_class.const_defined?(:COLUMNS, false) ? model_class.const_get(:COLUMNS) : nil
+                end
+      raise ArgumentError, 'model must provide Carbon columns' unless columns.is_a?(Hash)
+
+      columns.transform_keys(&:to_s).transform_values(&:to_s)
+    end
+
+    def model_column(model, field)
+      columns = model_columns(model)
+      key = field.to_s
+      raise KeyError, "unknown model field: #{key}" unless columns.key?(key)
+
+      columns.fetch(key)
+    end
+
+    def model_query(model)
+      query(model_table(model))
+    end
+
+    def model_select(model, *fields)
+      columns = model_columns(model)
+      selected = fields.empty? ? columns.values : fields.map { |field| model_column(model, field) }
+      model_query(model).select(selected)
+    end
+
     def compile_query_value(query, schema = nil, dialect = 'mysql')
       compile_query(
         carbon_codegen_payload_json(query),
@@ -333,38 +375,37 @@ module CarbonC
         end
 
         if fields.empty?
-          lines << "#{base_indent}#{class_name} = Class.new do"
+          lines << "#{base_indent}#{class_name} = Class.new"
         else
           field_list = fields.map { |field, _, _| ":#{field}" }.join(', ')
-          lines << "#{base_indent}#{class_name} = Struct.new(#{field_list}, keyword_init: true) do"
+          lines << "#{base_indent}#{class_name} = Struct.new(#{field_list}, keyword_init: true)"
         end
-        lines << "#{base_indent}  TABLE = #{JSON.generate(table.fetch('name', ''))}"
-        lines << "#{base_indent}  PRIMARY = #{JSON.generate(table.fetch('primary', []))}.freeze"
-        lines << "#{base_indent}  COLUMNS = {"
+        lines << "#{base_indent}#{class_name}::TABLE = #{JSON.generate(table.fetch('name', ''))}"
+        lines << "#{base_indent}#{class_name}::PRIMARY = #{JSON.generate(table.fetch('primary', []))}.freeze"
+        lines << "#{base_indent}#{class_name}::COLUMNS = {"
         fields.each do |field, _, qualified, _|
-          lines << "#{base_indent}    #{JSON.generate(field)} => #{JSON.generate(qualified)},"
+          lines << "#{base_indent}  #{JSON.generate(field)} => #{JSON.generate(qualified)},"
         end
-        lines << "#{base_indent}  }.freeze"
-        lines << "#{base_indent}  COLUMN_NAMES = {"
+        lines << "#{base_indent}}.freeze"
+        lines << "#{base_indent}#{class_name}::COLUMN_NAMES = {"
         fields.each do |field, original, _, _|
-          lines << "#{base_indent}    #{JSON.generate(field)} => #{JSON.generate(original)},"
+          lines << "#{base_indent}  #{JSON.generate(field)} => #{JSON.generate(original)},"
         end
-        lines << "#{base_indent}  }.freeze"
-        lines << "#{base_indent}  TYPES = {"
+        lines << "#{base_indent}}.freeze"
+        lines << "#{base_indent}#{class_name}::TYPES = {"
         fields.each do |field, _, _, column|
           next unless column.key?('db_type')
 
-          lines << "#{base_indent}    #{JSON.generate(field)} => :#{carbon_codegen_ruby_type(column)},"
+          lines << "#{base_indent}  #{JSON.generate(field)} => :#{carbon_codegen_ruby_type(column)},"
         end
-        lines << "#{base_indent}  }.freeze"
-        lines << "#{base_indent}  NULLABLE = {"
+        lines << "#{base_indent}}.freeze"
+        lines << "#{base_indent}#{class_name}::NULLABLE = {"
         fields.each do |field, _, _, column|
           next unless column.key?('nullable')
 
-          lines << "#{base_indent}    #{JSON.generate(field)} => #{column.fetch('nullable') ? 'true' : 'false'},"
+          lines << "#{base_indent}  #{JSON.generate(field)} => #{column.fetch('nullable') ? 'true' : 'false'},"
         end
-        lines << "#{base_indent}  }.freeze"
-        lines << "#{base_indent}end"
+        lines << "#{base_indent}}.freeze"
         lines << ''
       end
 
