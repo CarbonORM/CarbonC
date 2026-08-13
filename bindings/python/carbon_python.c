@@ -79,7 +79,7 @@ static PyObject *carbon_py_compile_query(PyObject *self, PyObject *args, PyObjec
     static char *kwlist[] = {"query_json", "schema_json", "dialect", NULL};
     const char *query_json;
     const char *schema_json = "{}";
-    const char *dialect = "mysql";
+    const char *dialect = CARBON_DIALECT_MYSQL;
     Py_ssize_t query_json_length;
     Py_ssize_t schema_json_length = 2;
     carbon_context *context;

@@ -42,8 +42,9 @@ payloads:
 ```
 
 This JSON is the stable ABI shape. Normal package code should build it through
-generated table/column constants plus the `C6C` token constants so query authors
-do not hand-type grammar strings or schema identifiers.
+generated table/field/column constants plus the `C6C` token constants and
+`CarbonDialect` / `Dialect` dialect constants so query authors do not hand-type
+grammar strings or schema identifiers.
 
 The compiler returns a numeric `status`, stable string `status_code`, SQL, a
 JSON array of bound parameter values, and a normalized allowlist key:
@@ -69,11 +70,12 @@ Supported in this slice:
   flags
 - CarbonNode-compatible C6 token constants exposed idiomatically in each binding
   as `C6C`/`C6`
-- C consumers can use the matching `CARBON_C6_*` token macros from
-  `include/carbon.h`
+- dialect constants exposed in each binding as `CarbonDialect` / `Dialect`
+- C consumers can use the matching `CARBON_C6_*` token macros and
+  `CARBON_DIALECT_*` macros from `include/carbon.h`
 - package-level typed source generation helpers for Python dataclasses,
   TypeScript interfaces, PHP model classes, and Ruby Struct models, including
-  generated table and column constants
+  generated table, field-name, and qualified-column constants
 - package-level native payload compile helpers that serialize idiomatic
   dict/array/object/hash inputs into the stable C JSON boundary
 - package-level typed result adapters that add decoded native `params` and
@@ -298,7 +300,7 @@ typed_result = (
     .select(Actor.ACTOR_ID)
     .where_op(Actor.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 10)
     .limit(5)
-    .compile(schema=schema, dialect="mysql")
+    .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
 )
 field_selected = carbon_codegen.model_select(Actor, Actor.FIELD_ACTOR_ID)
 metadata_json = carbon.schema_metadata(json.dumps(schema))
@@ -313,7 +315,8 @@ subselect helpers, derived `join_subselect` targets, advanced predicate helpers
 `where_match_against`, `where_exists`, `where_not_exists`), composable boolean group helpers
 (`condition`, `and_`, `or_`, `where_and`, `where_or`), expression helpers
 (`fn`, `custom_call`, `call`, `lit`, `param`, `st_contains`, `st_within`,
-`mbr_contains`), CarbonNode-compatible token constants (`C6C` / `C6`), index hint helpers (`index_hints`, `force_index`,
+`mbr_contains`), CarbonNode-compatible token constants (`C6C` / `C6`),
+dialect constants (`CarbonDialect` / `Dialect`), index hint helpers (`index_hints`, `force_index`,
 `use_index`, `ignore_index`), limit/page, and order controls.
 `compile_query_result()` returns the same fields as the raw result plus decoded
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
@@ -338,7 +341,8 @@ PYTHONPATH=bindings/python python3 bindings/python/smoke.py
 The PHP extension wraps the same compile result shape from
 `bindings/php/carbon_php.c` as an associative array, including
 `diagnostics_json`. The
-`bindings/php/carbon_codegen.php` helper adds `C6C` / `C6`, `CarbonQuery`,
+`bindings/php/carbon_codegen.php` helper adds `C6C` / `C6`, `CarbonDialect`,
+`CarbonQuery`,
 `carbon_compile_query_value()` for native arrays, typed result adapters, and
 native PHP model class source over
 `carbon_schema_metadata()`:
@@ -368,7 +372,7 @@ $typedResult = carbon_query(Actor::TABLE)
     ->select(Actor::ACTOR_ID)
     ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 10)
     ->limit(5)
-    ->compile($schema, "mysql");
+    ->compile($schema, CarbonDialect::MYSQL);
 $fieldSelected = carbon_model_select(Actor::class, Actor::FIELD_ACTOR_ID);
 $metadataJson = carbon_schema_metadata(json_encode($schema));
 $namespacedModelSource = carbon_schema_models($schema, "CarbonORM\\Generated");
@@ -409,7 +413,8 @@ The PHP surface exposes `carbon_version()`, `carbon_hello_world()`,
 `carbon_status_code()`, `carbon_status_message()`, `carbon_compile_query()`,
 `carbon_compile_query_value()`, `carbon_compile_query_result()`,
 `carbon_adapt_compile_result()`, `carbon_query()`, `carbon_force_index()`,
-`carbon_use_index()`, `carbon_ignore_index()`, `C6C`, `C6`, `carbon_schema_metadata()`,
+`carbon_use_index()`, `carbon_ignore_index()`, `C6C`, `C6`, `CarbonDialect`,
+`carbon_schema_metadata()`,
 and `carbon_normalize_allowlist_sql()`.
 
 ## Node Binding
@@ -456,7 +461,7 @@ const typedResult = carbon.query(ActorTable)
   .select(ActorColumns.actor_id)
   .whereOp(ActorColumns.actor_id, carbon.C6C.GREATER_THAN, 10)
   .limit(5)
-  .compile(schema, 'mysql');
+  .compile(schema, carbon.CarbonDialect.MYSQL);
 const fieldSelected = carbon.modelSelect(ActorMeta, ActorFields.actor_id);
 const metadataJson = JSON.stringify(metadata);
 ```
@@ -490,7 +495,8 @@ node examples/node/index.js
 
 The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `statusCode()`, `compileQuery()`, `compileQueryValue()`,
-`compileQueryResult()`, `adaptCompileResult()`, `C6C`, `C6`, `CarbonQuery`, `query()`,
+`compileQueryResult()`, `adaptCompileResult()`, `C6C`, `C6`, `CarbonDialect`,
+`Dialect`, `CarbonQuery`, `query()`,
 `fromTable()`, `subselect()`, `derivedTarget()`, `op()`, `lit()`, `param()`,
 `call()`, `alias()`, `distinct()`, `between()`, `inList()`, `existsSpec()`,
 `exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
@@ -503,7 +509,8 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 The Ruby extension wraps the same compile result shape from
 `bindings/ruby/carbon_ruby.c` as a `Hash` with string keys, including
 `diagnostics_json`. The
-`bindings/ruby/carbon_codegen.rb` helper adds `CarbonC::C6C` / `CarbonC::C6`, `CarbonC::Query`,
+`bindings/ruby/carbon_codegen.rb` helper adds `CarbonC::C6C` / `CarbonC::C6`,
+`CarbonC::Dialect`, `CarbonC::Query`,
 `CarbonC.compile_query_value` for native hashes, typed result adapters, and Ruby
 Struct model source over
 `CarbonC.schema_metadata`:
@@ -537,7 +544,7 @@ typed_result = CarbonC.query(CarbonModels::Actor::TABLE)
                         10
                       )
                       .limit(5)
-                      .compile(schema, 'mysql')
+                      .compile(schema, CarbonC::Dialect::MYSQL)
 field_selected = CarbonC.model_select(CarbonModels::Actor, CarbonModels::Actor::FIELD_ACTOR_ID)
 metadata_json = CarbonC.schema_metadata(JSON.generate(schema))
 model_source = CarbonC.schema_models(schema)
@@ -577,6 +584,7 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.status_code`, `CarbonC.status_message`, `CarbonC.compile_query`,
 `CarbonC.compile_query_value`, `CarbonC.compile_query_result`,
 `CarbonC.adapt_compile_result`, `CarbonC::C6C`, `CarbonC::C6`,
+`CarbonC::Dialect`,
 `CarbonC.query`, `CarbonC.from_table`,
 `CarbonC.subselect`, `CarbonC.derived_target`, `CarbonC.op`, `CarbonC.lit`,
 `CarbonC.param`, `CarbonC.call`, `CarbonC.alias_expression`,

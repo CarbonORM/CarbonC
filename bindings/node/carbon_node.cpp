@@ -282,7 +282,7 @@ static napi_value carbon_node_compile_query(napi_env env, napi_callback_info inf
         }
         owns_dialect = true;
     } else {
-        dialect = const_cast<char *>("mysql");
+        dialect = const_cast<char *>(CARBON_DIALECT_MYSQL);
         dialect_length = 5;
     }
 

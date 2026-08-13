@@ -17,6 +17,9 @@ function carbon_assert(bool $condition, string $message): void
 
 carbon_assert(C6C::FROM === 'FROM', 'unexpected C6C FROM constant');
 carbon_assert(C6C::GREATER_THAN === '>', 'unexpected C6C GREATER_THAN constant');
+carbon_assert(CarbonDialect::MYSQL === 'mysql', 'unexpected CarbonDialect MYSQL constant');
+carbon_assert(CarbonDialect::POSTGRESQL === 'postgresql', 'unexpected CarbonDialect POSTGRESQL constant');
+carbon_assert(CarbonDialect::POSTGRES === 'postgres', 'unexpected CarbonDialect POSTGRES constant');
 
 $schema = [
     'TABLES' => [
@@ -55,7 +58,7 @@ $query = [
     'PAGINATION' => ['LIMIT' => 5],
 ];
 
-$result = carbon_compile_query(json_encode($query), json_encode($schema), 'mysql');
+$result = carbon_compile_query(json_encode($query), json_encode($schema), CarbonDialect::MYSQL);
 
 carbon_assert($result['status'] === 0, 'expected compile success: ' . json_encode($result));
 carbon_assert($result['status_code'] === 'ok', 'unexpected status code: ' . json_encode($result));
@@ -78,7 +81,7 @@ carbon_assert(
     ],
     'unexpected success diagnostics: ' . $result['diagnostics_json']
 );
-$ergonomic = carbon_compile_query_value($query, $schema, 'mysql');
+$ergonomic = carbon_compile_query_value($query, $schema, CarbonDialect::MYSQL);
 carbon_assert($ergonomic === $result, 'unexpected ergonomic compile result: ' . json_encode($ergonomic));
 $topOrdered = carbon_compile_query_value(
     [
@@ -104,14 +107,14 @@ $expectedAdapted = $result;
 $expectedAdapted['params'] = [10];
 $expectedAdapted['diagnostics'] = $diagnostics;
 carbon_assert($adapted === $expectedAdapted, 'unexpected adapted compile result: ' . json_encode($adapted));
-$typed = carbon_compile_query_result($query, $schema, 'mysql');
+$typed = carbon_compile_query_result($query, $schema, CarbonDialect::MYSQL);
 carbon_assert($typed === $adapted, 'unexpected typed compile result: ' . json_encode($typed));
 $built = carbon_query('actor')
     ->select('actor.actor_id', 'actor.first_name')
     ->where(['actor.actor_id' => ['>', 10]])
     ->limit(5);
 carbon_assert($built->toPayload() === $query, 'unexpected builder payload: ' . json_encode($built->toPayload()));
-carbon_assert($built->compile($schema, 'mysql') === $adapted, 'unexpected builder compile result');
+carbon_assert($built->compile($schema, CarbonDialect::MYSQL) === $adapted, 'unexpected builder compile result');
 $orderedPayload = carbon_query()
     ->fromTable('actor')
     ->select(['actor.actor_id'])
@@ -166,7 +169,7 @@ $hintedJoin = carbon_query('actor')
         'film_actor fa' => carbon_use_index('idx_film_actor_actor_id'),
     ])
     ->limit(5)
-    ->compile(null, 'mysql');
+    ->compile(null, CarbonDialect::MYSQL);
 carbon_assert(
     $hintedJoin['sql'] === 'SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) ON ((fa.actor_id) = actor.actor_id) LIMIT 5',
     'unexpected hinted join sql: ' . $hintedJoin['sql']
@@ -191,7 +194,7 @@ $derived = carbon_query('actor')
     ->select('actor.actor_id', 'fa_recent.actor_id')
     ->joinSubselect('INNER', 'fa_recent', $recentActorIds, ['fa_recent.actor_id' => ['=', 'actor.actor_id']])
     ->where(['actor.actor_id' => ['>', 100]])
-    ->compile(null, 'mysql');
+    ->compile(null, CarbonDialect::MYSQL);
 carbon_assert($derived['status'] === 0, 'unexpected derived compile status: ' . json_encode($derived));
 carbon_assert(
     $derived['sql'] === 'SELECT actor.actor_id, fa_recent.actor_id FROM `actor` INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` WHERE (film_actor.film_id) > ? LIMIT 1) AS `fa_recent` ON ((fa_recent.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT 100',
@@ -225,7 +228,7 @@ carbon_assert(
 $customSelected = carbon_query('actor')
     ->select([carbon_alias(carbon_custom_call('COALESCE', carbon_lit('UNKNOWN'), 'actor.first_name'), 'display_name')])
     ->limit(1)
-    ->compile(null, 'mysql');
+    ->compile(null, CarbonDialect::MYSQL);
 carbon_assert(
     $customSelected['sql'] === 'SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1',
     'unexpected custom call select sql: ' . $customSelected['sql']
@@ -260,7 +263,7 @@ $spatialFiltered = carbon_query('property_units')
         ],
     ])
     ->limit(10)
-    ->compile(null, 'mysql');
+    ->compile(null, CarbonDialect::MYSQL);
 carbon_assert(
     $spatialFiltered['sql'] === 'SELECT property_units.unit_id FROM `property_units` WHERE MBRCONTAINS(ST_GEOMFROMTEXT(?, 4326), property_units.location) AND (ST_WITHIN(property_units.location, ST_GEOMFROMTEXT(?, 4326)) OR ST_CONTAINS(property_units.envelope, property_units.location)) LIMIT 10',
     'unexpected spatial predicate sql: ' . $spatialFiltered['sql']
@@ -291,7 +294,7 @@ $advanced = carbon_query('property_units')
     ->whereNotIn('property_units.account_id', [99, 100])
     ->whereExists('property_units.parcel_id', $salesQuery)
     ->limit(3)
-    ->compile(null, 'mysql');
+    ->compile(null, CarbonDialect::MYSQL);
 carbon_assert($advanced['status'] === 0, 'unexpected advanced compile status: ' . json_encode($advanced));
 carbon_assert(
     $advanced['sql'] === 'SELECT property_units.unit_id FROM `property_units` WHERE (property_units.unit_id) BETWEEN ? AND ? AND ( property_units.parcel_id IN (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ?) ) AND ( property_units.account_id NOT IN (?, ?) ) AND EXISTS (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ? AND (parcel_sales.parcel_id) = property_units.parcel_id) LIMIT 3',
@@ -329,7 +332,7 @@ $fulltext = carbon_query('actor')
     ->select('actor.actor_id')
     ->whereMatchAgainst('actor.first_name', 'alpha beta', 'BOOLEAN')
     ->limit(10)
-    ->compile($schema, 'mysql');
+    ->compile($schema, CarbonDialect::MYSQL);
 carbon_assert($fulltext['status'] === 0, 'unexpected full-text compile status: ' . json_encode($fulltext));
 carbon_assert(
     $fulltext['sql'] === 'SELECT actor.actor_id FROM `actor` WHERE (MATCH(actor.first_name) AGAINST(? IN BOOLEAN MODE)) LIMIT 10',
@@ -348,7 +351,7 @@ $booleanGrouped = carbon_query('actor')
         carbon_condition('actor.actor_id', carbon_op('<', 9))
     )
     ->limit(5)
-    ->compile(null, 'mysql');
+    ->compile(null, CarbonDialect::MYSQL);
 carbon_assert($booleanGrouped['status'] === 0, 'unexpected boolean group status: ' . json_encode($booleanGrouped));
 carbon_assert(
     $booleanGrouped['sql'] === 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) BETWEEN ? AND ? AND ((actor.first_name) LIKE ? OR (actor.first_name) LIKE ?) AND ((actor.actor_id) > ? AND (actor.actor_id) < ?) LIMIT 5',
@@ -364,7 +367,7 @@ $grouped = carbon_query('actor')
     ->having(['cnt' => ['>', 1]])
     ->page(2)
     ->limit(5)
-    ->compile(null, 'mysql');
+    ->compile(null, CarbonDialect::MYSQL);
 carbon_assert($grouped['status'] === 0, 'unexpected grouped compile status: ' . json_encode($grouped));
 carbon_assert(
     $grouped['sql'] === 'SELECT DISTINCT actor.first_name, COUNT(actor.actor_id) AS cnt FROM `actor` GROUP BY actor.first_name HAVING ((cnt) > ?) LIMIT 5, 5',
@@ -373,7 +376,7 @@ carbon_assert(
 carbon_assert($grouped['params'] === [1], 'unexpected grouped params: ' . json_encode($grouped['params']));
 $inserted = carbon_query('actor')
     ->insert(['actor.first_name' => 'ALICE'])
-    ->compile($schema, 'mysql');
+    ->compile($schema, CarbonDialect::MYSQL);
 carbon_assert($inserted['status'] === 0, 'unexpected insert compile status: ' . json_encode($inserted));
 carbon_assert(
     $inserted['sql'] === 'INSERT INTO `actor` (`first_name`) VALUES (?)',
@@ -385,7 +388,7 @@ $expressionInserted = carbon_query('actor')
         'actor.first_name' => carbon_fn('CONCAT', carbon_lit('HEL'), carbon_lit('LO')),
         'actor.last_name' => 'SMITH',
     ])
-    ->compile(null, 'mysql');
+    ->compile(null, CarbonDialect::MYSQL);
 carbon_assert(
     $expressionInserted['sql'] === 'INSERT INTO `actor` (`first_name`, `last_name`) VALUES (CONCAT(?, ?), ?)',
     'unexpected expression insert sql: ' . $expressionInserted['sql']
@@ -404,7 +407,7 @@ carbon_assert(
 $updated = carbon_query('actor')
     ->update(['actor.first_name' => 'BOB'])
     ->where(['actor.actor_id' => 1])
-    ->compile($schema, 'mysql');
+    ->compile($schema, CarbonDialect::MYSQL);
 carbon_assert(
     $updated['sql'] === 'UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) = ?',
     'unexpected update sql: ' . $updated['sql']
@@ -416,7 +419,7 @@ $expressionUpdated = carbon_query('actor')
         'actor.last_name' => carbon_custom_call('COALESCE', carbon_lit('UNKNOWN'), 'actor.last_name'),
     ])
     ->where(['actor.actor_id' => ['=', 7]])
-    ->compile(null, 'mysql');
+    ->compile(null, CarbonDialect::MYSQL);
 carbon_assert(
     $expressionUpdated['sql'] === 'UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name), `last_name` = COALESCE(?, actor.last_name) WHERE (actor.actor_id) = ?',
     'unexpected expression update sql: ' . $expressionUpdated['sql']
@@ -428,7 +431,7 @@ carbon_assert(
 $deleted = carbon_query('actor')
     ->delete()
     ->where(['actor.actor_id' => 1])
-    ->compile($schema, 'mysql');
+    ->compile($schema, CarbonDialect::MYSQL);
 carbon_assert(
     $deleted['sql'] === 'DELETE `actor` FROM `actor` WHERE (actor.actor_id) = ?',
     'unexpected delete sql: ' . $deleted['sql']
@@ -437,7 +440,7 @@ carbon_assert($deleted['params'] === [1], 'unexpected delete params: ' . json_en
 $upserted = carbon_query('actor')
     ->insert(['actor.actor_id' => 1, 'actor.first_name' => 'ALICE'])
     ->upsert(['first_name'])
-    ->compile($schema, 'mysql');
+    ->compile($schema, CarbonDialect::MYSQL);
 carbon_assert(
     $upserted['sql'] === 'INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)',
     'unexpected upsert sql: ' . $upserted['sql']
@@ -523,7 +526,7 @@ $constantBuilt = carbon_query(Actor::TABLE)
     ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 0)
     ->orderBy(Actor::FIRST_NAME, C6C::ASC)
     ->limit(1)
-    ->compile($schema, 'mysql');
+    ->compile($schema, CarbonDialect::MYSQL);
 carbon_assert(
     $constantBuilt['sql'] === 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 1',
     'unexpected constant-built query sql: ' . $constantBuilt['sql']
@@ -532,7 +535,7 @@ carbon_assert($constantBuilt['params'] === [0], 'unexpected constant-built query
 $modelBuilt = carbon_model_select(Actor::class, Actor::FIELD_ACTOR_ID)
     ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 0)
     ->limit(1)
-    ->compile($schema, 'mysql');
+    ->compile($schema, CarbonDialect::MYSQL);
 carbon_assert(
     $modelBuilt['sql'] === 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1',
     'unexpected model query sql: ' . $modelBuilt['sql']

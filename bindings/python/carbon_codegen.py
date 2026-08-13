@@ -94,6 +94,17 @@ class C6C:
 C6 = C6C
 
 
+class CarbonDialect:
+    """Dialect tokens accepted by the CarbonC compiler."""
+
+    MYSQL = "mysql"
+    POSTGRESQL = "postgresql"
+    POSTGRES = "postgres"
+
+
+Dialect = CarbonDialect
+
+
 def _schema_json(schema: Any) -> str:
     if schema is None:
         return "{}"
@@ -108,7 +119,7 @@ def _payload_json(payload: Any) -> str:
     return json.dumps(payload, separators=(",", ":"))
 
 
-def compile_query_value(query: Any, schema: Any = None, dialect: str = "mysql") -> dict[str, Any]:
+def compile_query_value(query: Any, schema: Any = None, dialect: str = CarbonDialect.MYSQL) -> dict[str, Any]:
     """Compile a native Python query payload through the CarbonC JSON boundary."""
 
     return carbon.compile_query(_payload_json(query), schema_json=_schema_json(schema), dialect=dialect)
@@ -130,7 +141,7 @@ def adapt_compile_result(result: Mapping[str, Any]) -> dict[str, Any]:
     return adapted
 
 
-def compile_query_result(query: Any, schema: Any = None, dialect: str = "mysql") -> dict[str, Any]:
+def compile_query_result(query: Any, schema: Any = None, dialect: str = CarbonDialect.MYSQL) -> dict[str, Any]:
     """Compile a native Python query payload and decode JSON result fields."""
 
     return adapt_compile_result(compile_query_value(query, schema=schema, dialect=dialect))
@@ -286,7 +297,7 @@ class Query:
     def to_payload(self) -> dict[str, Any]:
         return json.loads(json.dumps(self._payload, separators=(",", ":")))
 
-    def compile(self, schema: Any = None, dialect: str = "mysql") -> dict[str, Any]:
+    def compile(self, schema: Any = None, dialect: str = CarbonDialect.MYSQL) -> dict[str, Any]:
         return compile_query_result(self._payload, schema=schema, dialect=dialect)
 
     def _where(self) -> dict[str, Any]:
@@ -734,6 +745,8 @@ compile_query = compile_query_value
 __all__ = [
     "C6",
     "C6C",
+    "CarbonDialect",
+    "Dialect",
     "Query",
     "adapt_compile_result",
     "and_",

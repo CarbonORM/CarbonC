@@ -41,7 +41,7 @@ result = CarbonC.query(CarbonModels::Actor::TABLE)
                 .select(CarbonModels::Actor::ACTOR_ID, CarbonModels::Actor::FIRST_NAME)
                 .where_op(CarbonModels::Actor::ACTOR_ID, CarbonC::C6C::GREATER_THAN, 10)
                 .limit(5)
-                .compile(schema, 'mysql')
+                .compile(schema, CarbonC::Dialect::MYSQL)
 
 if result.fetch('status') != 0
   warn result.fetch('error')

@@ -11,8 +11,8 @@ struct carbon_context {
 };
 
 typedef enum carbon_dialect {
-    CARBON_DIALECT_MYSQL,
-    CARBON_DIALECT_POSTGRESQL
+    CARBON_DIALECT_KIND_MYSQL,
+    CARBON_DIALECT_KIND_POSTGRESQL
 } carbon_dialect;
 
 typedef struct carbon_string_builder {
@@ -792,7 +792,7 @@ static int carbon_append_quoted_table(
         carbon_string_builder *builder,
         carbon_dialect dialect,
         const char *identifier) {
-    char quote = dialect == CARBON_DIALECT_MYSQL ? '`' : '"';
+    char quote = dialect == CARBON_DIALECT_KIND_MYSQL ? '`' : '"';
 
     return carbon_builder_append_char(builder, quote)
            && carbon_builder_append(builder, identifier)
@@ -1663,12 +1663,12 @@ static int carbon_builder_append_wrapped_expression(carbon_string_builder *build
 
 static int carbon_parse_dialect(const char *value, carbon_dialect *dialect) {
     if (value == NULL || strcmp(value, "mysql") == 0) {
-        *dialect = CARBON_DIALECT_MYSQL;
+        *dialect = CARBON_DIALECT_KIND_MYSQL;
         return 1;
     }
 
     if (strcmp(value, "postgresql") == 0 || strcmp(value, "postgres") == 0) {
-        *dialect = CARBON_DIALECT_POSTGRESQL;
+        *dialect = CARBON_DIALECT_KIND_POSTGRESQL;
         return 1;
     }
 
@@ -1721,7 +1721,7 @@ static carbon_status carbon_append_param(
     }
     ++state->param_count;
 
-    if (state->dialect == CARBON_DIALECT_POSTGRESQL) {
+    if (state->dialect == CARBON_DIALECT_KIND_POSTGRESQL) {
         if (!carbon_builder_append_format(target_sql, "$%d", state->param_count)) {
             return CARBON_STATUS_OUT_OF_MEMORY;
         }
@@ -3264,7 +3264,7 @@ static carbon_status carbon_append_index_hint_spec(
     carbon_object_entry entry;
     int next;
 
-    if (state->dialect != CARBON_DIALECT_MYSQL) {
+    if (state->dialect != CARBON_DIALECT_KIND_MYSQL) {
         return CARBON_STATUS_OK;
     }
 
@@ -3342,7 +3342,7 @@ static carbon_status carbon_append_index_hints_for_target(
     if (found < 0) {
         return CARBON_STATUS_INVALID_JSON;
     }
-    if (found == 0 || state->dialect != CARBON_DIALECT_MYSQL) {
+    if (found == 0 || state->dialect != CARBON_DIALECT_KIND_MYSQL) {
         return CARBON_STATUS_OK;
     }
 
@@ -3843,7 +3843,7 @@ static carbon_status carbon_append_limit_clause(
             page = 1;
         }
     }
-    if (state->dialect == CARBON_DIALECT_POSTGRESQL) {
+    if (state->dialect == CARBON_DIALECT_KIND_POSTGRESQL) {
         if (!carbon_builder_append_format(sql, " LIMIT %ld", limit)) {
             return CARBON_STATUS_OUT_OF_MEMORY;
         }
@@ -5662,7 +5662,7 @@ static carbon_status carbon_compile_insert_statement(
     }
     if (found_replace > 0) {
         verb = "REPLACE";
-        if (state->dialect == CARBON_DIALECT_POSTGRESQL) {
+        if (state->dialect == CARBON_DIALECT_KIND_POSTGRESQL) {
             status = CARBON_STATUS_UNSUPPORTED_QUERY;
             goto cleanup;
         }
@@ -5744,7 +5744,7 @@ static carbon_status carbon_compile_insert_statement(
         goto cleanup;
     }
     if (found_update > 0) {
-        status = state->dialect == CARBON_DIALECT_MYSQL
+        status = state->dialect == CARBON_DIALECT_KIND_MYSQL
                  ? carbon_append_mysql_upsert_update(state, table, update_columns, sql)
                  : carbon_append_postgresql_upsert_update(state, table, update_columns, sql, error_message);
         if (status != CARBON_STATUS_OK) {
@@ -5752,7 +5752,7 @@ static carbon_status carbon_compile_insert_statement(
         }
     }
 
-    if (state->dialect == CARBON_DIALECT_POSTGRESQL
+    if (state->dialect == CARBON_DIALECT_KIND_POSTGRESQL
         && !carbon_builder_append(sql, " RETURNING *")) {
         status = CARBON_STATUS_OUT_OF_MEMORY;
         goto cleanup;
@@ -5819,7 +5819,7 @@ static carbon_status carbon_compile_update_statement(
         status = CARBON_STATUS_OUT_OF_MEMORY;
         goto cleanup;
     }
-    if (state->dialect == CARBON_DIALECT_MYSQL) {
+    if (state->dialect == CARBON_DIALECT_KIND_MYSQL) {
         status = carbon_append_join_clauses(state, query, sql);
         if (status != CARBON_STATUS_OK) {
             goto cleanup;
@@ -5874,7 +5874,7 @@ static carbon_status carbon_compile_update_statement(
         status = CARBON_STATUS_INVALID_QUERY;
         goto cleanup;
     }
-    if (state->dialect == CARBON_DIALECT_POSTGRESQL && has_join > 0) {
+    if (state->dialect == CARBON_DIALECT_KIND_POSTGRESQL && has_join > 0) {
         status = carbon_append_postgresql_join_sources(
                 state,
                 query,
@@ -5900,7 +5900,7 @@ static carbon_status carbon_compile_update_statement(
             carbon_builder_free(&where);
             goto cleanup;
         }
-        if (state->dialect == CARBON_DIALECT_POSTGRESQL) {
+        if (state->dialect == CARBON_DIALECT_KIND_POSTGRESQL) {
             status = carbon_append_wrapped_condition_part(&postgresql_conditions, where.data);
         } else if (where.length > 0 && (!carbon_builder_append(sql, " WHERE ")
                                         || !carbon_builder_append(sql, where.data))) {
@@ -5913,7 +5913,7 @@ static carbon_status carbon_compile_update_statement(
         carbon_builder_free(&where);
     }
 
-    if (state->dialect == CARBON_DIALECT_POSTGRESQL
+    if (state->dialect == CARBON_DIALECT_KIND_POSTGRESQL
         && postgresql_conditions.length > 0
         && (!carbon_builder_append(sql, " WHERE ")
             || !carbon_builder_append(sql, postgresql_conditions.data))) {
@@ -5974,7 +5974,7 @@ static carbon_status carbon_compile_delete_statement(
         status = CARBON_STATUS_INVALID_JSON;
         goto cleanup;
     }
-    if (state->dialect == CARBON_DIALECT_MYSQL) {
+    if (state->dialect == CARBON_DIALECT_KIND_MYSQL) {
         if (!carbon_builder_append(sql, "DELETE ")
             || !carbon_append_quoted_table(sql, state->dialect, table)
             || !carbon_builder_append(sql, " FROM ")
@@ -6019,7 +6019,7 @@ static carbon_status carbon_compile_delete_statement(
             carbon_builder_free(&where);
             goto cleanup;
         }
-        if (state->dialect == CARBON_DIALECT_POSTGRESQL) {
+        if (state->dialect == CARBON_DIALECT_KIND_POSTGRESQL) {
             status = carbon_append_wrapped_condition_part(&postgresql_conditions, where.data);
         } else if (where.length > 0 && (!carbon_builder_append(sql, " WHERE ")
                                         || !carbon_builder_append(sql, where.data))) {
@@ -6032,7 +6032,7 @@ static carbon_status carbon_compile_delete_statement(
         carbon_builder_free(&where);
     }
 
-    if (state->dialect == CARBON_DIALECT_POSTGRESQL
+    if (state->dialect == CARBON_DIALECT_KIND_POSTGRESQL
         && postgresql_conditions.length > 0
         && (!carbon_builder_append(sql, " WHERE ")
             || !carbon_builder_append(sql, postgresql_conditions.data))) {
@@ -6418,7 +6418,7 @@ carbon_status carbon_schema_metadata(
         goto fail;
     }
 
-    state.dialect = CARBON_DIALECT_MYSQL;
+    state.dialect = CARBON_DIALECT_KIND_MYSQL;
     state.sql = NULL;
     state.params = NULL;
     state.schema = &schema;

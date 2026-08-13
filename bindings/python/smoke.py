@@ -41,7 +41,7 @@ def main() -> None:
         "PAGINATION": {"LIMIT": 5},
     }
 
-    result = carbon.compile_query(json.dumps(query), schema_json=json.dumps(schema), dialect="mysql")
+    result = carbon.compile_query(json.dumps(query), schema_json=json.dumps(schema), dialect=carbon_codegen.CarbonDialect.MYSQL)
     assert result["status"] == 0, result
     assert result["status_code"] == "ok", result
     assert result["sql"] == (
@@ -53,15 +53,18 @@ def main() -> None:
         "SELECT actor.actor_id, actor.first_name FROM `actor` "
         "WHERE (actor.actor_id) > ? LIMIT ?"
     )
+    assert carbon_codegen.CarbonDialect.MYSQL == "mysql"
+    assert carbon_codegen.Dialect.POSTGRESQL == "postgresql"
+    assert carbon_codegen.Dialect.POSTGRES == "postgres"
     assert json.loads(result["diagnostics_json"]) == {
         "status": 0,
         "status_code": "ok",
         "ok": True,
         "diagnostics": [],
     }
-    ergonomic = carbon_codegen.compile_query_value(query, schema=schema, dialect="mysql")
+    ergonomic = carbon_codegen.compile_query_value(query, schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
     assert ergonomic == result, ergonomic
-    ergonomic_alias = carbon_codegen.compile_query(query, schema=schema, dialect="mysql")
+    ergonomic_alias = carbon_codegen.compile_query(query, schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
     assert ergonomic_alias == result, ergonomic_alias
     top_ordered = carbon_codegen.compile_query_value(
         {
@@ -72,7 +75,7 @@ def main() -> None:
             "PAGINATION": {"LIMIT": 25},
         },
         schema=schema,
-        dialect="mysql",
+        dialect=carbon_codegen.CarbonDialect.MYSQL,
     )
     assert top_ordered["sql"] == (
         "SELECT actor.actor_id, actor.first_name FROM `actor` "
@@ -88,7 +91,7 @@ def main() -> None:
         "params": [10],
         "diagnostics": json.loads(result["diagnostics_json"]),
     }, adapted
-    typed = carbon_codegen.compile_query_result(query, schema=schema, dialect="mysql")
+    typed = carbon_codegen.compile_query_result(query, schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
     assert typed == adapted, typed
     built = (
         carbon_codegen.query("actor")
@@ -97,7 +100,7 @@ def main() -> None:
         .limit(5)
     )
     assert built.to_payload() == query, built.to_payload()
-    assert built.compile(schema=schema, dialect="mysql") == adapted
+    assert built.compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL) == adapted
     ordered_payload = (
         carbon_codegen.from_table("actor")
         .select(["actor.actor_id"])
@@ -148,7 +151,7 @@ def main() -> None:
             }
         )
         .limit(5)
-        .compile(dialect="mysql")
+        .compile(dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert hinted_join["sql"] == (
         "SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) "
@@ -175,7 +178,7 @@ def main() -> None:
         .select("actor.actor_id", "fa_recent.actor_id")
         .join_subselect("INNER", "fa_recent", recent_actor_ids, {"fa_recent.actor_id": ["=", "actor.actor_id"]})
         .where({"actor.actor_id": [">", 100]})
-        .compile(dialect="mysql")
+        .compile(dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert derived["status"] == 0, derived
     assert derived["sql"] == (
@@ -210,7 +213,7 @@ def main() -> None:
         carbon_codegen.query("actor")
         .select([carbon_codegen.as_(carbon_codegen.custom_call("COALESCE", carbon_codegen.lit("UNKNOWN"), "actor.first_name"), "display_name")])
         .limit(1)
-        .compile(dialect="mysql")
+        .compile(dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert custom_selected["sql"] == "SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1", custom_selected
     assert custom_selected["params"] == ["UNKNOWN"], custom_selected
@@ -240,7 +243,7 @@ def main() -> None:
             }
         )
         .limit(10)
-        .compile(dialect="mysql")
+        .compile(dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert spatial_filtered["sql"] == (
         "SELECT property_units.unit_id FROM `property_units` "
@@ -269,7 +272,7 @@ def main() -> None:
         .where_not_in("property_units.account_id", [99, 100])
         .where_exists("property_units.parcel_id", sales_query)
         .limit(3)
-        .compile(dialect="mysql")
+        .compile(dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert advanced["status"] == 0, advanced
     assert advanced["sql"] == (
@@ -309,7 +312,7 @@ def main() -> None:
         .select("actor.actor_id")
         .where_match_against("actor.first_name", "alpha beta", "BOOLEAN")
         .limit(10)
-        .compile(schema=schema, dialect="mysql")
+        .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert fulltext["status"] == 0, fulltext
     assert fulltext["sql"] == (
@@ -330,7 +333,7 @@ def main() -> None:
             carbon_codegen.condition("actor.actor_id", carbon_codegen.op("<", 9)),
         )
         .limit(5)
-        .compile(dialect="mysql")
+        .compile(dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert boolean_grouped["status"] == 0, boolean_grouped
     assert boolean_grouped["sql"] == (
@@ -347,7 +350,7 @@ def main() -> None:
         .having({"cnt": [">", 1]})
         .page(2)
         .limit(5)
-        .compile(dialect="mysql")
+        .compile(dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert grouped["status"] == 0, grouped
     assert grouped["sql"] == (
@@ -358,7 +361,7 @@ def main() -> None:
     inserted = (
         carbon_codegen.query("actor")
         .insert({"actor.first_name": "ALICE"})
-        .compile(schema=schema, dialect="mysql")
+        .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert inserted["status"] == 0, inserted
     assert inserted["sql"] == "INSERT INTO `actor` (`first_name`) VALUES (?)", inserted
@@ -371,7 +374,7 @@ def main() -> None:
                 "actor.last_name": "SMITH",
             }
         )
-        .compile(dialect="mysql")
+        .compile(dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert expression_inserted["sql"] == (
         "INSERT INTO `actor` (`first_name`, `last_name`) VALUES (CONCAT(?, ?), ?)"
@@ -385,7 +388,7 @@ def main() -> None:
         carbon_codegen.query("actor")
         .update({"actor.first_name": "BOB"})
         .where({"actor.actor_id": 1})
-        .compile(schema=schema, dialect="mysql")
+        .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert updated["sql"] == "UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) = ?", updated
     assert updated["params"] == ["BOB", 1], updated
@@ -402,7 +405,7 @@ def main() -> None:
             }
         )
         .where({"actor.actor_id": ["=", 7]})
-        .compile(dialect="mysql")
+        .compile(dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert expression_updated["sql"] == (
         "UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name), "
@@ -413,7 +416,7 @@ def main() -> None:
         carbon_codegen.query("actor")
         .delete()
         .where({"actor.actor_id": 1})
-        .compile(schema=schema, dialect="mysql")
+        .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert deleted["sql"] == "DELETE `actor` FROM `actor` WHERE (actor.actor_id) = ?", deleted
     assert deleted["params"] == [1], deleted
@@ -421,7 +424,7 @@ def main() -> None:
         carbon_codegen.query("actor")
         .insert({"actor.actor_id": 1, "actor.first_name": "ALICE"})
         .upsert(["first_name"])
-        .compile(schema=schema, dialect="mysql")
+        .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert upserted["sql"] == (
         "INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) "
@@ -503,7 +506,7 @@ def main() -> None:
         .where_op(actor_model.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 0)
         .order_by(actor_model.FIRST_NAME, carbon_codegen.C6C.ASC)
         .limit(1)
-        .compile(schema=schema, dialect="mysql")
+        .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert constant_built["sql"] == (
         "SELECT actor.actor_id, actor.first_name FROM `actor` "
@@ -514,7 +517,7 @@ def main() -> None:
         carbon_codegen.model_select(actor_model, actor_model.FIELD_ACTOR_ID)
         .where_op(actor_model.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 0)
         .limit(1)
-        .compile(schema=schema, dialect="mysql")
+        .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert model_built["sql"] == "SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1", model_built
     assert model_built["params"] == [0], model_built
@@ -522,7 +525,7 @@ def main() -> None:
     rejected = carbon.compile_query(
         json.dumps({"FROM": "actor", "SELECT": ["actor.last_name"]}),
         schema_json=json.dumps(schema),
-        dialect="mysql",
+        dialect=carbon_codegen.CarbonDialect.MYSQL,
     )
     assert rejected["status"] == 3, rejected
     assert rejected["status_code"] == "invalid_query", rejected
@@ -530,7 +533,7 @@ def main() -> None:
     rejected_table = carbon.compile_query(
         json.dumps({"FROM": "film", "SELECT": ["film.film_id"]}),
         schema_json=json.dumps(schema),
-        dialect="mysql",
+        dialect=carbon_codegen.CarbonDialect.MYSQL,
     )
     assert rejected_table["status"] == 3, rejected_table
     assert rejected_table["status_code"] == "invalid_query", rejected_table

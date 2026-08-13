@@ -99,6 +99,12 @@ const C6C = Object.freeze({
   WHERE: 'WHERE',
 });
 const C6 = C6C;
+const CarbonDialect = Object.freeze({
+  MYSQL: 'mysql',
+  POSTGRESQL: 'postgresql',
+  POSTGRES: 'postgres',
+});
+const Dialect = CarbonDialect;
 
 function schemaJson(schema) {
   if (schema === undefined || schema === null) {
@@ -121,7 +127,7 @@ function payloadJson(payload, name) {
   return encoded;
 }
 
-function compileQueryValue(query, schema, dialect = 'mysql') {
+function compileQueryValue(query, schema, dialect = CarbonDialect.MYSQL) {
   return native.compileQuery(payloadJson(query, 'query'), schemaJson(schema), dialect);
 }
 
@@ -145,7 +151,7 @@ function adaptCompileResult(result) {
   };
 }
 
-function compileQueryResult(query, schema, dialect = 'mysql') {
+function compileQueryResult(query, schema, dialect = CarbonDialect.MYSQL) {
   return adaptCompileResult(compileQueryValue(query, schema, dialect));
 }
 
@@ -560,7 +566,7 @@ class CarbonQuery {
     return JSON.parse(JSON.stringify(this.payload));
   }
 
-  compile(schema, dialect = 'mysql') {
+  compile(schema, dialect = CarbonDialect.MYSQL) {
     return compileQueryResult(this.payload, schema, dialect);
   }
 
@@ -761,6 +767,8 @@ native.schemaModels = schemaModels;
 native.schema_models = schemaModels;
 native.C6C = C6C;
 native.C6 = C6;
+native.CarbonDialect = CarbonDialect;
+native.Dialect = Dialect;
 native.compileQueryValue = compileQueryValue;
 native.compile_query_value = compileQueryValue;
 native.adaptCompileResult = adaptCompileResult;

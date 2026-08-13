@@ -46,6 +46,9 @@ static void test_version(void) {
     assert(strcmp(CARBON_C6_SELECT, "SELECT") == 0);
     assert(strcmp(CARBON_C6_GREATER_THAN, ">") == 0);
     assert(strcmp(CARBON_C6_FORCE_INDEX, "FORCE INDEX") == 0);
+    assert(strcmp(CARBON_DIALECT_MYSQL, "mysql") == 0);
+    assert(strcmp(CARBON_DIALECT_POSTGRESQL, "postgresql") == 0);
+    assert(strcmp(CARBON_DIALECT_POSTGRES, "postgres") == 0);
 }
 
 static void test_mysql_select_where_limit(void) {

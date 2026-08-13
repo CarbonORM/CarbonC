@@ -69,7 +69,7 @@ PHP_FUNCTION(carbon_status_code) {
 PHP_FUNCTION(carbon_compile_query) {
         char *query_json;
         char *schema_json = "{}";
-        char *dialect = "mysql";
+        char *dialect = CARBON_DIALECT_MYSQL;
         size_t query_json_length;
         size_t schema_json_length = 2;
         size_t dialect_length = 5;

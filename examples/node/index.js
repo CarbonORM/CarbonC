@@ -47,7 +47,7 @@ const result = carbon.query(Actor.TABLE)
   .select(Actor.COLUMNS.actor_id, Actor.COLUMNS.first_name)
   .whereOp(Actor.COLUMNS.actor_id, carbon.C6C.GREATER_THAN, 10)
   .limit(5)
-  .compile(schema, 'mysql');
+  .compile(schema, carbon.CarbonDialect.MYSQL);
 
 if (result.status !== 0) {
   console.error(result.error);

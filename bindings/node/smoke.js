@@ -45,8 +45,11 @@ assert.strictEqual(carbon.statusCode(3), 'invalid_query');
 assert.strictEqual(carbon.statusMessage(0), 'ok');
 assert.strictEqual(carbon.C6C.FROM, 'FROM');
 assert.strictEqual(carbon.C6.GREATER_THAN, '>');
+assert.strictEqual(carbon.CarbonDialect.MYSQL, 'mysql');
+assert.strictEqual(carbon.Dialect.POSTGRESQL, 'postgresql');
+assert.strictEqual(carbon.Dialect.POSTGRES, 'postgres');
 
-const result = carbon.compileQuery(JSON.stringify(query), JSON.stringify(schema), 'mysql');
+const result = carbon.compileQuery(JSON.stringify(query), JSON.stringify(schema), carbon.CarbonDialect.MYSQL);
 
 assert.strictEqual(result.status, 0, JSON.stringify(result));
 assert.strictEqual(result.status_code, 'ok', JSON.stringify(result));
@@ -65,8 +68,8 @@ assert.deepStrictEqual(JSON.parse(result.diagnostics_json), {
   ok: true,
   diagnostics: [],
 });
-assert.deepStrictEqual(carbon.compileQueryValue(query, schema, 'mysql'), result);
-assert.deepStrictEqual(carbon.compile_query_value(query, schema, 'mysql'), result);
+assert.deepStrictEqual(carbon.compileQueryValue(query, schema, carbon.CarbonDialect.MYSQL), result);
+assert.deepStrictEqual(carbon.compile_query_value(query, schema, carbon.CarbonDialect.MYSQL), result);
 const topOrdered = carbon.compileQueryValue(
   {
     FROM: 'actor',
@@ -93,14 +96,14 @@ assert.deepStrictEqual(adapted, {
   diagnostics: JSON.parse(result.diagnostics_json),
 });
 assert.deepStrictEqual(carbon.adapt_compile_result(result), adapted);
-assert.deepStrictEqual(carbon.compileQueryResult(query, schema, 'mysql'), adapted);
-assert.deepStrictEqual(carbon.compile_query_result(query, schema, 'mysql'), adapted);
+assert.deepStrictEqual(carbon.compileQueryResult(query, schema, carbon.CarbonDialect.MYSQL), adapted);
+assert.deepStrictEqual(carbon.compile_query_result(query, schema, carbon.CarbonDialect.MYSQL), adapted);
 const built = carbon.query('actor')
   .select('actor.actor_id', 'actor.first_name')
   .where({'actor.actor_id': ['>', 10]})
   .limit(5);
 assert.deepStrictEqual(built.toPayload(), query);
-assert.deepStrictEqual(built.compile(schema, 'mysql'), adapted);
+assert.deepStrictEqual(built.compile(schema, carbon.CarbonDialect.MYSQL), adapted);
 assert.deepStrictEqual(
   carbon.fromTable('actor')
     .select(['actor.actor_id'])
@@ -148,7 +151,7 @@ const hintedJoin = carbon.query('actor')
     'film_actor fa': carbon.useIndex('idx_film_actor_actor_id'),
   })
   .limit(5)
-  .compile(undefined, 'mysql');
+  .compile(undefined, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(
   hintedJoin.sql,
   'SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) ON ((fa.actor_id) = actor.actor_id) LIMIT 5'
@@ -170,7 +173,7 @@ const derived = carbon.query('actor')
   .select('actor.actor_id', 'fa_recent.actor_id')
   .joinSubselect('INNER', 'fa_recent', recentActorIds, {'fa_recent.actor_id': ['=', 'actor.actor_id']})
   .where({'actor.actor_id': ['>', 100]})
-  .compile(undefined, 'mysql');
+  .compile(undefined, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(derived.status, 0, JSON.stringify(derived));
 assert.strictEqual(
   derived.sql,
@@ -199,7 +202,7 @@ assert.deepStrictEqual(carbon.customCall('COALESCE', carbon.lit('UNKNOWN'), 'act
 const customSelected = carbon.query('actor')
   .select([carbon.alias(carbon.customCall('COALESCE', carbon.lit('UNKNOWN'), 'actor.first_name'), 'display_name')])
   .limit(1)
-  .compile(undefined, 'mysql');
+  .compile(undefined, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(customSelected.sql, 'SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1');
 assert.deepStrictEqual(customSelected.params, ['UNKNOWN']);
 const spatialPolygon = 'POLYGON((39.5185659 -105.0142915,39.5401859 -105.0142915,39.5401859 -104.9862115,39.5185659 -104.9862115,39.5185659 -105.0142915))';
@@ -225,7 +228,7 @@ const spatialFiltered = carbon.query('property_units')
     ],
   })
   .limit(10)
-  .compile(undefined, 'mysql');
+  .compile(undefined, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(
   spatialFiltered.sql,
   'SELECT property_units.unit_id FROM `property_units` WHERE MBRCONTAINS(ST_GEOMFROMTEXT(?, 4326), property_units.location) AND (ST_WITHIN(property_units.location, ST_GEOMFROMTEXT(?, 4326)) OR ST_CONTAINS(property_units.envelope, property_units.location)) LIMIT 10'
@@ -250,7 +253,7 @@ const advanced = carbon.query('property_units')
   .whereNotIn('property_units.account_id', [99, 100])
   .whereExists('property_units.parcel_id', salesQuery)
   .limit(3)
-  .compile(undefined, 'mysql');
+  .compile(undefined, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(advanced.status, 0, JSON.stringify(advanced));
 assert.strictEqual(
   advanced.sql,
@@ -285,7 +288,7 @@ const fulltext = carbon.query('actor')
   .select('actor.actor_id')
   .whereMatchAgainst('actor.first_name', 'alpha beta', 'BOOLEAN')
   .limit(10)
-  .compile(schema, 'mysql');
+  .compile(schema, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(fulltext.status, 0, JSON.stringify(fulltext));
 assert.strictEqual(
   fulltext.sql,
@@ -304,7 +307,7 @@ const booleanGrouped = carbon.query('actor')
     carbon.condition('actor.actor_id', carbon.op('<', 9))
   )
   .limit(5)
-  .compile(undefined, 'mysql');
+  .compile(undefined, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(booleanGrouped.status, 0, JSON.stringify(booleanGrouped));
 assert.strictEqual(
   booleanGrouped.sql,
@@ -317,7 +320,7 @@ const grouped = carbon.query('actor')
   .having({cnt: ['>', 1]})
   .page(2)
   .limit(5)
-  .compile(undefined, 'mysql');
+  .compile(undefined, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(grouped.status, 0, JSON.stringify(grouped));
 assert.strictEqual(
   grouped.sql,
@@ -326,7 +329,7 @@ assert.strictEqual(
 assert.deepStrictEqual(grouped.params, [1]);
 const inserted = carbon.query('actor')
   .insert({'actor.first_name': 'ALICE'})
-  .compile(schema, 'mysql');
+  .compile(schema, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(inserted.status, 0, JSON.stringify(inserted));
 assert.strictEqual(inserted.sql, 'INSERT INTO `actor` (`first_name`) VALUES (?)');
 assert.deepStrictEqual(inserted.params, ['ALICE']);
@@ -335,7 +338,7 @@ const expressionInserted = carbon.query('actor')
     'actor.first_name': carbon.fn('CONCAT', carbon.lit('HEL'), carbon.lit('LO')),
     'actor.last_name': 'SMITH',
   })
-  .compile(undefined, 'mysql');
+  .compile(undefined, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(
   expressionInserted.sql,
   'INSERT INTO `actor` (`first_name`, `last_name`) VALUES (CONCAT(?, ?), ?)'
@@ -351,7 +354,7 @@ assert.deepStrictEqual(
 const updated = carbon.query('actor')
   .update({'actor.first_name': 'BOB'})
   .where({'actor.actor_id': 1})
-  .compile(schema, 'mysql');
+  .compile(schema, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(updated.sql, 'UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) = ?');
 assert.deepStrictEqual(updated.params, ['BOB', 1]);
 const expressionUpdated = carbon.query('actor')
@@ -360,7 +363,7 @@ const expressionUpdated = carbon.query('actor')
     'actor.last_name': carbon.customCall('COALESCE', carbon.lit('UNKNOWN'), 'actor.last_name'),
   })
   .where({'actor.actor_id': ['=', 7]})
-  .compile(undefined, 'mysql');
+  .compile(undefined, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(
   expressionUpdated.sql,
   'UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name), `last_name` = COALESCE(?, actor.last_name) WHERE (actor.actor_id) = ?'
@@ -369,13 +372,13 @@ assert.deepStrictEqual(expressionUpdated.params, ['Mr. ', 'UNKNOWN', 7]);
 const deleted = carbon.query('actor')
   .delete()
   .where({'actor.actor_id': 1})
-  .compile(schema, 'mysql');
+  .compile(schema, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(deleted.sql, 'DELETE `actor` FROM `actor` WHERE (actor.actor_id) = ?');
 assert.deepStrictEqual(deleted.params, [1]);
 const upserted = carbon.query('actor')
   .insert({'actor.actor_id': 1, 'actor.first_name': 'ALICE'})
   .upsert(['first_name'])
-  .compile(schema, 'mysql');
+  .compile(schema, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(
   upserted.sql,
   'INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)'
@@ -461,7 +464,7 @@ const constantBuilt = carbon.query(actorMeta.table)
   .whereOp(actorMeta.columns.actor_id, carbon.C6C.GREATER_THAN, 0)
   .orderBy(actorMeta.columns.first_name, carbon.C6C.ASC)
   .limit(1)
-  .compile(schema, 'mysql');
+  .compile(schema, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(
   constantBuilt.sql,
   'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 1'
@@ -470,12 +473,12 @@ assert.deepStrictEqual(constantBuilt.params, [0]);
 const modelBuilt = carbon.modelSelect(actorMeta, actorMeta.fields.actor_id)
   .whereOp(actorMeta.columns.actor_id, carbon.C6C.GREATER_THAN, 0)
   .limit(1)
-  .compile(schema, 'mysql');
+  .compile(schema, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(modelBuilt.sql, 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1');
 assert.deepStrictEqual(modelBuilt.params, [0]);
 assert.strictEqual(carbon.schema_models({}), '');
 
-const aliasResult = carbon.compile_query(JSON.stringify(query), JSON.stringify(schema), 'mysql');
+const aliasResult = carbon.compile_query(JSON.stringify(query), JSON.stringify(schema), carbon.CarbonDialect.MYSQL);
 assert.deepStrictEqual(aliasResult, result);
 
 const rejected = carbon.compileQuery(

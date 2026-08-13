@@ -80,6 +80,14 @@ if (!function_exists('carbon_schema_models')) {
     if (!class_exists('C6', false)) {
         class_alias('C6C', 'C6');
     }
+    if (!class_exists('CarbonDialect', false)) {
+        final class CarbonDialect
+        {
+            public const MYSQL = 'mysql';
+            public const POSTGRESQL = 'postgresql';
+            public const POSTGRES = 'postgres';
+        }
+    }
 
     function carbon_codegen_schema_json($schema): string
     {
@@ -108,7 +116,7 @@ if (!function_exists('carbon_schema_models')) {
         return $encoded;
     }
 
-    function carbon_compile_query_value($query, $schema = null, string $dialect = 'mysql'): array
+    function carbon_compile_query_value($query, $schema = null, string $dialect = CarbonDialect::MYSQL): array
     {
         return carbon_compile_query(
             carbon_codegen_payload_json($query),
@@ -136,7 +144,7 @@ if (!function_exists('carbon_schema_models')) {
         return $result;
     }
 
-    function carbon_compile_query_result($query, $schema = null, string $dialect = 'mysql'): array
+    function carbon_compile_query_result($query, $schema = null, string $dialect = CarbonDialect::MYSQL): array
     {
         return carbon_adapt_compile_result(carbon_compile_query_value($query, $schema, $dialect));
     }
@@ -646,7 +654,7 @@ if (!function_exists('carbon_schema_models')) {
                 return $decoded;
             }
 
-            public function compile($schema = null, string $dialect = 'mysql'): array
+            public function compile($schema = null, string $dialect = CarbonDialect::MYSQL): array
             {
                 return carbon_compile_query_result($this->payload, $schema, $dialect);
             }

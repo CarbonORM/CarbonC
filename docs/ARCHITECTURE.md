@@ -23,6 +23,7 @@ Bindings own runtime integration:
 - framework adapters
 - native payload serialization helpers
 - language-native C6 token constants
+- language-native dialect constants
 - query-builder facades
 - native model classes and generated types
 - exception mapping
@@ -33,7 +34,8 @@ status, stable status code, error fields, and normalized schema metadata. The
 package layer around those extensions owns native dict/array/object/hash
 serialization helpers, typed result adapters that decode params/diagnostics JSON,
 query-builder facades, CarbonNode-compatible `C6C` token constants, C
-`CARBON_C6_*` macros, and typed source generators for Python dataclasses,
+`CARBON_C6_*` macros, `CarbonDialect` / `Dialect` constants, C
+`CARBON_DIALECT_*` macros, and typed source generators for Python dataclasses,
 TypeScript interfaces, PHP model classes, and Ruby Struct models. Generated
 model sources expose table, field-name, and qualified-column constants so query
 authors do not hand-type schema identifiers. DB execution remains outside
@@ -82,6 +84,8 @@ The initial compiler supports:
 - package-level compile helpers for native Python dicts, PHP arrays, JavaScript
   objects, and Ruby hashes
 - package-level C6 token constants exposed idiomatically as `C6C` / `C6`
+- package-level dialect constants exposed idiomatically as `CarbonDialect` /
+  `Dialect`
 - package-level result adapters that retain the raw JSON fields while adding
   decoded native `params` and `diagnostics` values
 - package-level query-builder facades that emit canonical payloads for
@@ -186,8 +190,8 @@ CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers, package-level native payload helpers, typed result adapters,
 read/write/subselect/predicate query-builder facades, boolean-group compiler
-wrapping, C6 token constants, typed source generators with generated field and
-column constants, model-aware query scaffolds, full-text
+wrapping, C6 token constants, dialect constants, typed source generators with
+generated field and column constants, model-aware query scaffolds, full-text
 `MATCH_AGAINST` predicates, boolean spatial-function predicates, canonical
 custom-call expressions, expression-valued writes, MySQL index hints, and binding-friendly
 diagnostic JSON. The next

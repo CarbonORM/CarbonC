@@ -80,6 +80,12 @@ module CarbonC
 
   C6 = C6C
 
+  module Dialect
+    MYSQL = 'mysql'
+    POSTGRESQL = 'postgresql'
+    POSTGRES = 'postgres'
+  end
+
   class Query
     def initialize(table = nil)
       @payload = {}
@@ -254,7 +260,7 @@ module CarbonC
       JSON.parse(JSON.generate(@payload))
     end
 
-    def compile(schema = nil, dialect = 'mysql')
+    def compile(schema = nil, dialect = Dialect::MYSQL)
       CarbonC.compile_query_result(@payload, schema, dialect)
     end
 
@@ -480,7 +486,7 @@ module CarbonC
       model_query(model).select(selected)
     end
 
-    def compile_query_value(query, schema = nil, dialect = 'mysql')
+    def compile_query_value(query, schema = nil, dialect = Dialect::MYSQL)
       compile_query(
         carbon_codegen_payload_json(query),
         carbon_codegen_schema_json(schema),
@@ -495,7 +501,7 @@ module CarbonC
       )
     end
 
-    def compile_query_result(query, schema = nil, dialect = 'mysql')
+    def compile_query_result(query, schema = nil, dialect = Dialect::MYSQL)
       adapt_compile_result(compile_query_value(query, schema, dialect))
     end
 

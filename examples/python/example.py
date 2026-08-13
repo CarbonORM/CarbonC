@@ -43,7 +43,7 @@ result = (
     .select(Actor.ACTOR_ID, Actor.FIRST_NAME)
     .where_op(Actor.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 10)
     .limit(5)
-    .compile(schema=schema, dialect="mysql")
+    .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
 )
 
 if result["status"] != 0:

@@ -45,8 +45,11 @@ raise 'unexpected status code' unless CarbonC.status_code(3) == 'invalid_query'
 raise 'unexpected status message' unless CarbonC.status_message(0) == 'ok'
 raise 'unexpected C6C FROM constant' unless CarbonC::C6C::FROM == 'FROM'
 raise 'unexpected C6C GREATER_THAN constant' unless CarbonC::C6C::GREATER_THAN == '>'
+raise 'unexpected dialect MYSQL constant' unless CarbonC::Dialect::MYSQL == 'mysql'
+raise 'unexpected dialect POSTGRESQL constant' unless CarbonC::Dialect::POSTGRESQL == 'postgresql'
+raise 'unexpected dialect POSTGRES constant' unless CarbonC::Dialect::POSTGRES == 'postgres'
 
-result = CarbonC.compile_query(JSON.generate(query), JSON.generate(schema), 'mysql')
+result = CarbonC.compile_query(JSON.generate(query), JSON.generate(schema), CarbonC::Dialect::MYSQL)
 
 raise "expected compile success: #{result.inspect}" unless result.fetch('status') == 0
 raise "unexpected status code: #{result.inspect}" unless result.fetch('status_code') == 'ok'
@@ -65,7 +68,7 @@ expected_diagnostics = {
   'diagnostics' => []
 }
 raise "unexpected success diagnostics: #{diagnostics.inspect}" unless diagnostics == expected_diagnostics
-ergonomic = CarbonC.compile_query_value(query, schema, 'mysql')
+ergonomic = CarbonC.compile_query_value(query, schema, CarbonC::Dialect::MYSQL)
 raise "unexpected ergonomic compile result: #{ergonomic.inspect}" unless ergonomic == result
 top_ordered = CarbonC.compile_query_value(
   {
@@ -90,14 +93,14 @@ expected_adapted = result.merge(
   'diagnostics' => JSON.parse(result.fetch('diagnostics_json'))
 )
 raise "unexpected adapted compile result: #{adapted.inspect}" unless adapted == expected_adapted
-typed = CarbonC.compile_query_result(query, schema, 'mysql')
+typed = CarbonC.compile_query_result(query, schema, CarbonC::Dialect::MYSQL)
 raise "unexpected typed compile result: #{typed.inspect}" unless typed == adapted
 built = CarbonC.query('actor')
                 .select('actor.actor_id', 'actor.first_name')
                 .where({'actor.actor_id' => ['>', 10]})
                 .limit(5)
 raise "unexpected builder payload: #{built.to_payload.inspect}" unless built.to_payload == query
-raise 'unexpected builder compile result' unless built.compile(schema, 'mysql') == adapted
+raise 'unexpected builder compile result' unless built.compile(schema, CarbonC::Dialect::MYSQL) == adapted
 ordered_payload = CarbonC.from_table('actor')
                          .select(['actor.actor_id'])
                          .order_by('actor.first_name', 'DESC')
@@ -151,7 +154,7 @@ hinted_join = CarbonC.query('actor')
                        'film_actor fa' => CarbonC.use_index('idx_film_actor_actor_id')
                      )
                      .limit(5)
-                     .compile(nil, 'mysql')
+                     .compile(nil, CarbonC::Dialect::MYSQL)
 unless hinted_join.fetch('sql') == 'SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) ON ((fa.actor_id) = actor.actor_id) LIMIT 5'
   raise "unexpected hinted join sql: #{hinted_join.fetch('sql')}"
 end
@@ -175,7 +178,7 @@ derived = CarbonC.query('actor')
                  .select('actor.actor_id', 'fa_recent.actor_id')
                  .join_subselect('INNER', 'fa_recent', recent_actor_ids, {'fa_recent.actor_id' => ['=', 'actor.actor_id']})
                  .where({'actor.actor_id' => ['>', 100]})
-                 .compile(nil, 'mysql')
+                 .compile(nil, CarbonC::Dialect::MYSQL)
 raise "unexpected derived compile status: #{derived.inspect}" unless derived.fetch('status') == 0
 unless derived.fetch('sql') == 'SELECT actor.actor_id, fa_recent.actor_id FROM `actor` INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` WHERE (film_actor.film_id) > ? LIMIT 1) AS `fa_recent` ON ((fa_recent.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT 100'
   raise "unexpected derived sql: #{derived.fetch('sql')}"
@@ -212,7 +215,7 @@ end
 custom_selected = CarbonC.query('actor')
                          .select([CarbonC.alias_expression(CarbonC.custom_call('COALESCE', CarbonC.lit('UNKNOWN'), 'actor.first_name'), 'display_name')])
                          .limit(1)
-                         .compile(nil, 'mysql')
+                         .compile(nil, CarbonC::Dialect::MYSQL)
 unless custom_selected.fetch('sql') == 'SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1'
   raise "unexpected custom call select sql: #{custom_selected.fetch('sql')}"
 end
@@ -247,7 +250,7 @@ spatial_filtered = CarbonC.query('property_units')
                             }
                           )
                           .limit(10)
-                          .compile(nil, 'mysql')
+                          .compile(nil, CarbonC::Dialect::MYSQL)
 unless spatial_filtered.fetch('sql') == 'SELECT property_units.unit_id FROM `property_units` WHERE MBRCONTAINS(ST_GEOMFROMTEXT(?, 4326), property_units.location) AND (ST_WITHIN(property_units.location, ST_GEOMFROMTEXT(?, 4326)) OR ST_CONTAINS(property_units.envelope, property_units.location)) LIMIT 10'
   raise "unexpected spatial predicate sql: #{spatial_filtered.fetch('sql')}"
 end
@@ -276,7 +279,7 @@ advanced = CarbonC.query('property_units')
                   .where_not_in('property_units.account_id', [99, 100])
                   .where_exists('property_units.parcel_id', sales_query)
                   .limit(3)
-                  .compile(nil, 'mysql')
+                  .compile(nil, CarbonC::Dialect::MYSQL)
 raise "unexpected advanced compile status: #{advanced.inspect}" unless advanced.fetch('status') == 0
 unless advanced.fetch('sql') == 'SELECT property_units.unit_id FROM `property_units` WHERE (property_units.unit_id) BETWEEN ? AND ? AND ( property_units.parcel_id IN (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ?) ) AND ( property_units.account_id NOT IN (?, ?) ) AND EXISTS (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ? AND (parcel_sales.parcel_id) = property_units.parcel_id) LIMIT 3'
   raise "unexpected advanced sql: #{advanced.fetch('sql')}"
@@ -316,7 +319,7 @@ fulltext = CarbonC.query('actor')
                   .select('actor.actor_id')
                   .where_match_against('actor.first_name', 'alpha beta', 'BOOLEAN')
                   .limit(10)
-                  .compile(schema, 'mysql')
+                  .compile(schema, CarbonC::Dialect::MYSQL)
 raise "unexpected full-text compile status: #{fulltext.inspect}" unless fulltext.fetch('status') == 0
 unless fulltext.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (MATCH(actor.first_name) AGAINST(? IN BOOLEAN MODE)) LIMIT 10'
   raise "unexpected full-text sql: #{fulltext.fetch('sql')}"
@@ -334,7 +337,7 @@ boolean_grouped = CarbonC.query('actor')
                            CarbonC.condition('actor.actor_id', CarbonC.op('<', 9))
                          )
                          .limit(5)
-                         .compile(nil, 'mysql')
+                         .compile(nil, CarbonC::Dialect::MYSQL)
 raise "unexpected boolean group status: #{boolean_grouped.inspect}" unless boolean_grouped.fetch('status') == 0
 unless boolean_grouped.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) BETWEEN ? AND ? AND ((actor.first_name) LIKE ? OR (actor.first_name) LIKE ?) AND ((actor.actor_id) > ? AND (actor.actor_id) < ?) LIMIT 5'
   raise "unexpected boolean group sql: #{boolean_grouped.fetch('sql')}"
@@ -348,7 +351,7 @@ grouped = CarbonC.query('actor')
                  .having({'cnt' => ['>', 1]})
                  .page(2)
                  .limit(5)
-                 .compile(nil, 'mysql')
+                 .compile(nil, CarbonC::Dialect::MYSQL)
 raise "unexpected grouped compile status: #{grouped.inspect}" unless grouped.fetch('status') == 0
 unless grouped.fetch('sql') == 'SELECT DISTINCT actor.first_name, COUNT(actor.actor_id) AS cnt FROM `actor` GROUP BY actor.first_name HAVING ((cnt) > ?) LIMIT 5, 5'
   raise "unexpected grouped sql: #{grouped.fetch('sql')}"
@@ -356,7 +359,7 @@ end
 raise "unexpected grouped params: #{grouped.fetch('params').inspect}" unless grouped.fetch('params') == [1]
 inserted = CarbonC.query('actor')
                   .insert({'actor.first_name' => 'ALICE'})
-                  .compile(schema, 'mysql')
+                  .compile(schema, CarbonC::Dialect::MYSQL)
 raise "unexpected insert compile status: #{inserted.inspect}" unless inserted.fetch('status') == 0
 unless inserted.fetch('sql') == 'INSERT INTO `actor` (`first_name`) VALUES (?)'
   raise "unexpected insert sql: #{inserted.fetch('sql')}"
@@ -367,7 +370,7 @@ expression_inserted = CarbonC.query('actor')
                                        'actor.first_name' => CarbonC.fn('CONCAT', CarbonC.lit('HEL'), CarbonC.lit('LO')),
                                        'actor.last_name' => 'SMITH'
                                      })
-                             .compile(nil, 'mysql')
+                             .compile(nil, CarbonC::Dialect::MYSQL)
 unless expression_inserted.fetch('sql') == 'INSERT INTO `actor` (`first_name`, `last_name`) VALUES (CONCAT(?, ?), ?)'
   raise "unexpected expression insert sql: #{expression_inserted.fetch('sql')}"
 end
@@ -385,7 +388,7 @@ end
 updated = CarbonC.query('actor')
                  .update({'actor.first_name' => 'BOB'})
                  .where({'actor.actor_id' => 1})
-                 .compile(schema, 'mysql')
+                 .compile(schema, CarbonC::Dialect::MYSQL)
 unless updated.fetch('sql') == 'UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) = ?'
   raise "unexpected update sql: #{updated.fetch('sql')}"
 end
@@ -396,7 +399,7 @@ expression_updated = CarbonC.query('actor')
                                       'actor.last_name' => CarbonC.custom_call('COALESCE', CarbonC.lit('UNKNOWN'), 'actor.last_name')
                                     })
                             .where({'actor.actor_id' => ['=', 7]})
-                            .compile(nil, 'mysql')
+                            .compile(nil, CarbonC::Dialect::MYSQL)
 expected_expression_update_sql = 'UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name), `last_name` = COALESCE(?, actor.last_name) WHERE (actor.actor_id) = ?'
 unless expression_updated.fetch('sql') == expected_expression_update_sql
   raise "unexpected expression update sql: #{expression_updated.fetch('sql')}"
@@ -407,7 +410,7 @@ end
 deleted = CarbonC.query('actor')
                  .delete
                  .where({'actor.actor_id' => 1})
-                 .compile(schema, 'mysql')
+                 .compile(schema, CarbonC::Dialect::MYSQL)
 unless deleted.fetch('sql') == 'DELETE `actor` FROM `actor` WHERE (actor.actor_id) = ?'
   raise "unexpected delete sql: #{deleted.fetch('sql')}"
 end
@@ -415,7 +418,7 @@ raise "unexpected delete params: #{deleted.fetch('params').inspect}" unless dele
 upserted = CarbonC.query('actor')
                   .insert({'actor.actor_id' => 1, 'actor.first_name' => 'ALICE'})
                   .upsert(['first_name'])
-                  .compile(schema, 'mysql')
+                  .compile(schema, CarbonC::Dialect::MYSQL)
 unless upserted.fetch('sql') == 'INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)'
   raise "unexpected upsert sql: #{upserted.fetch('sql')}"
 end
@@ -497,7 +500,7 @@ constant_built = CarbonC.query(CarbonModels::Actor::TABLE)
                         .where_op(CarbonModels::Actor::ACTOR_ID, CarbonC::C6C::GREATER_THAN, 0)
                         .order_by(CarbonModels::Actor::FIRST_NAME, CarbonC::C6C::ASC)
                         .limit(1)
-                        .compile(schema, 'mysql')
+                        .compile(schema, CarbonC::Dialect::MYSQL)
 unless constant_built.fetch('sql') == 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 1'
   raise "unexpected constant-built query sql: #{constant_built.fetch('sql')}"
 end
@@ -505,7 +508,7 @@ raise "unexpected constant-built query params: #{constant_built.fetch('params').
 model_built = CarbonC.model_select(CarbonModels::Actor, CarbonModels::Actor::FIELD_ACTOR_ID)
                      .where_op(CarbonModels::Actor::ACTOR_ID, CarbonC::C6C::GREATER_THAN, 0)
                      .limit(1)
-                     .compile(schema, 'mysql')
+                     .compile(schema, CarbonC::Dialect::MYSQL)
 unless model_built.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1'
   raise "unexpected model query sql: #{model_built.fetch('sql')}"
 end

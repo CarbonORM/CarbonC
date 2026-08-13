@@ -12,6 +12,10 @@ extern "C" {
 #define CARBON_VERSION_PATCH 0
 #define CARBON_VERSION "0.1.0"
 
+#define CARBON_DIALECT_MYSQL "mysql"
+#define CARBON_DIALECT_POSTGRESQL "postgresql"
+#define CARBON_DIALECT_POSTGRES "postgres"
+
 #define CARBON_C6_AS "AS"
 #define CARBON_C6_ASC "ASC"
 #define CARBON_C6_AND "AND"

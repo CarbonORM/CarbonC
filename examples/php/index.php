@@ -52,7 +52,7 @@ $result = carbon_query(Actor::TABLE)
     ->select(Actor::ACTOR_ID, Actor::FIRST_NAME)
     ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 10)
     ->limit(5)
-    ->compile($schema, 'mysql');
+    ->compile($schema, CarbonDialect::MYSQL);
 
 if ($result['status'] !== 0) {
     fwrite(STDERR, $result['error'] . PHP_EOL);

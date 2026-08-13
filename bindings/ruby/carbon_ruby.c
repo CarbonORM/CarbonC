@@ -61,7 +61,7 @@ static VALUE carbon_ruby_compile_query(int argc, VALUE *argv, VALUE self) {
     }
 
     if (NIL_P(dialect_value)) {
-        dialect_value = rb_str_new_cstr("mysql");
+        dialect_value = rb_str_new_cstr(CARBON_DIALECT_MYSQL);
     } else {
         Check_Type(dialect_value, T_STRING);
     }
