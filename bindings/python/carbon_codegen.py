@@ -301,7 +301,15 @@ def param(value: Any) -> list[Any]:
 
 
 def call(name: str, *arguments: Any) -> list[Any]:
+    return fn(name, *arguments)
+
+
+def fn(name: str, *arguments: Any) -> list[Any]:
     return [name, *[Query._copy_payload_value(argument) for argument in arguments]]
+
+
+def custom_call(name: str, *arguments: Any) -> list[Any]:
+    return ["CALL", name, *[Query._copy_payload_value(argument) for argument in arguments]]
 
 
 def as_(expression: Any, alias: str) -> list[Any]:
@@ -547,10 +555,12 @@ __all__ = [
     "compile_query_result",
     "compile_query_value",
     "condition",
+    "custom_call",
     "derived_target",
     "distinct",
     "exists",
     "exists_spec",
+    "fn",
     "from_table",
     "group",
     "in_",

@@ -83,7 +83,8 @@ The initial compiler supports:
   writes, subselects, limit/page, and order controls
 - `dialect`: `mysql`, `postgresql`, or `postgres`
 - `FROM` or legacy `table`
-- `SELECT` references, `AS`, `DISTINCT`, and function tuples
+- `SELECT` references, `AS`, `DISTINCT`, known-function tuples, and canonical
+  `CALL` custom-function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
   `RIGHT_OUTER` table aliases and stringified derived targets
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`,
@@ -92,7 +93,8 @@ The initial compiler supports:
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
 - explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads,
-  including array-valued multi-row `INSERT`/MySQL `REPLACE` rows
+  including expression-valued `INSERT`/`UPDATE` columns and array-valued
+  multi-row `INSERT`/MySQL `REPLACE` rows
 - CarbonNode-compatible root-level POST row inserts when no read operation
   controls are present
 - CarbonNode-compatible `dataInsertMultipleRows` insert payloads
@@ -160,7 +162,8 @@ CarbonC now carries the first CarbonNode-derived golden fixtures under
 wrappers, package-level native payload helpers, typed result adapters,
 read/write/subselect/predicate query-builder facades, boolean-group compiler
 wrapping, typed source generators, model-aware query scaffolds, full-text
-`MATCH_AGAINST` predicates, and binding-friendly diagnostic JSON. The next
+`MATCH_AGAINST` predicates, canonical custom-call expressions,
+expression-valued writes, and binding-friendly diagnostic JSON. The next
 implementation step is to cover additional C6 grammar and schema-aware write
 normalization edge cases while importing higher-level package examples from
 production C6 query shapes.

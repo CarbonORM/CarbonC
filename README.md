@@ -73,7 +73,8 @@ Supported in this slice:
   payloads as the native helper layer for table/from, select, where, join,
   group/having, limit/page, and order controls
 - `FROM` / legacy `table`
-- `SELECT` references, `AS`, `DISTINCT`, and function tuples
+- `SELECT` references, `AS`, `DISTINCT`, known-function tuples, and canonical
+  `CALL` custom-function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
   `RIGHT_OUTER` table aliases and stringified derived targets
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
@@ -82,7 +83,8 @@ Supported in this slice:
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
 - explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads,
-  including array-valued multi-row `INSERT`/MySQL `REPLACE` rows
+  including expression-valued `INSERT`/`UPDATE` columns and array-valued
+  multi-row `INSERT`/MySQL `REPLACE` rows
 - CarbonNode-compatible root-level POST row inserts when no read operation
   controls are present
 - CarbonNode-compatible `dataInsertMultipleRows` insert payloads
@@ -287,7 +289,8 @@ for table/from, select, where, join, group/having, write operations
 subselect helpers, derived `join_subselect` targets, advanced predicate helpers
 (`where_op`, `where_in`, `where_not_in`, `where_between`, `where_not_between`,
 `where_match_against`, `where_exists`, `where_not_exists`), composable boolean group helpers
-(`condition`, `and_`, `or_`, `where_and`, `where_or`), limit/page, and order
+(`condition`, `and_`, `or_`, `where_and`, `where_or`), expression helpers
+(`fn`, `custom_call`, `call`, `lit`, `param`), limit/page, and order
 controls.
 `compile_query_result()` returns the same fields as the raw result plus decoded
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
@@ -357,7 +360,9 @@ boundary for table/from, select, where, join, group/having, write operations
 predicate helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`,
 `whereNotBetween`, `whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group
 helpers (`carbon_condition`, `carbon_and_group`, `carbon_or_group`, `whereAnd`,
-`whereOr`), limit/page, and order controls. `carbon_compile_query_result()`
+`whereOr`), expression helpers (`carbon_fn`, `carbon_custom_call`,
+`carbon_call`, `carbon_lit`, `carbon_param`), limit/page, and order controls.
+`carbon_compile_query_result()`
 returns the same fields as the
 raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
 class source keeps properties untyped for runtime compatibility, adds PHPDoc type
@@ -431,7 +436,8 @@ boundary for table/from, select, where, join, group/having, write operations
 `subselect()` helpers, derived `joinSubselect()` targets, advanced predicate
 helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
 `whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group helpers
-(`condition`, `andGroup`, `orGroup`, `whereAnd`, `whereOr`), limit/page, and order controls.
+(`condition`, `andGroup`, `orGroup`, `whereAnd`, `whereOr`), expression helpers
+(`fn`, `customCall`, `call`, `lit`, `param`), limit/page, and order controls.
 `compileQueryResult()` returns the same fields as the raw result
 plus decoded JavaScript `params` and `diagnostics` values. The generated
 TypeScript source maps DB metadata into primitive field types and adds `dbTypes`
@@ -511,7 +517,9 @@ boundary for table/from, select, where, join, group/having, write operations
 predicate helpers (`where_op`, `where_in`, `where_not_in`, `where_between`,
 `where_not_between`, `where_match_against`, `where_exists`, `where_not_exists`), composable boolean
 group helpers (`CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
-`where_and`, `where_or`), limit/page, and order controls.
+`where_and`, `where_or`), expression helpers (`CarbonC.fn`,
+`CarbonC.custom_call`, `CarbonC.call`, `CarbonC.lit`, `CarbonC.param`),
+limit/page, and order controls.
 `CarbonC.compile_query_result` returns the same fields as the raw
 result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
 Struct source includes `TYPES` and `NULLABLE` metadata constants for runtime

@@ -2077,6 +2077,50 @@ static carbon_status carbon_append_expression(
             goto cleanup;
         }
 
+        if (strcmp(token, "CALL") == 0) {
+            carbon_json_span function_span;
+            char *function_name = NULL;
+
+            if (length < 2 || carbon_array_get(value, 1, &function_span) != 1) {
+                status = CARBON_STATUS_INVALID_QUERY;
+                goto cleanup;
+            }
+            function_name = carbon_span_string_copy(function_span);
+            if (function_name == NULL
+                || !carbon_identifier_alias_valid(function_name)) {
+                free(function_name);
+                status = CARBON_STATUS_INVALID_QUERY;
+                goto cleanup;
+            }
+            if (!carbon_builder_append(sql, function_name)
+                || !carbon_builder_append(sql, "(")) {
+                free(function_name);
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto cleanup;
+            }
+            free(function_name);
+            for (index = 2; index < length; ++index) {
+                carbon_json_span item;
+                if (index > 2 && !carbon_builder_append(sql, ", ")) {
+                    status = CARBON_STATUS_OUT_OF_MEMORY;
+                    goto cleanup;
+                }
+                if (carbon_array_get(value, index, &item) != 1) {
+                    status = CARBON_STATUS_INVALID_QUERY;
+                    goto cleanup;
+                }
+                status = carbon_append_expression(state, item, sql);
+                if (status != CARBON_STATUS_OK) {
+                    goto cleanup;
+                }
+            }
+            if (!carbon_builder_append(sql, ")")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto cleanup;
+            }
+            goto cleanup;
+        }
+
         if (!carbon_identifier_valid(token) || strcmp(token, "*") == 0) {
             status = CARBON_STATUS_INVALID_QUERY;
             goto cleanup;

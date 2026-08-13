@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","INSERT":{"actor.first_name":["CONCAT",["LIT","HEL"],["LIT","LO"]],"actor.last_name":"SMITH"}}
+-- sql
+INSERT INTO `actor` (`first_name`, `last_name`) VALUES (CONCAT(?, ?), ?)
+-- params
+["HEL","LO","SMITH"]
+-- allowlist
+INSERT INTO `actor` (`first_name`, `last_name`) VALUES (CONCAT(? ×2), ?)

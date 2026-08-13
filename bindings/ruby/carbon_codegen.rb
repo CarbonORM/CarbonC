@@ -239,7 +239,15 @@ module CarbonC
     end
 
     def call(name, *arguments)
+      fn(name, *arguments)
+    end
+
+    def fn(name, *arguments)
       [name, *arguments.map { |argument| carbon_codegen_query_payload(argument) }]
+    end
+
+    def custom_call(name, *arguments)
+      ['CALL', name, *arguments.map { |argument| carbon_codegen_query_payload(argument) }]
     end
 
     def alias_expression(expression, alias_name)

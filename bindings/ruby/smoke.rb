@@ -141,6 +141,23 @@ expected_alias_payload = [
 unless CarbonC.alias_expression(CarbonC.call('COUNT', 'parcel_sales.parcel_id'), 'sale_count') == expected_alias_payload
   raise 'unexpected alias helper payload'
 end
+expected_function_payload = [
+  'CONCAT',
+  ['LIT', 'A'],
+  ['LIT', 'B']
+]
+unless CarbonC.fn('CONCAT', CarbonC.lit('A'), CarbonC.lit('B')) == expected_function_payload
+  raise 'unexpected function helper payload'
+end
+expected_custom_call_payload = [
+  'CALL',
+  'COALESCE',
+  ['LIT', 'UNKNOWN'],
+  'actor.last_name'
+]
+unless CarbonC.custom_call('COALESCE', CarbonC.lit('UNKNOWN'), 'actor.last_name') == expected_custom_call_payload
+  raise 'unexpected custom call helper payload'
+end
 raise 'unexpected literal helper payload' unless CarbonC.lit('2023-01-01') == ['LIT', '2023-01-01']
 expected_exists_spec = [
   'property_units.parcel_id',
@@ -249,6 +266,18 @@ unless inserted.fetch('sql') == 'INSERT INTO `actor` (`first_name`) VALUES (?)'
   raise "unexpected insert sql: #{inserted.fetch('sql')}"
 end
 raise "unexpected insert params: #{inserted.fetch('params').inspect}" unless inserted.fetch('params') == ['ALICE']
+expression_inserted = CarbonC.query('actor')
+                             .insert({
+                                       'actor.first_name' => CarbonC.fn('CONCAT', CarbonC.lit('HEL'), CarbonC.lit('LO')),
+                                       'actor.last_name' => 'SMITH'
+                                     })
+                             .compile(nil, 'mysql')
+unless expression_inserted.fetch('sql') == 'INSERT INTO `actor` (`first_name`, `last_name`) VALUES (CONCAT(?, ?), ?)'
+  raise "unexpected expression insert sql: #{expression_inserted.fetch('sql')}"
+end
+unless expression_inserted.fetch('params') == ['HEL', 'LO', 'SMITH']
+  raise "unexpected expression insert params: #{expression_inserted.fetch('params').inspect}"
+end
 replace_payload = CarbonC.query('actor').replace({'actor.first_name' => 'BOB'}).to_payload
 expected_replace_payload = {
   'FROM' => 'actor',
@@ -265,6 +294,20 @@ unless updated.fetch('sql') == 'UPDATE `actor` SET `first_name` = ? WHERE (actor
   raise "unexpected update sql: #{updated.fetch('sql')}"
 end
 raise "unexpected update params: #{updated.fetch('params').inspect}" unless updated.fetch('params') == ['BOB', 1]
+expression_updated = CarbonC.query('actor')
+                            .update({
+                                      'actor.first_name' => CarbonC.fn('CONCAT', CarbonC.lit('Mr. '), 'actor.last_name'),
+                                      'actor.last_name' => CarbonC.custom_call('COALESCE', CarbonC.lit('UNKNOWN'), 'actor.last_name')
+                                    })
+                            .where({'actor.actor_id' => ['=', 7]})
+                            .compile(nil, 'mysql')
+expected_expression_update_sql = 'UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name), `last_name` = COALESCE(?, actor.last_name) WHERE (actor.actor_id) = ?'
+unless expression_updated.fetch('sql') == expected_expression_update_sql
+  raise "unexpected expression update sql: #{expression_updated.fetch('sql')}"
+end
+unless expression_updated.fetch('params') == ['Mr. ', 'UNKNOWN', 7]
+  raise "unexpected expression update params: #{expression_updated.fetch('params').inspect}"
+end
 deleted = CarbonC.query('actor')
                  .delete
                  .where({'actor.actor_id' => 1})

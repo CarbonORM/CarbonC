@@ -142,6 +142,17 @@ def main() -> None:
         ["COUNT", "parcel_sales.parcel_id"],
         "sale_count",
     ]
+    assert carbon_codegen.fn("CONCAT", carbon_codegen.lit("A"), carbon_codegen.lit("B")) == [
+        "CONCAT",
+        ["LIT", "A"],
+        ["LIT", "B"],
+    ]
+    assert carbon_codegen.custom_call("COALESCE", carbon_codegen.lit("UNKNOWN"), "actor.last_name") == [
+        "CALL",
+        "COALESCE",
+        ["LIT", "UNKNOWN"],
+        "actor.last_name",
+    ]
     assert carbon_codegen.lit("2023-01-01") == ["LIT", "2023-01-01"]
     assert carbon_codegen.exists_spec("property_units.parcel_id", sales_query) == [
         "property_units.parcel_id",
@@ -256,6 +267,20 @@ def main() -> None:
     assert inserted["status"] == 0, inserted
     assert inserted["sql"] == "INSERT INTO `actor` (`first_name`) VALUES (?)", inserted
     assert inserted["params"] == ["ALICE"], inserted
+    expression_inserted = (
+        carbon_codegen.query("actor")
+        .insert(
+            {
+                "actor.first_name": carbon_codegen.fn("CONCAT", carbon_codegen.lit("HEL"), carbon_codegen.lit("LO")),
+                "actor.last_name": "SMITH",
+            }
+        )
+        .compile(dialect="mysql")
+    )
+    assert expression_inserted["sql"] == (
+        "INSERT INTO `actor` (`first_name`, `last_name`) VALUES (CONCAT(?, ?), ?)"
+    ), expression_inserted
+    assert expression_inserted["params"] == ["HEL", "LO", "SMITH"], expression_inserted
     assert carbon_codegen.query("actor").replace({"actor.first_name": "BOB"}).to_payload() == {
         "FROM": "actor",
         "REPLACE": {"actor.first_name": "BOB"},
@@ -268,6 +293,26 @@ def main() -> None:
     )
     assert updated["sql"] == "UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) = ?", updated
     assert updated["params"] == ["BOB", 1], updated
+    expression_updated = (
+        carbon_codegen.query("actor")
+        .update(
+            {
+                "actor.first_name": carbon_codegen.fn("CONCAT", carbon_codegen.lit("Mr. "), "actor.last_name"),
+                "actor.last_name": carbon_codegen.custom_call(
+                    "COALESCE",
+                    carbon_codegen.lit("UNKNOWN"),
+                    "actor.last_name",
+                ),
+            }
+        )
+        .where({"actor.actor_id": ["=", 7]})
+        .compile(dialect="mysql")
+    )
+    assert expression_updated["sql"] == (
+        "UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name), "
+        "`last_name` = COALESCE(?, actor.last_name) WHERE (actor.actor_id) = ?"
+    ), expression_updated
+    assert expression_updated["params"] == ["Mr. ", "UNKNOWN", 7], expression_updated
     deleted = (
         carbon_codegen.query("actor")
         .delete()

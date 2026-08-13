@@ -100,7 +100,17 @@ if (!function_exists('carbon_schema_models')) {
 
     function carbon_call(string $name, ...$arguments): array
     {
+        return carbon_fn($name, ...$arguments);
+    }
+
+    function carbon_fn(string $name, ...$arguments): array
+    {
         return array_merge([$name], $arguments);
+    }
+
+    function carbon_custom_call(string $name, ...$arguments): array
+    {
+        return array_merge(['CALL', $name], $arguments);
     }
 
     function carbon_alias($expression, string $alias): array

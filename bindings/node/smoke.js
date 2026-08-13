@@ -135,6 +135,17 @@ assert.deepStrictEqual(carbon.alias(carbon.call('COUNT', 'parcel_sales.parcel_id
   ['COUNT', 'parcel_sales.parcel_id'],
   'sale_count',
 ]);
+assert.deepStrictEqual(carbon.fn('CONCAT', carbon.lit('A'), carbon.lit('B')), [
+  'CONCAT',
+  ['LIT', 'A'],
+  ['LIT', 'B'],
+]);
+assert.deepStrictEqual(carbon.customCall('COALESCE', carbon.lit('UNKNOWN'), 'actor.last_name'), [
+  'CALL',
+  'COALESCE',
+  ['LIT', 'UNKNOWN'],
+  'actor.last_name',
+]);
 assert.deepStrictEqual(carbon.lit('2023-01-01'), ['LIT', '2023-01-01']);
 assert.deepStrictEqual(carbon.existsSpec('property_units.parcel_id', salesQuery), [
   'property_units.parcel_id',
@@ -234,6 +245,17 @@ const inserted = carbon.query('actor')
 assert.strictEqual(inserted.status, 0, JSON.stringify(inserted));
 assert.strictEqual(inserted.sql, 'INSERT INTO `actor` (`first_name`) VALUES (?)');
 assert.deepStrictEqual(inserted.params, ['ALICE']);
+const expressionInserted = carbon.query('actor')
+  .insert({
+    'actor.first_name': carbon.fn('CONCAT', carbon.lit('HEL'), carbon.lit('LO')),
+    'actor.last_name': 'SMITH',
+  })
+  .compile(undefined, 'mysql');
+assert.strictEqual(
+  expressionInserted.sql,
+  'INSERT INTO `actor` (`first_name`, `last_name`) VALUES (CONCAT(?, ?), ?)'
+);
+assert.deepStrictEqual(expressionInserted.params, ['HEL', 'LO', 'SMITH']);
 assert.deepStrictEqual(
   carbon.query('actor').replace({'actor.first_name': 'BOB'}).toPayload(),
   {
@@ -247,6 +269,18 @@ const updated = carbon.query('actor')
   .compile(schema, 'mysql');
 assert.strictEqual(updated.sql, 'UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) = ?');
 assert.deepStrictEqual(updated.params, ['BOB', 1]);
+const expressionUpdated = carbon.query('actor')
+  .update({
+    'actor.first_name': carbon.fn('CONCAT', carbon.lit('Mr. '), 'actor.last_name'),
+    'actor.last_name': carbon.customCall('COALESCE', carbon.lit('UNKNOWN'), 'actor.last_name'),
+  })
+  .where({'actor.actor_id': ['=', 7]})
+  .compile(undefined, 'mysql');
+assert.strictEqual(
+  expressionUpdated.sql,
+  'UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name), `last_name` = COALESCE(?, actor.last_name) WHERE (actor.actor_id) = ?'
+);
+assert.deepStrictEqual(expressionUpdated.params, ['Mr. ', 'UNKNOWN', 7]);
 const deleted = carbon.query('actor')
   .delete()
   .where({'actor.actor_id': 1})

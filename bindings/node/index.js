@@ -118,7 +118,15 @@ function param(value) {
 }
 
 function call(name, ...args) {
+  return fn(name, ...args);
+}
+
+function fn(name, ...args) {
   return [name, ...args.map(copyPayloadValue)];
+}
+
+function customCall(name, ...args) {
+  return ['CALL', name, ...args.map(copyPayloadValue)];
 }
 
 function alias(expression, name) {
@@ -629,6 +637,9 @@ native.op = op;
 native.lit = lit;
 native.param = param;
 native.call = call;
+native.fn = fn;
+native.customCall = customCall;
+native.custom_call = customCall;
 native.alias = alias;
 native.as = alias;
 native.distinct = distinct;

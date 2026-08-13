@@ -312,6 +312,29 @@ static void test_match_against_rejects_bare_search_string(void) {
     carbon_context_free(context);
 }
 
+static void test_call_expression_rejects_invalid_function_name(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] =
+            "{\"FROM\":\"actor\","
+            "\"SELECT\":[[\"CALL\",\"COALESCE;DROP\",[\"LIT\",\"UNKNOWN\"],\"actor.first_name\"]]}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
+    assert(result.status == CARBON_STATUS_INVALID_QUERY);
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
 static void test_postgresql_insert_write_returning(void) {
     carbon_context *context = carbon_context_new();
     const char query[] =
@@ -1284,10 +1307,12 @@ static void test_golden_fixtures(void) {
     run_fixture("not-exists-correlated");
     run_fixture("insert-basic");
     run_fixture("insert-multi-row");
+    run_fixture("insert-expression-values");
     run_fixture("loose-post-row");
     run_fixture("replace-upsert");
     run_fixture_with_options("schema-write-normalization", "mysql", actor_write_schema);
     run_fixture("update-where");
+    run_fixture("update-expression-values");
     run_fixture("delete-where");
     run_fixture_with_options("postgresql-upsert", "postgresql", actor_write_schema);
     run_fixture_with_options("postgresql-update-from", "postgresql", "{}");
@@ -1305,6 +1330,7 @@ int main(void) {
     test_schema_metadata_type_validation();
     test_multiple_where_uses_and();
     test_match_against_rejects_bare_search_string();
+    test_call_expression_rejects_invalid_function_name();
     test_postgresql_insert_write_returning();
     test_postgresql_multi_row_insert_write_returning();
     test_loose_root_post_insert_ignores_metadata();

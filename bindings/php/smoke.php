@@ -154,6 +154,19 @@ carbon_assert(
     ],
     'unexpected alias helper payload'
 );
+carbon_assert(
+    carbon_fn('CONCAT', carbon_lit('A'), carbon_lit('B')) === ['CONCAT', ['LIT', 'A'], ['LIT', 'B']],
+    'unexpected function helper payload'
+);
+carbon_assert(
+    carbon_custom_call('COALESCE', carbon_lit('UNKNOWN'), 'actor.last_name') === [
+        'CALL',
+        'COALESCE',
+        ['LIT', 'UNKNOWN'],
+        'actor.last_name',
+    ],
+    'unexpected custom call helper payload'
+);
 carbon_assert(carbon_lit('2023-01-01') === ['LIT', '2023-01-01'], 'unexpected literal helper payload');
 carbon_assert(
     carbon_exists_spec('property_units.parcel_id', $salesQuery) === [
@@ -265,6 +278,20 @@ carbon_assert(
     'unexpected insert sql: ' . $inserted['sql']
 );
 carbon_assert($inserted['params'] === ['ALICE'], 'unexpected insert params: ' . json_encode($inserted['params']));
+$expressionInserted = carbon_query('actor')
+    ->insert([
+        'actor.first_name' => carbon_fn('CONCAT', carbon_lit('HEL'), carbon_lit('LO')),
+        'actor.last_name' => 'SMITH',
+    ])
+    ->compile(null, 'mysql');
+carbon_assert(
+    $expressionInserted['sql'] === 'INSERT INTO `actor` (`first_name`, `last_name`) VALUES (CONCAT(?, ?), ?)',
+    'unexpected expression insert sql: ' . $expressionInserted['sql']
+);
+carbon_assert(
+    $expressionInserted['params'] === ['HEL', 'LO', 'SMITH'],
+    'unexpected expression insert params: ' . json_encode($expressionInserted['params'])
+);
 carbon_assert(
     carbon_query('actor')->replace(['actor.first_name' => 'BOB'])->toPayload() === [
         'FROM' => 'actor',
@@ -281,6 +308,21 @@ carbon_assert(
     'unexpected update sql: ' . $updated['sql']
 );
 carbon_assert($updated['params'] === ['BOB', 1], 'unexpected update params: ' . json_encode($updated['params']));
+$expressionUpdated = carbon_query('actor')
+    ->update([
+        'actor.first_name' => carbon_fn('CONCAT', carbon_lit('Mr. '), 'actor.last_name'),
+        'actor.last_name' => carbon_custom_call('COALESCE', carbon_lit('UNKNOWN'), 'actor.last_name'),
+    ])
+    ->where(['actor.actor_id' => ['=', 7]])
+    ->compile(null, 'mysql');
+carbon_assert(
+    $expressionUpdated['sql'] === 'UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name), `last_name` = COALESCE(?, actor.last_name) WHERE (actor.actor_id) = ?',
+    'unexpected expression update sql: ' . $expressionUpdated['sql']
+);
+carbon_assert(
+    $expressionUpdated['params'] === ['Mr. ', 'UNKNOWN', 7],
+    'unexpected expression update params: ' . json_encode($expressionUpdated['params'])
+);
 $deleted = carbon_query('actor')
     ->delete()
     ->where(['actor.actor_id' => 1])
