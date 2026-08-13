@@ -74,6 +74,8 @@ The initial compiler supports:
   including array-valued multi-row `INSERT`/MySQL `REPLACE` rows
 - CarbonNode-compatible `dataInsertMultipleRows` insert payloads
 - MySQL upsert update lists through `UPDATE: ["column_name"]`
+- PostgreSQL `ON CONFLICT` upserts from `PRIMARY_SHORT` or `PRIMARY` schema
+  metadata, including `UPDATE: []` / `DO NOTHING`
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL and PostgreSQL placeholder styles
 - allowlist normalization for parenthesized bind groups, multi-row `VALUES`
@@ -84,20 +86,21 @@ The initial compiler supports:
 Unsupported query shapes return `CARBON_STATUS_UNSUPPORTED_QUERY` rather than
 silently compiling weaker SQL.
 
-PostgreSQL write support covers simple insert/update/delete forms and multi-row
-`INSERT ... RETURNING *` in this slice. Joined writes and schema-derived
-conflict targets remain outside the v0.1 compiler boundary.
+PostgreSQL write support covers simple insert/update/delete forms, multi-row
+`INSERT ... RETURNING *`, and schema-derived `ON CONFLICT` targets in this
+slice. Joined writes remain outside the v0.1 compiler boundary.
 
 When `TABLES` metadata is present, the compiler validates `FROM` tables, joined
 tables, unqualified current-table references, dotted column references,
-join-alias references, and insert/update/upsert write columns against C6
-`COLUMNS` data. Empty or absent schema metadata keeps the previous syntax-only
-behavior so language bindings can adopt the validator incrementally.
+join-alias references, insert/update/upsert write columns against C6 `COLUMNS`
+data, and PostgreSQL upsert conflict targets from `PRIMARY_SHORT` or `PRIMARY`.
+Empty or absent schema metadata keeps the previous syntax-only behavior so
+language bindings can adopt the validator incrementally.
 
 ## Direction
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers. The next implementation step is to expand those fixtures to derived
-joins, PostgreSQL conflict targets, generated type metadata, binding-friendly
-diagnostic paths, loose POST-row normalization, and package-level ergonomics.
+joins, generated type metadata, binding-friendly diagnostic paths, loose
+POST-row normalization, and package-level ergonomics.

@@ -2912,6 +2912,150 @@ static carbon_status carbon_append_mysql_upsert_update(
     return next < 0 || !wrote ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OK;
 }
 
+static carbon_status carbon_append_schema_primary_columns(
+        carbon_compile_state *state,
+        const char *table,
+        carbon_string_builder *sql,
+        int *wrote_columns) {
+    static const char *const primary_short_names[] = {"PRIMARY_SHORT", "primary_short"};
+    static const char *const primary_names[] = {"PRIMARY", "primary"};
+    carbon_json_span definition;
+    carbon_json_span primary_columns;
+    const char *cursor = NULL;
+    carbon_json_span item;
+    int found;
+    int next;
+    int wrote = 0;
+
+    if (wrote_columns != NULL) {
+        *wrote_columns = 0;
+    }
+    if (!carbon_schema_enabled(state)) {
+        return CARBON_STATUS_UNSUPPORTED_QUERY;
+    }
+
+    found = carbon_schema_find_table(state->schema, table, &definition);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0 || !carbon_span_starts_with(definition, '{')) {
+        return CARBON_STATUS_UNSUPPORTED_QUERY;
+    }
+
+    found = carbon_object_get_any(definition, primary_short_names, 2, &primary_columns);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        found = carbon_object_get_any(definition, primary_names, 2, &primary_columns);
+        if (found < 0) {
+            return CARBON_STATUS_INVALID_JSON;
+        }
+    }
+    if (found == 0) {
+        return CARBON_STATUS_UNSUPPORTED_QUERY;
+    }
+    if (!carbon_span_starts_with(primary_columns, '[')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    while ((next = carbon_array_next(primary_columns, &cursor, &item)) == 1) {
+        char *column = carbon_span_string_copy(item);
+        char *short_column = column == NULL ? NULL : carbon_trim_write_column(state, table, column);
+
+        free(column);
+        if (short_column == NULL) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        if (wrote && !carbon_builder_append(sql, ", ")) {
+            free(short_column);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        if (!carbon_append_quoted_table(sql, state->dialect, short_column)) {
+            free(short_column);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        free(short_column);
+        wrote = 1;
+    }
+    if (next < 0) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    if (!wrote) {
+        return CARBON_STATUS_UNSUPPORTED_QUERY;
+    }
+    if (wrote_columns != NULL) {
+        *wrote_columns = wrote;
+    }
+    return CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_append_postgresql_upsert_update(
+        carbon_compile_state *state,
+        const char *table,
+        carbon_json_span update_columns,
+        carbon_string_builder *sql,
+        const char **error_message) {
+    const char *cursor = NULL;
+    carbon_json_span item;
+    int next;
+    int wrote = 0;
+    int wrote_conflict = 0;
+    carbon_status status;
+
+    if (!carbon_span_starts_with(update_columns, '[')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    if (!carbon_builder_append(sql, " ON CONFLICT (")) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+
+    status = carbon_append_schema_primary_columns(state, table, sql, &wrote_conflict);
+    if (status != CARBON_STATUS_OK) {
+        if (status == CARBON_STATUS_UNSUPPORTED_QUERY && error_message != NULL) {
+            *error_message = "PostgreSQL ON CONFLICT support requires primary key metadata";
+        }
+        return status;
+    }
+    if (!wrote_conflict || !carbon_builder_append(sql, ") ")) {
+        return wrote_conflict ? CARBON_STATUS_OUT_OF_MEMORY : CARBON_STATUS_UNSUPPORTED_QUERY;
+    }
+
+    while ((next = carbon_array_next(update_columns, &cursor, &item)) == 1) {
+        char *column = carbon_span_string_copy(item);
+        char *short_column = column == NULL ? NULL : carbon_trim_write_column(state, table, column);
+
+        free(column);
+        if (short_column == NULL) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        if (!wrote) {
+            if (!carbon_builder_append(sql, "DO UPDATE SET ")) {
+                free(short_column);
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+        } else if (!carbon_builder_append(sql, ", ")) {
+            free(short_column);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        if (!carbon_append_quoted_table(sql, state->dialect, short_column)
+            || !carbon_builder_append(sql, " = EXCLUDED.")
+            || !carbon_append_quoted_table(sql, state->dialect, short_column)) {
+            free(short_column);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        free(short_column);
+        wrote = 1;
+    }
+    if (next < 0) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    if (!wrote && !carbon_builder_append(sql, "DO NOTHING")) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    return CARBON_STATUS_OK;
+}
+
 static carbon_status carbon_compile_insert_statement(
         carbon_compile_state *state,
         carbon_json_span query,
@@ -3024,11 +3168,9 @@ static carbon_status carbon_compile_insert_statement(
         goto cleanup;
     }
     if (found_update > 0) {
-        if (state->dialect != CARBON_DIALECT_MYSQL) {
-            status = CARBON_STATUS_UNSUPPORTED_QUERY;
-            goto cleanup;
-        }
-        status = carbon_append_mysql_upsert_update(state, table, update_columns, sql);
+        status = state->dialect == CARBON_DIALECT_MYSQL
+                 ? carbon_append_mysql_upsert_update(state, table, update_columns, sql)
+                 : carbon_append_postgresql_upsert_update(state, table, update_columns, sql, error_message);
         if (status != CARBON_STATUS_OK) {
             goto cleanup;
         }

@@ -70,6 +70,8 @@ Supported in this slice:
   including array-valued multi-row `INSERT`/MySQL `REPLACE` rows
 - CarbonNode-compatible `dataInsertMultipleRows` insert payloads
 - MySQL upsert update lists through `UPDATE: ["column_name"]`
+- PostgreSQL `ON CONFLICT` upserts from `PRIMARY_SHORT` or `PRIMARY` schema
+  metadata, including `UPDATE: []` / `DO NOTHING`
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL `?` placeholders and PostgreSQL `$1`-style placeholders
 - CarbonNode-style allowlist normalization for whitespace, `LIMIT` forms
@@ -83,8 +85,9 @@ as `INSERT`, `REPLACE`, `UPDATE`, and `DELETE`, not CarbonNode's loose root-leve
 POST rows. Single-row and multi-row insert/upsert payloads are covered now,
 including `dataInsertMultipleRows`; later rows bind `null` for missing first-row
 columns to match CarbonNode's batch insert behavior. PostgreSQL writes currently
-cover simple insert/update/delete forms; joined writes, loose root-level POST
-normalization, and schema-derived conflict targets are later work.
+cover simple insert/update/delete forms and schema-derived conflict targets for
+`ON CONFLICT` upserts; joined writes and loose root-level POST normalization are
+later work.
 
 Schema validation is opt-in for this slice. Passing `{}` keeps syntax-only
 identifier checks. Passing a `TABLES` object validates unqualified references
@@ -95,6 +98,7 @@ against C6-style table metadata:
 {
   "TABLES": {
     "actor": {
+      "PRIMARY_SHORT": ["actor_id"],
       "COLUMNS": {
         "actor.actor_id": "actor_id",
         "actor.first_name": "first_name"
@@ -258,8 +262,8 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 ## Next Milestones
 
-1. Expand fixture coverage for derived joins, PostgreSQL conflict targets, loose
-   POST-row normalization, and schema-aware write normalization.
+1. Expand fixture coverage for derived joins, loose POST-row normalization, and
+   schema-aware write normalization.
 2. Expand schema validation to generated type metadata and binding-friendly
    diagnostic paths.
 3. Add package-level ergonomics for each binding without moving DB execution

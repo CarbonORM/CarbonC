@@ -227,6 +227,69 @@ static void test_postgresql_multi_row_insert_write_returning(void) {
     carbon_context_free(context);
 }
 
+static void test_postgresql_upsert_do_nothing_from_primary_metadata(void) {
+    carbon_context *context = carbon_context_new();
+    const char schema[] =
+            "{\"TABLES\":{\"actor\":{"
+            "\"PRIMARY\":[\"actor.actor_id\"],"
+            "\"COLUMNS\":{\"actor.actor_id\":\"actor_id\",\"actor.first_name\":\"first_name\"}"
+            "}}}";
+    const char query[] =
+            "{\"dialect\":\"postgresql\","
+            "\"FROM\":\"actor\","
+            "\"INSERT\":{\"actor.actor_id\":7,\"actor.first_name\":\"ALICE\"},"
+            "\"UPDATE\":[]}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = schema,
+            .schema_json_length = sizeof(schema) - 1,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "INSERT INTO \"actor\" (\"actor_id\", \"first_name\") VALUES ($1, $2) "
+                         "ON CONFLICT (\"actor_id\") DO NOTHING RETURNING *");
+    assert_buffer_equals(&result.params_json, "[7,\"ALICE\"]");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
+static void test_postgresql_upsert_requires_primary_metadata(void) {
+    carbon_context *context = carbon_context_new();
+    const char schema[] =
+            "{\"TABLES\":{\"actor\":{"
+            "\"COLUMNS\":{\"actor.actor_id\":\"actor_id\",\"actor.first_name\":\"first_name\"}"
+            "}}}";
+    const char query[] =
+            "{\"dialect\":\"postgresql\","
+            "\"FROM\":\"actor\","
+            "\"INSERT\":{\"actor.actor_id\":7,\"actor.first_name\":\"ALICE\"},"
+            "\"UPDATE\":[\"first_name\"]}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = schema,
+            .schema_json_length = sizeof(schema) - 1,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_UNSUPPORTED_QUERY);
+    assert(result.status == CARBON_STATUS_UNSUPPORTED_QUERY);
+    assert_buffer_equals(&result.error, "PostgreSQL ON CONFLICT support requires primary key metadata");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
 static void test_data_insert_multiple_rows_upsert_defaults_missing_values(void) {
     carbon_context *context = carbon_context_new();
     const char query[] =
@@ -633,7 +696,7 @@ static char *fixture_section(const char *raw, const char *marker, const char *ne
     return copy_trimmed(start, end);
 }
 
-static void run_fixture(const char *fixture_name) {
+static void run_fixture_with_options(const char *fixture_name, const char *dialect, const char *schema_json) {
     char path[1024];
     char *raw;
     char *query;
@@ -651,9 +714,9 @@ static void run_fixture(const char *fixture_name) {
     params = fixture_section(raw, "-- params", "-- allowlist");
     allowlist = fixture_section(raw, "-- allowlist", NULL);
 
-    request.dialect = "mysql";
-    request.schema_json = "{}";
-    request.schema_json_length = 2;
+    request.dialect = dialect;
+    request.schema_json = schema_json;
+    request.schema_json_length = strlen(schema_json);
     request.query_json = query;
     request.query_json_length = strlen(query);
 
@@ -673,7 +736,19 @@ static void run_fixture(const char *fixture_name) {
     free(allowlist);
 }
 
+static void run_fixture(const char *fixture_name) {
+    run_fixture_with_options(fixture_name, "mysql", "{}");
+}
+
 static void test_golden_fixtures(void) {
+    const char postgres_upsert_schema[] =
+            "{\"TABLES\":{\"actor\":{"
+            "\"PRIMARY_SHORT\":[\"actor_id\"],"
+            "\"COLUMNS\":{\"actor.actor_id\":\"actor_id\","
+            "\"actor.first_name\":\"first_name\","
+            "\"actor.last_name\":\"last_name\"}"
+            "}}}";
+
     run_fixture("select-pagination");
     run_fixture("spatial-order");
     run_fixture("where-in-between");
@@ -687,6 +762,7 @@ static void test_golden_fixtures(void) {
     run_fixture("replace-upsert");
     run_fixture("update-where");
     run_fixture("delete-where");
+    run_fixture_with_options("postgresql-upsert", "postgresql", postgres_upsert_schema);
 }
 
 int main(void) {
@@ -698,6 +774,8 @@ int main(void) {
     test_multiple_where_uses_and();
     test_postgresql_insert_write_returning();
     test_postgresql_multi_row_insert_write_returning();
+    test_postgresql_upsert_do_nothing_from_primary_metadata();
+    test_postgresql_upsert_requires_primary_metadata();
     test_data_insert_multiple_rows_upsert_defaults_missing_values();
     test_delete_false_rejected();
     test_postgresql_write_join_rejected();
