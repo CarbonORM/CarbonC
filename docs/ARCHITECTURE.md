@@ -157,7 +157,7 @@ layout changes.
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers, package-level native payload helpers, typed result adapters,
-read/write/subselect query-builder facades, typed source generators, and binding-friendly diagnostic
+read/write/subselect/predicate query-builder facades, typed source generators, and binding-friendly diagnostic
 JSON. The next implementation step is to cover additional C6 grammar and
-schema-aware write normalization edge cases while expanding higher-level
-operator helpers to match the compiler grammar.
+schema-aware write normalization edge cases while expanding composable boolean
+group and model-aware builder helpers to match the compiler grammar.

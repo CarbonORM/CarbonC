@@ -132,6 +132,50 @@ def main() -> None:
         "WHERE (actor.actor_id) > ? LIMIT 100"
     ), derived
     assert derived["params"] == [10, 100], derived
+    sales_query = (
+        carbon_codegen.query("parcel_sales")
+        .select("parcel_sales.parcel_id")
+        .where_op("parcel_sales.sale_price", ">", 5000)
+    )
+    assert carbon_codegen.as_(carbon_codegen.call("COUNT", "parcel_sales.parcel_id"), "sale_count") == [
+        "AS",
+        ["COUNT", "parcel_sales.parcel_id"],
+        "sale_count",
+    ]
+    assert carbon_codegen.lit("2023-01-01") == ["LIT", "2023-01-01"]
+    assert carbon_codegen.exists_spec("property_units.parcel_id", sales_query) == [
+        "property_units.parcel_id",
+        [
+            "SUBSELECT",
+            {
+                "FROM": "parcel_sales",
+                "SELECT": ["parcel_sales.parcel_id"],
+                "WHERE": {"parcel_sales.sale_price": [">", 5000]},
+            },
+        ],
+    ]
+    advanced = (
+        carbon_codegen.query("property_units")
+        .select("property_units.unit_id")
+        .where_between("property_units.unit_id", 1, 10)
+        .where_in("property_units.parcel_id", sales_query)
+        .where_not_in("property_units.account_id", [99, 100])
+        .where_exists("property_units.parcel_id", sales_query)
+        .limit(3)
+        .compile(dialect="mysql")
+    )
+    assert advanced["status"] == 0, advanced
+    assert advanced["sql"] == (
+        "SELECT property_units.unit_id FROM `property_units` "
+        "WHERE (property_units.unit_id) BETWEEN ? AND ? "
+        "AND ( property_units.parcel_id IN (SELECT parcel_sales.parcel_id FROM `parcel_sales` "
+        "WHERE (parcel_sales.sale_price) > ?) ) "
+        "AND ( property_units.account_id NOT IN (?, ?) ) "
+        "AND EXISTS (SELECT parcel_sales.parcel_id FROM `parcel_sales` "
+        "WHERE (parcel_sales.sale_price) > ? AND (parcel_sales.parcel_id) = property_units.parcel_id) "
+        "LIMIT 3"
+    ), advanced
+    assert advanced["params"] == [1, 10, 5000, 99, 100, 5000], advanced
     grouped = (
         carbon_codegen.query("actor")
         .select(["DISTINCT", "actor.first_name"], ["AS", ["COUNT", "actor.actor_id"], "cnt"])

@@ -143,6 +143,49 @@ carbon_assert(
     'unexpected derived sql: ' . $derived['sql']
 );
 carbon_assert($derived['params'] === [10, 100], 'unexpected derived params: ' . json_encode($derived['params']));
+$salesQuery = carbon_query('parcel_sales')
+    ->select('parcel_sales.parcel_id')
+    ->whereOp('parcel_sales.sale_price', '>', 5000);
+carbon_assert(
+    carbon_alias(carbon_call('COUNT', 'parcel_sales.parcel_id'), 'sale_count') === [
+        'AS',
+        ['COUNT', 'parcel_sales.parcel_id'],
+        'sale_count',
+    ],
+    'unexpected alias helper payload'
+);
+carbon_assert(carbon_lit('2023-01-01') === ['LIT', '2023-01-01'], 'unexpected literal helper payload');
+carbon_assert(
+    carbon_exists_spec('property_units.parcel_id', $salesQuery) === [
+        'property_units.parcel_id',
+        [
+            'SUBSELECT',
+            [
+                'FROM' => 'parcel_sales',
+                'SELECT' => ['parcel_sales.parcel_id'],
+                'WHERE' => ['parcel_sales.sale_price' => ['>', 5000]],
+            ],
+        ],
+    ],
+    'unexpected exists spec payload'
+);
+$advanced = carbon_query('property_units')
+    ->select('property_units.unit_id')
+    ->whereBetween('property_units.unit_id', 1, 10)
+    ->whereIn('property_units.parcel_id', $salesQuery)
+    ->whereNotIn('property_units.account_id', [99, 100])
+    ->whereExists('property_units.parcel_id', $salesQuery)
+    ->limit(3)
+    ->compile(null, 'mysql');
+carbon_assert($advanced['status'] === 0, 'unexpected advanced compile status: ' . json_encode($advanced));
+carbon_assert(
+    $advanced['sql'] === 'SELECT property_units.unit_id FROM `property_units` WHERE (property_units.unit_id) BETWEEN ? AND ? AND ( property_units.parcel_id IN (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ?) ) AND ( property_units.account_id NOT IN (?, ?) ) AND EXISTS (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ? AND (parcel_sales.parcel_id) = property_units.parcel_id) LIMIT 3',
+    'unexpected advanced sql: ' . $advanced['sql']
+);
+carbon_assert(
+    $advanced['params'] === [1, 10, 5000, 99, 100, 5000],
+    'unexpected advanced params: ' . json_encode($advanced['params'])
+);
 $grouped = carbon_query('actor')
     ->select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
     ->groupBy('actor.first_name')

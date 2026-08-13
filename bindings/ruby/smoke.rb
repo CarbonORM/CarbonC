@@ -130,6 +130,47 @@ unless derived.fetch('sql') == 'SELECT actor.actor_id, fa_recent.actor_id FROM `
   raise "unexpected derived sql: #{derived.fetch('sql')}"
 end
 raise "unexpected derived params: #{derived.fetch('params').inspect}" unless derived.fetch('params') == [10, 100]
+sales_query = CarbonC.query('parcel_sales')
+                     .select('parcel_sales.parcel_id')
+                     .where_op('parcel_sales.sale_price', '>', 5000)
+expected_alias_payload = [
+  'AS',
+  ['COUNT', 'parcel_sales.parcel_id'],
+  'sale_count'
+]
+unless CarbonC.alias_expression(CarbonC.call('COUNT', 'parcel_sales.parcel_id'), 'sale_count') == expected_alias_payload
+  raise 'unexpected alias helper payload'
+end
+raise 'unexpected literal helper payload' unless CarbonC.lit('2023-01-01') == ['LIT', '2023-01-01']
+expected_exists_spec = [
+  'property_units.parcel_id',
+  [
+    'SUBSELECT',
+    {
+      'FROM' => 'parcel_sales',
+      'SELECT' => ['parcel_sales.parcel_id'],
+      'WHERE' => {'parcel_sales.sale_price' => ['>', 5000]}
+    }
+  ]
+]
+unless CarbonC.exists_spec('property_units.parcel_id', sales_query) == expected_exists_spec
+  raise "unexpected exists spec payload: #{CarbonC.exists_spec('property_units.parcel_id', sales_query).inspect}"
+end
+advanced = CarbonC.query('property_units')
+                  .select('property_units.unit_id')
+                  .where_between('property_units.unit_id', 1, 10)
+                  .where_in('property_units.parcel_id', sales_query)
+                  .where_not_in('property_units.account_id', [99, 100])
+                  .where_exists('property_units.parcel_id', sales_query)
+                  .limit(3)
+                  .compile(nil, 'mysql')
+raise "unexpected advanced compile status: #{advanced.inspect}" unless advanced.fetch('status') == 0
+unless advanced.fetch('sql') == 'SELECT property_units.unit_id FROM `property_units` WHERE (property_units.unit_id) BETWEEN ? AND ? AND ( property_units.parcel_id IN (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ?) ) AND ( property_units.account_id NOT IN (?, ?) ) AND EXISTS (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ? AND (parcel_sales.parcel_id) = property_units.parcel_id) LIMIT 3'
+  raise "unexpected advanced sql: #{advanced.fetch('sql')}"
+end
+unless advanced.fetch('params') == [1, 10, 5000, 99, 100, 5000]
+  raise "unexpected advanced params: #{advanced.fetch('params').inspect}"
+end
 grouped = CarbonC.query('actor')
                  .select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
                  .group_by('actor.first_name')

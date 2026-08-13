@@ -105,6 +105,86 @@ function derivedTarget(alias, query) {
   return JSON.stringify({SUBSELECT: queryPayload(query), AS: alias});
 }
 
+function op(operator, ...operands) {
+  return [operator, ...operands.map(copyPayloadValue)];
+}
+
+function lit(value) {
+  return ['LIT', value];
+}
+
+function param(value) {
+  return ['PARAM', value];
+}
+
+function call(name, ...args) {
+  return [name, ...args.map(copyPayloadValue)];
+}
+
+function alias(expression, name) {
+  return ['AS', copyPayloadValue(expression), name];
+}
+
+function distinct(expression) {
+  return ['DISTINCT', copyPayloadValue(expression)];
+}
+
+function between(start, end) {
+  return ['BETWEEN', [copyPayloadValue(start), copyPayloadValue(end)]];
+}
+
+function notBetween(start, end) {
+  return ['NOT BETWEEN', [copyPayloadValue(start), copyPayloadValue(end)]];
+}
+
+function inList(values) {
+  return ['IN', setOperand(values)];
+}
+
+function notInList(values) {
+  return ['NOT_IN', setOperand(values)];
+}
+
+function existsSpec(outerColumn, query, innerColumn) {
+  const spec = [outerColumn, subselectOperand(query)];
+  if (innerColumn !== undefined && innerColumn !== null) {
+    spec.push(innerColumn);
+  }
+  return spec;
+}
+
+function exists(...specs) {
+  return {EXISTS: specs.map(copyPayloadValue)};
+}
+
+function notExists(...specs) {
+  return {NOT_EXISTS: specs.map(copyPayloadValue)};
+}
+
+function subselectOperand(query) {
+  if (Array.isArray(query)
+    && query.length === 2
+    && typeof query[0] === 'string'
+    && query[0].toUpperCase() === 'SUBSELECT') {
+    return copyPayloadValue(query);
+  }
+  if (query !== null
+    && !Array.isArray(query)
+    && typeof query === 'object'
+    && (Object.prototype.hasOwnProperty.call(query, 'SUBSELECT')
+      || Object.prototype.hasOwnProperty.call(query, 'subselect'))) {
+    return {...query};
+  }
+  return subselect(query);
+}
+
+function setOperand(values) {
+  if (values instanceof CarbonQuery) {
+    return subselect(values);
+  }
+  return copyPayloadValue(values);
+}
+
 class CarbonQuery {
   constructor(table) {
     this.payload = {};
@@ -130,6 +210,39 @@ class CarbonQuery {
   where(conditions) {
     this.payload.WHERE = {...conditions};
     return this;
+  }
+
+  whereOp(column, operator, value) {
+    this.whereMap()[column] = op(operator, value);
+    return this;
+  }
+
+  whereIn(column, values) {
+    this.whereMap()[column] = inList(values);
+    return this;
+  }
+
+  whereNotIn(column, values) {
+    this.whereMap()[column] = notInList(values);
+    return this;
+  }
+
+  whereBetween(column, start, end) {
+    this.whereMap()[column] = between(start, end);
+    return this;
+  }
+
+  whereNotBetween(column, start, end) {
+    this.whereMap()[column] = notBetween(start, end);
+    return this;
+  }
+
+  whereExists(outerColumn, subquery, innerColumn) {
+    return this.appendExists('EXISTS', existsSpec(outerColumn, subquery, innerColumn));
+  }
+
+  whereNotExists(outerColumn, subquery, innerColumn) {
+    return this.appendExists('NOT_EXISTS', existsSpec(outerColumn, subquery, innerColumn));
   }
 
   join(kind, target, on) {
@@ -234,6 +347,28 @@ class CarbonQuery {
       throw new TypeError('PAGINATION must be an object');
     }
     return this.payload.PAGINATION;
+  }
+
+  whereMap() {
+    if (this.payload.WHERE === undefined) {
+      this.payload.WHERE = {};
+    }
+    if (this.payload.WHERE === null || Array.isArray(this.payload.WHERE) || typeof this.payload.WHERE !== 'object') {
+      throw new TypeError('WHERE must be an object');
+    }
+    return this.payload.WHERE;
+  }
+
+  appendExists(operator, spec) {
+    const where = this.whereMap();
+    if (where[operator] === undefined) {
+      where[operator] = [];
+    }
+    if (!Array.isArray(where[operator])) {
+      throw new TypeError(`WHERE.${operator} must be an array`);
+    }
+    where[operator].push(spec);
+    return this;
   }
 }
 
@@ -386,5 +521,24 @@ native.from_table = fromTable;
 native.subselect = subselect;
 native.derivedTarget = derivedTarget;
 native.derived_target = derivedTarget;
+native.op = op;
+native.lit = lit;
+native.param = param;
+native.call = call;
+native.alias = alias;
+native.as = alias;
+native.distinct = distinct;
+native.between = between;
+native.notBetween = notBetween;
+native.not_between = notBetween;
+native.inList = inList;
+native.in_list = inList;
+native.notInList = notInList;
+native.not_in_list = notInList;
+native.existsSpec = existsSpec;
+native.exists_spec = existsSpec;
+native.exists = exists;
+native.notExists = notExists;
+native.not_exists = notExists;
 
 module.exports = native;

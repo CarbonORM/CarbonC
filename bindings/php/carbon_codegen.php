@@ -83,6 +83,97 @@ if (!function_exists('carbon_schema_models')) {
         return $encoded;
     }
 
+    function carbon_op(string $operator, ...$operands): array
+    {
+        return array_merge([$operator], $operands);
+    }
+
+    function carbon_lit($value): array
+    {
+        return ['LIT', $value];
+    }
+
+    function carbon_param($value): array
+    {
+        return ['PARAM', $value];
+    }
+
+    function carbon_call(string $name, ...$arguments): array
+    {
+        return array_merge([$name], $arguments);
+    }
+
+    function carbon_alias($expression, string $alias): array
+    {
+        return ['AS', $expression, $alias];
+    }
+
+    function carbon_distinct($expression): array
+    {
+        return ['DISTINCT', $expression];
+    }
+
+    function carbon_between($start, $end): array
+    {
+        return ['BETWEEN', [$start, $end]];
+    }
+
+    function carbon_not_between($start, $end): array
+    {
+        return ['NOT BETWEEN', [$start, $end]];
+    }
+
+    function carbon_in_list($values): array
+    {
+        return ['IN', carbon_codegen_set_operand($values)];
+    }
+
+    function carbon_not_in_list($values): array
+    {
+        return ['NOT_IN', carbon_codegen_set_operand($values)];
+    }
+
+    function carbon_exists_spec(string $outerColumn, $query, ?string $innerColumn = null): array
+    {
+        $spec = [$outerColumn, carbon_codegen_subselect_operand($query)];
+        if ($innerColumn !== null) {
+            $spec[] = $innerColumn;
+        }
+        return $spec;
+    }
+
+    function carbon_exists(...$specs): array
+    {
+        return ['EXISTS' => array_values($specs)];
+    }
+
+    function carbon_not_exists(...$specs): array
+    {
+        return ['NOT_EXISTS' => array_values($specs)];
+    }
+
+    function carbon_codegen_subselect_operand($query)
+    {
+        if (is_array($query)) {
+            $values = array_values($query);
+            if (count($values) === 2 && is_string($values[0]) && strtoupper($values[0]) === 'SUBSELECT') {
+                return $values;
+            }
+            if (array_key_exists('SUBSELECT', $query) || array_key_exists('subselect', $query)) {
+                return $query;
+            }
+        }
+        return carbon_subselect($query);
+    }
+
+    function carbon_codegen_set_operand($values)
+    {
+        if ($values instanceof CarbonQuery) {
+            return carbon_subselect($values);
+        }
+        return $values;
+    }
+
     if (!class_exists('CarbonQuery', false)) {
         final class CarbonQuery
         {
@@ -116,6 +207,51 @@ if (!function_exists('carbon_schema_models')) {
             {
                 $this->payload['WHERE'] = $conditions;
                 return $this;
+            }
+
+            public function whereOp(string $column, string $operator, $value): self
+            {
+                $where =& $this->wherePayload();
+                $where[$column] = carbon_op($operator, $value);
+                return $this;
+            }
+
+            public function whereIn(string $column, $values): self
+            {
+                $where =& $this->wherePayload();
+                $where[$column] = carbon_in_list($values);
+                return $this;
+            }
+
+            public function whereNotIn(string $column, $values): self
+            {
+                $where =& $this->wherePayload();
+                $where[$column] = carbon_not_in_list($values);
+                return $this;
+            }
+
+            public function whereBetween(string $column, $start, $end): self
+            {
+                $where =& $this->wherePayload();
+                $where[$column] = carbon_between($start, $end);
+                return $this;
+            }
+
+            public function whereNotBetween(string $column, $start, $end): self
+            {
+                $where =& $this->wherePayload();
+                $where[$column] = carbon_not_between($start, $end);
+                return $this;
+            }
+
+            public function whereExists(string $outerColumn, $query, ?string $innerColumn = null): self
+            {
+                return $this->appendExists('EXISTS', carbon_exists_spec($outerColumn, $query, $innerColumn));
+            }
+
+            public function whereNotExists(string $outerColumn, $query, ?string $innerColumn = null): self
+            {
+                return $this->appendExists('NOT_EXISTS', carbon_exists_spec($outerColumn, $query, $innerColumn));
             }
 
             public function join(string $kind, $target, array $on): self
@@ -243,6 +379,30 @@ if (!function_exists('carbon_schema_models')) {
                     throw new RuntimeException('PAGINATION must be an array');
                 }
                 return $this->payload['PAGINATION'];
+            }
+
+            private function &wherePayload(): array
+            {
+                if (!array_key_exists('WHERE', $this->payload)) {
+                    $this->payload['WHERE'] = [];
+                }
+                if (!is_array($this->payload['WHERE'])) {
+                    throw new RuntimeException('WHERE must be an array');
+                }
+                return $this->payload['WHERE'];
+            }
+
+            private function appendExists(string $operator, array $spec): self
+            {
+                $where =& $this->wherePayload();
+                if (!array_key_exists($operator, $where)) {
+                    $where[$operator] = [];
+                }
+                if (!is_array($where[$operator])) {
+                    throw new RuntimeException('WHERE.' . $operator . ' must be an array');
+                }
+                $where[$operator][] = $spec;
+                return $this;
             }
         }
     }

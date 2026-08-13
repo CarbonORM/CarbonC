@@ -127,6 +127,40 @@ assert.strictEqual(
   'SELECT actor.actor_id, fa_recent.actor_id FROM `actor` INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` WHERE (film_actor.film_id) > ? LIMIT 1) AS `fa_recent` ON ((fa_recent.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT 100'
 );
 assert.deepStrictEqual(derived.params, [10, 100]);
+const salesQuery = carbon.query('parcel_sales')
+  .select('parcel_sales.parcel_id')
+  .whereOp('parcel_sales.sale_price', '>', 5000);
+assert.deepStrictEqual(carbon.alias(carbon.call('COUNT', 'parcel_sales.parcel_id'), 'sale_count'), [
+  'AS',
+  ['COUNT', 'parcel_sales.parcel_id'],
+  'sale_count',
+]);
+assert.deepStrictEqual(carbon.lit('2023-01-01'), ['LIT', '2023-01-01']);
+assert.deepStrictEqual(carbon.existsSpec('property_units.parcel_id', salesQuery), [
+  'property_units.parcel_id',
+  [
+    'SUBSELECT',
+    {
+      FROM: 'parcel_sales',
+      SELECT: ['parcel_sales.parcel_id'],
+      WHERE: {'parcel_sales.sale_price': ['>', 5000]},
+    },
+  ],
+]);
+const advanced = carbon.query('property_units')
+  .select('property_units.unit_id')
+  .whereBetween('property_units.unit_id', 1, 10)
+  .whereIn('property_units.parcel_id', salesQuery)
+  .whereNotIn('property_units.account_id', [99, 100])
+  .whereExists('property_units.parcel_id', salesQuery)
+  .limit(3)
+  .compile(undefined, 'mysql');
+assert.strictEqual(advanced.status, 0, JSON.stringify(advanced));
+assert.strictEqual(
+  advanced.sql,
+  'SELECT property_units.unit_id FROM `property_units` WHERE (property_units.unit_id) BETWEEN ? AND ? AND ( property_units.parcel_id IN (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ?) ) AND ( property_units.account_id NOT IN (?, ?) ) AND EXISTS (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ? AND (parcel_sales.parcel_id) = property_units.parcel_id) LIMIT 3'
+);
+assert.deepStrictEqual(advanced.params, [1, 10, 5000, 99, 100, 5000]);
 const grouped = carbon.query('actor')
   .select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
   .groupBy('actor.first_name')

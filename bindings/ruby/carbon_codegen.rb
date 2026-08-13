@@ -25,6 +25,39 @@ module CarbonC
       self
     end
 
+    def where_op(column, operator, value)
+      where_payload[column] = CarbonC.op(operator, value)
+      self
+    end
+
+    def where_in(column, values)
+      where_payload[column] = CarbonC.in_list(values)
+      self
+    end
+
+    def where_not_in(column, values)
+      where_payload[column] = CarbonC.not_in_list(values)
+      self
+    end
+
+    def where_between(column, start_value, end_value)
+      where_payload[column] = CarbonC.between(start_value, end_value)
+      self
+    end
+
+    def where_not_between(column, start_value, end_value)
+      where_payload[column] = CarbonC.not_between(start_value, end_value)
+      self
+    end
+
+    def where_exists(outer_column, subquery, inner_column = nil)
+      append_exists('EXISTS', CarbonC.exists_spec(outer_column, subquery, inner_column))
+    end
+
+    def where_not_exists(outer_column, subquery, inner_column = nil)
+      append_exists('NOT_EXISTS', CarbonC.exists_spec(outer_column, subquery, inner_column))
+    end
+
     def join(kind, target, on)
       @payload['JOIN'] ||= {}
       raise TypeError, 'JOIN must be a Hash' unless @payload['JOIN'].is_a?(Hash)
@@ -121,6 +154,21 @@ module CarbonC
       @payload['PAGINATION']
     end
 
+    def where_payload
+      @payload['WHERE'] ||= {}
+      raise TypeError, 'WHERE must be a Hash' unless @payload['WHERE'].is_a?(Hash)
+
+      @payload['WHERE']
+    end
+
+    def append_exists(operator, spec)
+      where_payload[operator] ||= []
+      raise TypeError, "WHERE.#{operator} must be an Array" unless where_payload[operator].is_a?(Array)
+
+      where_payload[operator] << spec
+      self
+    end
+
     def copy_payload_value(value)
       case value
       when Array
@@ -148,6 +196,60 @@ module CarbonC
 
     def derived_target(alias_name, query)
       JSON.generate('SUBSELECT' => carbon_codegen_query_payload(query), 'AS' => alias_name)
+    end
+
+    def op(operator, *operands)
+      [operator, *operands.map { |operand| carbon_codegen_query_payload(operand) }]
+    end
+
+    def lit(value)
+      ['LIT', value]
+    end
+
+    def param(value)
+      ['PARAM', value]
+    end
+
+    def call(name, *arguments)
+      [name, *arguments.map { |argument| carbon_codegen_query_payload(argument) }]
+    end
+
+    def alias_expression(expression, alias_name)
+      ['AS', carbon_codegen_query_payload(expression), alias_name]
+    end
+
+    def distinct(expression)
+      ['DISTINCT', carbon_codegen_query_payload(expression)]
+    end
+
+    def between(start_value, end_value)
+      ['BETWEEN', [carbon_codegen_query_payload(start_value), carbon_codegen_query_payload(end_value)]]
+    end
+
+    def not_between(start_value, end_value)
+      ['NOT BETWEEN', [carbon_codegen_query_payload(start_value), carbon_codegen_query_payload(end_value)]]
+    end
+
+    def in_list(values)
+      ['IN', carbon_codegen_set_operand(values)]
+    end
+
+    def not_in_list(values)
+      ['NOT_IN', carbon_codegen_set_operand(values)]
+    end
+
+    def exists_spec(outer_column, query, inner_column = nil)
+      spec = [outer_column, carbon_codegen_subselect_operand(query)]
+      spec << inner_column unless inner_column.nil?
+      spec
+    end
+
+    def exists(*specs)
+      {'EXISTS' => specs.map { |spec| carbon_codegen_query_payload(spec) }}
+    end
+
+    def not_exists(*specs)
+      {'NOT_EXISTS' => specs.map { |spec| carbon_codegen_query_payload(spec) }}
     end
 
     def compile_query_value(query, schema = nil, dialect = 'mysql')
@@ -257,6 +359,23 @@ module CarbonC
       else
         query
       end
+    end
+
+    def carbon_codegen_subselect_operand(query)
+      if query.is_a?(Array) && query.length == 2 && query.first.to_s.upcase == 'SUBSELECT'
+        return carbon_codegen_query_payload(query)
+      end
+      if query.is_a?(Hash) && (query.key?('SUBSELECT') || query.key?('subselect'))
+        return query.dup
+      end
+
+      subselect(query)
+    end
+
+    def carbon_codegen_set_operand(values)
+      return subselect(values) if values.is_a?(Query)
+
+      carbon_codegen_query_payload(values)
     end
 
     def carbon_codegen_decode_json_field(result, field)

@@ -79,6 +79,34 @@ class Query:
         self._payload["WHERE"] = dict(conditions)
         return self
 
+    def where_op(self, column: str, operator: str, value: Any) -> "Query":
+        self._where()[column] = op(operator, value)
+        return self
+
+    def where_in(self, column: str, values: Any) -> "Query":
+        self._where()[column] = in_(values)
+        return self
+
+    def where_not_in(self, column: str, values: Any) -> "Query":
+        self._where()[column] = not_in(values)
+        return self
+
+    def where_between(self, column: str, start: Any, end: Any) -> "Query":
+        self._where()[column] = between(start, end)
+        return self
+
+    def where_not_between(self, column: str, start: Any, end: Any) -> "Query":
+        self._where()[column] = not_between(start, end)
+        return self
+
+    def where_exists(self, outer_column: str, subquery: Any, inner_column: str | None = None) -> "Query":
+        self._append_exists("EXISTS", exists_spec(outer_column, subquery, inner_column))
+        return self
+
+    def where_not_exists(self, outer_column: str, subquery: Any, inner_column: str | None = None) -> "Query":
+        self._append_exists("NOT_EXISTS", exists_spec(outer_column, subquery, inner_column))
+        return self
+
     def join(self, kind: str, target: Any, on: Mapping[str, Any]) -> "Query":
         joins = self._payload.setdefault("JOIN", {})
         if not isinstance(joins, dict):
@@ -151,6 +179,19 @@ class Query:
     def compile(self, schema: Any = None, dialect: str = "mysql") -> dict[str, Any]:
         return compile_query_result(self._payload, schema=schema, dialect=dialect)
 
+    def _where(self) -> dict[str, Any]:
+        where = self._payload.setdefault("WHERE", {})
+        if not isinstance(where, dict):
+            raise TypeError("WHERE must be a mapping")
+        return where
+
+    def _append_exists(self, operator: str, spec: list[Any]) -> None:
+        where = self._where()
+        specs = where.setdefault(operator, [])
+        if not isinstance(specs, list):
+            raise TypeError(f"WHERE.{operator} must be a list")
+        specs.append(spec)
+
     def _pagination(self) -> dict[str, Any]:
         pagination = self._payload.setdefault("PAGINATION", {})
         if not isinstance(pagination, dict):
@@ -182,10 +223,79 @@ def derived_target(alias: str, query: Any) -> str:
     return json.dumps({"SUBSELECT": _query_payload(query), "AS": alias}, separators=(",", ":"))
 
 
+def op(operator: str, *operands: Any) -> list[Any]:
+    return [operator, *[Query._copy_payload_value(value) for value in operands]]
+
+
+def lit(value: Any) -> list[Any]:
+    return ["LIT", value]
+
+
+def param(value: Any) -> list[Any]:
+    return ["PARAM", value]
+
+
+def call(name: str, *arguments: Any) -> list[Any]:
+    return [name, *[Query._copy_payload_value(argument) for argument in arguments]]
+
+
+def as_(expression: Any, alias: str) -> list[Any]:
+    return ["AS", Query._copy_payload_value(expression), alias]
+
+
+def distinct(expression: Any) -> list[Any]:
+    return ["DISTINCT", Query._copy_payload_value(expression)]
+
+
+def between(start: Any, end: Any) -> list[Any]:
+    return ["BETWEEN", [Query._copy_payload_value(start), Query._copy_payload_value(end)]]
+
+
+def not_between(start: Any, end: Any) -> list[Any]:
+    return ["NOT BETWEEN", [Query._copy_payload_value(start), Query._copy_payload_value(end)]]
+
+
+def in_(values: Any) -> list[Any]:
+    return ["IN", _set_operand(values)]
+
+
+def not_in(values: Any) -> list[Any]:
+    return ["NOT_IN", _set_operand(values)]
+
+
+def exists_spec(outer_column: str, query: Any, inner_column: str | None = None) -> list[Any]:
+    spec = [outer_column, _subselect_operand(query)]
+    if inner_column is not None:
+        spec.append(inner_column)
+    return spec
+
+
+def exists(*specs: Sequence[Any]) -> dict[str, list[Any]]:
+    return {"EXISTS": [list(spec) for spec in specs]}
+
+
+def not_exists(*specs: Sequence[Any]) -> dict[str, list[Any]]:
+    return {"NOT_EXISTS": [list(spec) for spec in specs]}
+
+
 def _query_payload(query: Any) -> Any:
     if isinstance(query, Query):
         return query.to_payload()
     return Query._copy_payload_value(query)
+
+
+def _subselect_operand(query: Any) -> Any:
+    if isinstance(query, (list, tuple)) and len(query) == 2 and str(query[0]).upper() == "SUBSELECT":
+        return Query._copy_payload_value(query)
+    if isinstance(query, Mapping) and ("SUBSELECT" in query or "subselect" in query):
+        return dict(query)
+    return subselect(query)
+
+
+def _set_operand(values: Any) -> Any:
+    if isinstance(values, Query):
+        return subselect(values)
+    return Query._copy_payload_value(values)
 
 
 def _dedupe(name: str, used: MutableSet[str]) -> str:
