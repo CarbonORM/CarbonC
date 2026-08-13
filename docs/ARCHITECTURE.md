@@ -55,16 +55,20 @@ later without changing the higher-level contract.
 The initial compiler supports:
 
 - `dialect`: `mysql`, `postgresql`, or `postgres`
-- `table`: identifier string
-- `select`: optional string array of identifiers
-- `where`: optional single-column equality object
-- `limit`: optional integer
+- `FROM` or legacy `table`
+- `SELECT` references, `AS`, `DISTINCT`, and function tuples
+- `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`,
+  `NOT_IN`, `BETWEEN`, `IS`, `IS_NOT`, `LIT`, and `PARAM`
+- `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
+- MySQL and PostgreSQL placeholder styles
 
 Unsupported query shapes return `CARBON_STATUS_UNSUPPORTED_QUERY` rather than
 silently compiling weaker SQL.
 
 ## Direction
 
-The next implementation step is to encode CarbonNode's canonical C6 expression
-grammar as golden fixtures, then make CarbonC match those fixtures exactly.
-That should happen before expanding language bindings beyond smoke wrappers.
+CarbonC now carries the first CarbonNode-derived golden fixtures under
+`tests/fixtures/*.case`. The next implementation step is to expand those
+fixtures to joins, grouping, subselects, write builders, and schema-aware
+identifier validation. That should happen before expanding language bindings
+beyond smoke wrappers.

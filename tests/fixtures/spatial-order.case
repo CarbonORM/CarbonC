@@ -1,0 +1,8 @@
+-- query
+{"FROM":"property_units","SELECT":["property_units.unit_id"],"PAGINATION":{"LIMIT":25,"ORDER":[[["ST_Distance_Sphere","property_units.location",["ST_SRID",["ST_Point",["PARAM",10],["PARAM",20]],4326]],"ASC"]]}}
+-- sql
+SELECT property_units.unit_id FROM `property_units` ORDER BY ST_DISTANCE_SPHERE(property_units.location, ST_SRID(ST_POINT(?, ?), 4326)) ASC LIMIT 25
+-- params
+[10,20]
+-- allowlist
+SELECT property_units.unit_id FROM `property_units` ORDER BY ST_DISTANCE_SPHERE(property_units.location, ST_SRID(ST_POINT(?, ?), 4326)) ASC LIMIT ?

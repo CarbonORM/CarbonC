@@ -22,4 +22,5 @@ enable_testing()
 
 add_executable(carbonc_tests tests/test_carbon.c)
 target_link_libraries(carbonc_tests PRIVATE carbonc)
+target_compile_definitions(carbonc_tests PRIVATE CARBONC_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME carbonc_tests COMMAND carbonc_tests)

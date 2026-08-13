@@ -24,17 +24,20 @@ The language bindings should own:
 ## v0.1 Kernel Scope
 
 The current kernel is intentionally small. It provides a versioned ABI, explicit
-buffer ownership, and a first query compiler slice for a narrow JSON shape:
+buffer ownership, and a fixture-backed query compiler slice for canonical C6
+`SELECT` payloads:
 
 ```json
 {
-  "dialect": "mysql",
-  "table": "carbon_users",
-  "select": ["user_id", "user_email"],
-  "where": {
-    "user_id": 42
+  "FROM": "actor",
+  "SELECT": ["actor.actor_id", "actor.first_name"],
+  "WHERE": {
+    "actor.actor_id": [">", 10]
   },
-  "limit": 1
+  "PAGINATION": {
+    "ORDER": [["actor.last_name", "ASC"]],
+    "LIMIT": 25
+  }
 }
 ```
 
@@ -42,19 +45,30 @@ The compiler emits SQL, a JSON array of bound parameter values, and a normalized
 allowlist key:
 
 ```sql
-SELECT `user_id`, `user_email` FROM `carbon_users` WHERE `user_id` = ? LIMIT ?
+SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.last_name ASC LIMIT 25
 ```
 
 ```json
-[42,1]
+[10]
 ```
 
 ```text
-select user_id, user_email from carbon_users where user_id = ? limit ?
+SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.last_name ASC LIMIT ?
 ```
 
-This is not the full C6 grammar yet. It is the foundation for porting the
-canonical CarbonNode query grammar into C behind stable tests.
+Supported in this slice:
+
+- `FROM` / legacy `table`
+- `SELECT` references, `AS`, `DISTINCT`, and function tuples
+- `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
+  `BETWEEN`, `IS`, `IS_NOT`, `LIT`, and `PARAM`
+- `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
+- MySQL `?` placeholders and PostgreSQL `$1`-style placeholders
+- CarbonNode-style allowlist normalization for whitespace, `LIMIT`, `OFFSET`,
+  and `IN` bind-list cardinality
+
+This is not the full C6 grammar yet. It is the foundation for porting the rest
+of CarbonNode's canonical query grammar into C behind stable fixtures.
 
 ## Public C API
 
@@ -84,7 +98,8 @@ ctest --test-dir build --output-on-failure
 
 ## Next Milestones
 
-1. Port CarbonNode's canonical expression grammar into golden fixtures.
+1. Expand fixture coverage for joins, `GROUP_BY`, `HAVING`, subselects, insert,
+   update, delete, and upsert payloads.
 2. Add schema metadata checks so identifiers are validated against generated C6
    schema data, not only identifier syntax.
 3. Add structured error codes and paths for binding-friendly diagnostics.
