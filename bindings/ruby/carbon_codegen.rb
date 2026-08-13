@@ -21,7 +21,7 @@ module CarbonC
         used_fields = {}
         fields = table.fetch('columns', []).map do |column|
           field = carbon_codegen_field_name(column.fetch('name', ''), used_fields)
-          [field, column.fetch('name', ''), column.fetch('qualified', '')]
+          [field, column.fetch('name', ''), column.fetch('qualified', ''), column]
         end
 
         if fields.empty?
@@ -33,13 +33,27 @@ module CarbonC
         lines << "#{base_indent}  TABLE = #{JSON.generate(table.fetch('name', ''))}"
         lines << "#{base_indent}  PRIMARY = #{JSON.generate(table.fetch('primary', []))}.freeze"
         lines << "#{base_indent}  COLUMNS = {"
-        fields.each do |field, _, qualified|
+        fields.each do |field, _, qualified, _|
           lines << "#{base_indent}    #{JSON.generate(field)} => #{JSON.generate(qualified)},"
         end
         lines << "#{base_indent}  }.freeze"
         lines << "#{base_indent}  COLUMN_NAMES = {"
-        fields.each do |field, original, _|
+        fields.each do |field, original, _, _|
           lines << "#{base_indent}    #{JSON.generate(field)} => #{JSON.generate(original)},"
+        end
+        lines << "#{base_indent}  }.freeze"
+        lines << "#{base_indent}  TYPES = {"
+        fields.each do |field, _, _, column|
+          next unless column.key?('db_type')
+
+          lines << "#{base_indent}    #{JSON.generate(field)} => :#{carbon_codegen_ruby_type(column)},"
+        end
+        lines << "#{base_indent}  }.freeze"
+        lines << "#{base_indent}  NULLABLE = {"
+        fields.each do |field, _, _, column|
+          next unless column.key?('nullable')
+
+          lines << "#{base_indent}    #{JSON.generate(field)} => #{column.fetch('nullable') ? 'true' : 'false'},"
         end
         lines << "#{base_indent}  }.freeze"
         lines << "#{base_indent}end"
@@ -96,6 +110,24 @@ module CarbonC
       name = "_#{name}" if name.match?(/\A[0-9]/)
       name = "#{name}_" if %w[class module def end].include?(name)
       carbon_codegen_dedupe(name, used)
+    end
+
+    def carbon_codegen_ruby_type(column)
+      type = column.fetch('db_type', '').to_s.strip.downcase.split('(', 2).first
+      case type
+      when 'tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint', 'year'
+        'integer'
+      when 'decimal', 'dec', 'numeric', 'float', 'double', 'real'
+        'float'
+      when 'boolean', 'bool'
+        'boolean'
+      when 'binary', 'varbinary', 'blob', 'tinyblob', 'mediumblob', 'longblob'
+        'binary'
+      when 'json', 'geometry', 'point', 'polygon', 'multipoint', 'multilinestring', 'multipolygon', 'geometrycollection'
+        'object'
+      else
+        type.empty? ? 'any' : 'string'
+      end
     end
   end
 end

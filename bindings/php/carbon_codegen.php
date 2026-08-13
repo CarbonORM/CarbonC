@@ -29,6 +29,23 @@ if (!function_exists('carbon_schema_models')) {
         return '[' . implode(', ', array_map('carbon_codegen_string_literal', array_map('strval', $values))) . ']';
     }
 
+    function carbon_codegen_map_literal(array $values): string
+    {
+        if ($values === []) {
+            return '[]';
+        }
+        $items = [];
+        foreach ($values as $key => $value) {
+            if (is_bool($value)) {
+                $encodedValue = $value ? 'true' : 'false';
+            } else {
+                $encodedValue = carbon_codegen_string_literal((string) $value);
+            }
+            $items[] = carbon_codegen_string_literal((string) $key) . ' => ' . $encodedValue;
+        }
+        return '[' . implode(', ', $items) . ']';
+    }
+
     function carbon_codegen_dedupe(string $name, array &$used): string
     {
         $candidate = $name;
@@ -89,6 +106,27 @@ if (!function_exists('carbon_schema_models')) {
         }
     }
 
+    function carbon_codegen_php_type(array $column): string
+    {
+        $type = strtolower(trim((string) ($column['db_type'] ?? '')));
+        $type = explode('(', $type, 2)[0];
+        if ($type === '') {
+            return 'mixed';
+        }
+        if (in_array($type, ['tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint', 'year'], true)) {
+            $base = 'int';
+        } elseif (in_array($type, ['decimal', 'dec', 'numeric', 'float', 'double', 'real'], true)) {
+            $base = 'float';
+        } elseif (in_array($type, ['boolean', 'bool'], true)) {
+            $base = 'bool';
+        } elseif (in_array($type, ['json', 'geometry', 'point', 'polygon', 'multipoint', 'multilinestring', 'multipolygon', 'geometrycollection'], true)) {
+            $base = 'array';
+        } else {
+            $base = 'string';
+        }
+        return (($column['nullable'] ?? false) === true && $base !== 'mixed') ? $base . '|null' : $base;
+    }
+
     function carbon_schema_models($schema = null, ?string $namespace = null): string
     {
         carbon_codegen_validate_namespace($namespace);
@@ -111,16 +149,28 @@ if (!function_exists('carbon_schema_models')) {
             $usedProperties = [];
             $columns = [];
             $columnNames = [];
+            $dbTypes = [];
+            $nullable = [];
+            $propertyTypes = [];
             foreach (($table['columns'] ?? []) as $column) {
                 $property = carbon_codegen_property_name((string) ($column['name'] ?? ''), $usedProperties);
                 $columns[$property] = (string) ($column['qualified'] ?? '');
                 $columnNames[$property] = (string) ($column['name'] ?? '');
+                if (array_key_exists('db_type', $column)) {
+                    $dbTypes[$property] = (string) $column['db_type'];
+                }
+                if (array_key_exists('nullable', $column)) {
+                    $nullable[$property] = (bool) $column['nullable'];
+                }
+                $propertyTypes[$property] = carbon_codegen_php_type($column);
             }
 
             $lines[] = 'final class ' . $className;
             $lines[] = '{';
             $lines[] = '    public const TABLE = ' . carbon_codegen_string_literal($tableName) . ';';
             $lines[] = '    public const PRIMARY = ' . carbon_codegen_array_literal($table['primary'] ?? []) . ';';
+            $lines[] = '    public const DB_TYPES = ' . carbon_codegen_map_literal($dbTypes) . ';';
+            $lines[] = '    public const NULLABLE = ' . carbon_codegen_map_literal($nullable) . ';';
             $lines[] = '    public const COLUMNS = [';
             foreach ($columns as $property => $qualified) {
                 $lines[] = '        ' . carbon_codegen_string_literal($property) . ' => ' . carbon_codegen_string_literal($qualified) . ',';
@@ -134,6 +184,7 @@ if (!function_exists('carbon_schema_models')) {
             if ($columns !== []) {
                 $lines[] = '';
                 foreach (array_keys($columns) as $property) {
+                    $lines[] = '    /** @var ' . $propertyTypes[$property] . ' */';
                     $lines[] = '    public $' . $property . ';';
                 }
             }

@@ -67,6 +67,58 @@ function propertyName(columnName) {
   return JSON.stringify(name);
 }
 
+function baseDbType(column) {
+  return String(column.db_type || '').trim().toLowerCase().split('(', 1)[0];
+}
+
+function typescriptType(column) {
+  switch (baseDbType(column)) {
+    case 'tinyint':
+    case 'smallint':
+    case 'mediumint':
+    case 'int':
+    case 'integer':
+    case 'bigint':
+    case 'decimal':
+    case 'dec':
+    case 'numeric':
+    case 'float':
+    case 'double':
+    case 'real':
+    case 'year':
+      return column.nullable === true ? 'number | null' : 'number';
+    case 'boolean':
+    case 'bool':
+      return column.nullable === true ? 'boolean | null' : 'boolean';
+    case 'date':
+    case 'datetime':
+    case 'timestamp':
+    case 'time':
+      return column.nullable === true ? 'Date | number | string | null' : 'Date | number | string';
+    case 'binary':
+    case 'varbinary':
+    case 'blob':
+    case 'tinyblob':
+    case 'mediumblob':
+    case 'longblob':
+      return column.nullable === true ? 'Buffer | string | null' : 'Buffer | string';
+    case 'json':
+    case 'geometry':
+    case 'point':
+    case 'polygon':
+    case 'multipoint':
+    case 'multilinestring':
+    case 'multipolygon':
+    case 'geometrycollection':
+      return column.nullable === true ? 'Record<string, unknown> | null' : 'Record<string, unknown>';
+    default:
+      if (!column.db_type) {
+        return column.nullable === true ? 'unknown | null' : 'unknown';
+      }
+      return column.nullable === true ? 'string | null' : 'string';
+  }
+}
+
 function schemaModels(schema) {
   const metadata = JSON.parse(native.schemaMetadata(schemaJson(schema)));
   const usedTypes = new Set();
@@ -76,7 +128,7 @@ function schemaModels(schema) {
     const name = typeName(table.name || '', usedTypes);
     lines.push(`export interface ${name} {`);
     for (const column of table.columns || []) {
-      lines.push(`  ${propertyName(column.name)}: unknown;`);
+      lines.push(`  ${propertyName(column.name)}: ${typescriptType(column)};`);
     }
     lines.push('}');
     lines.push('');
@@ -86,6 +138,20 @@ function schemaModels(schema) {
     lines.push('  columns: {');
     for (const column of table.columns || []) {
       lines.push(`    ${propertyName(column.name)}: ${JSON.stringify(column.qualified || '')},`);
+    }
+    lines.push('  },');
+    lines.push('  dbTypes: {');
+    for (const column of table.columns || []) {
+      if (column.db_type !== undefined) {
+        lines.push(`    ${propertyName(column.name)}: ${JSON.stringify(column.db_type)},`);
+      }
+    }
+    lines.push('  },');
+    lines.push('  nullable: {');
+    for (const column of table.columns || []) {
+      if (typeof column.nullable === 'boolean') {
+        lines.push(`    ${propertyName(column.name)}: ${column.nullable ? 'true' : 'false'},`);
+      }
     }
     lines.push('  },');
     lines.push('} as const;');

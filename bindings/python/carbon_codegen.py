@@ -69,6 +69,39 @@ def _append_dict_literal(lines: list[str], name: str, values: Mapping[str, str])
     lines.append("    }")
 
 
+def _append_bool_dict_literal(lines: list[str], name: str, values: Mapping[str, bool]) -> None:
+    if not values:
+        lines.append(f"    {name} = {{}}")
+        return
+    lines.append(f"    {name} = {{")
+    for key, value in values.items():
+        lines.append(f"        {key!r}: {value!r},")
+    lines.append("    }")
+
+
+def _python_type(column: Mapping[str, Any]) -> str:
+    db_type = str(column.get("db_type", "")).strip().lower().split("(", 1)[0]
+    if not db_type:
+        return "Any"
+
+    if db_type in {"tinyint", "smallint", "mediumint", "int", "integer", "bigint", "year"}:
+        base = "int"
+    elif db_type in {"decimal", "dec", "numeric", "float", "double", "real"}:
+        base = "float"
+    elif db_type in {"boolean", "bool"}:
+        base = "bool"
+    elif db_type in {"binary", "varbinary", "blob", "tinyblob", "mediumblob", "longblob"}:
+        base = "bytes"
+    elif db_type in {"json", "geometry", "point", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection"}:
+        base = "Dict[str, Any]"
+    else:
+        base = "str"
+
+    if column.get("nullable") is True and base != "Any":
+        return f"Optional[{base}]"
+    return base
+
+
 def schema_models(schema: Any = None) -> str:
     """Return Python dataclass source generated from CarbonC schema metadata."""
 
@@ -76,7 +109,7 @@ def schema_models(schema: Any = None) -> str:
     used_classes: set[str] = set()
     lines = [
         "from dataclasses import dataclass",
-        "from typing import Any",
+        "from typing import Any, Dict, Optional",
         "",
     ]
 
@@ -84,21 +117,40 @@ def schema_models(schema: Any = None) -> str:
         table_name = str(table.get("name", ""))
         class_name = _class_name(table_name, used_classes)
         used_fields: set[str] = set()
-        fields: list[tuple[str, str, str]] = []
+        fields: list[tuple[str, str, str, str, str | None, bool | None]] = []
         for column in table.get("columns", []):
             original_name = str(column.get("name", ""))
             field_name = _field_name(original_name, used_fields)
-            fields.append((field_name, original_name, str(column.get("qualified", ""))))
+            db_type = column.get("db_type")
+            nullable = column.get("nullable")
+            fields.append((
+                field_name,
+                original_name,
+                str(column.get("qualified", "")),
+                _python_type(column),
+                str(db_type) if db_type is not None else None,
+                nullable if isinstance(nullable, bool) else None,
+            ))
 
         lines.append("@dataclass")
         lines.append(f"class {class_name}:")
         lines.append(f"    __carbon_table__ = {table_name!r}")
         lines.append(f"    __carbon_primary__ = {_tuple_literal([str(value) for value in table.get('primary', [])])}")
-        _append_dict_literal(lines, "__carbon_columns__", {field: qualified for field, _, qualified in fields})
-        _append_dict_literal(lines, "__carbon_column_names__", {field: original for field, original, _ in fields})
+        _append_dict_literal(lines, "__carbon_columns__", {field: qualified for field, _, qualified, _, _, _ in fields})
+        _append_dict_literal(lines, "__carbon_column_names__", {field: original for field, original, _, _, _, _ in fields})
+        _append_dict_literal(
+            lines,
+            "__carbon_db_types__",
+            {field: db_type for field, _, _, _, db_type, _ in fields if db_type is not None},
+        )
+        _append_bool_dict_literal(
+            lines,
+            "__carbon_nullable__",
+            {field: nullable for field, _, _, _, _, nullable in fields if nullable is not None},
+        )
         if fields:
-            for field, _, _ in fields:
-                lines.append(f"    {field}: Any = None")
+            for field, _, _, python_type, _, _ in fields:
+                lines.append(f"    {field}: {python_type} = None")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"

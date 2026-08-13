@@ -204,6 +204,49 @@ static void test_schema_metadata_rejects_invalid_columns(void) {
     carbon_buffer_free(&error);
 }
 
+static void test_schema_metadata_type_validation(void) {
+    const char schema[] =
+            "{\"TABLES\":{\"actor\":{"
+            "\"PRIMARY_SHORT\":[\"actor_id\"],"
+            "\"COLUMNS\":{"
+            "\"actor.actor_id\":\"actor_id\","
+            "\"actor.first_name\":\"first_name\","
+            "\"nickname\":{\"qualified\":\"actor.nickname\","
+            "\"db_type\":\"varchar\",\"max_length\":\"30\",\"nullable\":true,\"skip_insert\":true}"
+            "},"
+            "\"TYPE_VALIDATION\":{"
+            "\"actor.actor_id\":{\"COLUMN_NAME\":\"actor_id\","
+            "\"MYSQL_TYPE\":\"smallint\",\"MAX_LENGTH\":\"\","
+            "\"AUTO_INCREMENT\":true,\"NOT_NULL\":true,\"SKIP_COLUMN_IN_POST\":false},"
+            "\"actor.first_name\":{\"COLUMN_NAME\":\"first_name\","
+            "\"MYSQL_TYPE\":\"varchar\",\"MAX_LENGTH\":\"45\","
+            "\"AUTO_INCREMENT\":false,\"NOT_NULL\":true,\"SKIP_COLUMN_IN_POST\":false}"
+            "}"
+            "}}}";
+    carbon_buffer out;
+    carbon_buffer error;
+
+    assert(carbon_schema_metadata(schema, sizeof(schema) - 1, &out, &error) == CARBON_STATUS_OK);
+    assert_buffer_equals(&out,
+                         "{\"tables\":["
+                         "{\"name\":\"actor\","
+                         "\"columns\":["
+                         "{\"name\":\"actor_id\",\"qualified\":\"actor.actor_id\","
+                         "\"db_type\":\"smallint\",\"max_length\":\"\","
+                         "\"nullable\":false,\"auto_increment\":true,\"skip_insert\":false},"
+                         "{\"name\":\"first_name\",\"qualified\":\"actor.first_name\","
+                         "\"db_type\":\"varchar\",\"max_length\":\"45\","
+                         "\"nullable\":false,\"auto_increment\":false,\"skip_insert\":false},"
+                         "{\"name\":\"nickname\",\"qualified\":\"actor.nickname\","
+                         "\"db_type\":\"varchar\",\"max_length\":\"30\","
+                         "\"nullable\":true,\"skip_insert\":true}"
+                         "],\"primary\":[\"actor_id\"]}"
+                         "]}");
+    assert_buffer_equals(&error, "");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+}
+
 static void test_multiple_where_uses_and(void) {
     carbon_context *context = carbon_context_new();
     const char query[] =
@@ -1213,6 +1256,7 @@ int main(void) {
     test_allowlist_normalizer();
     test_schema_metadata_normalizer();
     test_schema_metadata_rejects_invalid_columns();
+    test_schema_metadata_type_validation();
     test_multiple_where_uses_and();
     test_postgresql_insert_write_returning();
     test_postgresql_multi_row_insert_write_returning();

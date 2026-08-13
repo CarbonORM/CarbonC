@@ -60,8 +60,11 @@ Supported in this slice:
 
 - schema metadata normalization into deterministic JSON for generated binding
   types
-- package-level source generation helpers for Python dataclasses, TypeScript
-  interfaces, PHP model classes, and Ruby Struct models
+- schema metadata enrichment from CarbonNode-style `TYPE_VALIDATION` entries,
+  including DB type, max length, nullability, auto-increment, and insert-skip
+  flags
+- package-level typed source generation helpers for Python dataclasses,
+  TypeScript interfaces, PHP model classes, and Ruby Struct models
 - `FROM` / legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
@@ -155,7 +158,9 @@ All buffers returned by CarbonC are owned by the caller and must be released
 with `carbon_buffer_free()` or `carbon_compile_result_free()`.
 
 `carbon_schema_metadata()` returns a canonical JSON shape that package-level
-generators can turn into native models or types:
+generators can turn into native models or types. When the input schema includes
+CarbonNode-style `TYPE_VALIDATION` metadata keyed by qualified column name,
+column entries include optional type details:
 
 ```json
 {
@@ -163,8 +168,24 @@ generators can turn into native models or types:
     {
       "name": "actor",
       "columns": [
-        {"name": "actor_id", "qualified": "actor.actor_id"},
-        {"name": "first_name", "qualified": "actor.first_name"}
+        {
+          "name": "actor_id",
+          "qualified": "actor.actor_id",
+          "db_type": "smallint",
+          "max_length": "",
+          "nullable": false,
+          "auto_increment": true,
+          "skip_insert": false
+        },
+        {
+          "name": "first_name",
+          "qualified": "actor.first_name",
+          "db_type": "varchar",
+          "max_length": "45",
+          "nullable": false,
+          "auto_increment": false,
+          "skip_insert": false
+        }
       ],
       "primary": ["actor_id"]
     }
@@ -214,11 +235,22 @@ dataclass_source = carbon_codegen.schema_models({
     "TABLES": {
         "actor": {
             "PRIMARY_SHORT": ["actor_id"],
-            "COLUMNS": {"actor.actor_id": "actor_id"}
+            "COLUMNS": {"actor.actor_id": "actor_id"},
+            "TYPE_VALIDATION": {
+                "actor.actor_id": {
+                    "COLUMN_NAME": "actor_id",
+                    "MYSQL_TYPE": "smallint",
+                    "NOT_NULL": True
+                }
+            }
         }
     }
 })
 ```
+
+The generated dataclass source maps DB metadata into Python annotations such as
+`int`, `float`, `str`, `bool`, `bytes`, `Dict[str, Any]`, and `Optional[...]`,
+and includes `__carbon_db_types__` and `__carbon_nullable__` metadata.
 
 Build and smoke-test it from the repository root:
 
@@ -262,10 +294,21 @@ $modelSource = carbon_schema_models([
         "actor" => [
             "PRIMARY_SHORT" => ["actor_id"],
             "COLUMNS" => ["actor.actor_id" => "actor_id"],
+            "TYPE_VALIDATION" => [
+                "actor.actor_id" => [
+                    "COLUMN_NAME" => "actor_id",
+                    "MYSQL_TYPE" => "smallint",
+                    "NOT_NULL" => true,
+                ],
+            ],
         ],
     ],
 ], "CarbonORM\\Generated");
 ```
+
+The generated PHP class source keeps properties untyped for runtime
+compatibility, adds PHPDoc type annotations, and includes `DB_TYPES` and
+`NULLABLE` constants.
 
 Build and smoke-test it from the repository root:
 
@@ -313,10 +356,20 @@ const typeSource = carbon.schemaModels({
     actor: {
       PRIMARY_SHORT: ['actor_id'],
       COLUMNS: {'actor.actor_id': 'actor_id'},
+      TYPE_VALIDATION: {
+        'actor.actor_id': {
+          COLUMN_NAME: 'actor_id',
+          MYSQL_TYPE: 'smallint',
+          NOT_NULL: true,
+        },
+      },
     },
   },
 });
 ```
+
+The generated TypeScript source maps DB metadata into primitive field types and
+adds `dbTypes` and `nullable` metadata beside each generated interface.
 
 Build and smoke-test it from the repository root:
 
@@ -365,11 +418,21 @@ model_source = CarbonC.schema_models({
   'TABLES' => {
     'actor' => {
       'PRIMARY_SHORT' => ['actor_id'],
-      'COLUMNS' => {'actor.actor_id' => 'actor_id'}
+      'COLUMNS' => {'actor.actor_id' => 'actor_id'},
+      'TYPE_VALIDATION' => {
+        'actor.actor_id' => {
+          'COLUMN_NAME' => 'actor_id',
+          'MYSQL_TYPE' => 'smallint',
+          'NOT_NULL' => true
+        }
+      }
     }
   }
 })
 ```
+
+The generated Ruby Struct source includes `TYPES` and `NULLABLE` metadata
+constants for runtime consumers.
 
 Build and smoke-test it from the repository root:
 
@@ -385,9 +448,7 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 ## Next Milestones
 
-1. Expand generated model/type surfaces with scalar DB types and nullability
-   once schema metadata carries that information.
-2. Expand schema validation to binding-friendly diagnostic paths.
-3. Add package-level ergonomics for each binding without moving DB execution
+1. Expand schema validation to binding-friendly diagnostic paths.
+2. Add package-level ergonomics for each binding without moving DB execution
    into C.
-4. Add structured diagnostic paths for binding-friendly errors.
+3. Add structured diagnostic paths for binding-friendly errors.

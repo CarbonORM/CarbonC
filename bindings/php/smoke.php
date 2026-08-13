@@ -23,6 +23,24 @@ $schema = [
                 'actor.actor_id' => 'actor_id',
                 'actor.first_name' => 'first_name',
             ],
+            'TYPE_VALIDATION' => [
+                'actor.actor_id' => [
+                    'COLUMN_NAME' => 'actor_id',
+                    'MYSQL_TYPE' => 'smallint',
+                    'MAX_LENGTH' => '',
+                    'AUTO_INCREMENT' => true,
+                    'NOT_NULL' => true,
+                    'SKIP_COLUMN_IN_POST' => false,
+                ],
+                'actor.first_name' => [
+                    'COLUMN_NAME' => 'first_name',
+                    'MYSQL_TYPE' => 'varchar',
+                    'MAX_LENGTH' => '45',
+                    'AUTO_INCREMENT' => false,
+                    'NOT_NULL' => true,
+                    'SKIP_COLUMN_IN_POST' => false,
+                ],
+            ],
         ],
     ],
 ];
@@ -54,8 +72,24 @@ carbon_assert(
             [
                 'name' => 'actor',
                 'columns' => [
-                    ['name' => 'actor_id', 'qualified' => 'actor.actor_id'],
-                    ['name' => 'first_name', 'qualified' => 'actor.first_name'],
+                    [
+                        'name' => 'actor_id',
+                        'qualified' => 'actor.actor_id',
+                        'db_type' => 'smallint',
+                        'max_length' => '',
+                        'nullable' => false,
+                        'auto_increment' => true,
+                        'skip_insert' => false,
+                    ],
+                    [
+                        'name' => 'first_name',
+                        'qualified' => 'actor.first_name',
+                        'db_type' => 'varchar',
+                        'max_length' => '45',
+                        'nullable' => false,
+                        'auto_increment' => false,
+                        'skip_insert' => false,
+                    ],
                 ],
                 'primary' => ['actor_id'],
             ],
@@ -67,6 +101,10 @@ $models = carbon_schema_models($schema, 'CarbonORM\\Generated');
 carbon_assert(strpos($models, 'namespace CarbonORM\\Generated;') !== false, 'expected generated namespace');
 carbon_assert(strpos($models, 'final class Actor') !== false, 'expected generated Actor class');
 carbon_assert(strpos($models, "public const PRIMARY = ['actor_id'];") !== false, 'expected generated primary metadata');
+carbon_assert(strpos($models, "public const DB_TYPES = ['actor_id' => 'smallint', 'first_name' => 'varchar'];") !== false, 'expected generated DB type metadata');
+carbon_assert(strpos($models, "public const NULLABLE = ['actor_id' => false, 'first_name' => false];") !== false, 'expected generated nullable metadata');
+carbon_assert(strpos($models, '/** @var int */') !== false, 'expected generated int docblock');
+carbon_assert(strpos($models, '/** @var string */') !== false, 'expected generated string docblock');
 carbon_assert(strpos($models, 'public $actor_id;') !== false, 'expected generated actor_id property');
 
 $rejected = carbon_compile_query(

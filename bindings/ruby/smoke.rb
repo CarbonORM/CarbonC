@@ -10,6 +10,24 @@ schema = {
       'COLUMNS' => {
         'actor.actor_id' => 'actor_id',
         'actor.first_name' => 'first_name'
+      },
+      'TYPE_VALIDATION' => {
+        'actor.actor_id' => {
+          'COLUMN_NAME' => 'actor_id',
+          'MYSQL_TYPE' => 'smallint',
+          'MAX_LENGTH' => '',
+          'AUTO_INCREMENT' => true,
+          'NOT_NULL' => true,
+          'SKIP_COLUMN_IN_POST' => false
+        },
+        'actor.first_name' => {
+          'COLUMN_NAME' => 'first_name',
+          'MYSQL_TYPE' => 'varchar',
+          'MAX_LENGTH' => '45',
+          'AUTO_INCREMENT' => false,
+          'NOT_NULL' => true,
+          'SKIP_COLUMN_IN_POST' => false
+        }
       }
     }
   }
@@ -43,8 +61,24 @@ expected_metadata = {
     {
       'name' => 'actor',
       'columns' => [
-        {'name' => 'actor_id', 'qualified' => 'actor.actor_id'},
-        {'name' => 'first_name', 'qualified' => 'actor.first_name'}
+        {
+          'name' => 'actor_id',
+          'qualified' => 'actor.actor_id',
+          'db_type' => 'smallint',
+          'max_length' => '',
+          'nullable' => false,
+          'auto_increment' => true,
+          'skip_insert' => false
+        },
+        {
+          'name' => 'first_name',
+          'qualified' => 'actor.first_name',
+          'db_type' => 'varchar',
+          'max_length' => '45',
+          'nullable' => false,
+          'auto_increment' => false,
+          'skip_insert' => false
+        }
       ],
       'primary' => ['actor_id']
     }
@@ -56,6 +90,10 @@ raise "unexpected model source: #{models}" unless models.include?('module Carbon
 raise "unexpected model source: #{models}" unless models.include?('Actor = Struct.new(:actor_id, :first_name, keyword_init: true)')
 raise "unexpected model source: #{models}" unless models.include?('PRIMARY = ["actor_id"].freeze')
 raise "unexpected model source: #{models}" unless models.include?('"actor_id" => "actor.actor_id"')
+raise "unexpected model source: #{models}" unless models.include?('TYPES = {')
+raise "unexpected model source: #{models}" unless models.include?('"actor_id" => :integer')
+raise "unexpected model source: #{models}" unless models.include?('NULLABLE = {')
+raise "unexpected model source: #{models}" unless models.include?('"actor_id" => false')
 
 rejected = CarbonC.compile_query(
   JSON.generate({'FROM' => 'actor', 'SELECT' => ['actor.last_name']}),

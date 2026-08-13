@@ -11,10 +11,28 @@ schema = {
                 "COLUMNS": {
                     "actor.actor_id": "actor_id",
                     "actor.first_name": "first_name",
+                },
+                "TYPE_VALIDATION": {
+                    "actor.actor_id": {
+                        "COLUMN_NAME": "actor_id",
+                        "MYSQL_TYPE": "smallint",
+                        "MAX_LENGTH": "",
+                        "AUTO_INCREMENT": True,
+                        "NOT_NULL": True,
+                        "SKIP_COLUMN_IN_POST": False,
+                    },
+                    "actor.first_name": {
+                        "COLUMN_NAME": "first_name",
+                        "MYSQL_TYPE": "varchar",
+                        "MAX_LENGTH": "45",
+                        "AUTO_INCREMENT": False,
+                        "NOT_NULL": True,
+                        "SKIP_COLUMN_IN_POST": False,
+                    },
+                },
             }
         }
     }
-}
 
 query = {
     "FROM": "actor",

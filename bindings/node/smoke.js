@@ -11,6 +11,24 @@ const schema = {
         'actor.actor_id': 'actor_id',
         'actor.first_name': 'first_name',
       },
+      TYPE_VALIDATION: {
+        'actor.actor_id': {
+          COLUMN_NAME: 'actor_id',
+          MYSQL_TYPE: 'smallint',
+          MAX_LENGTH: '',
+          AUTO_INCREMENT: true,
+          NOT_NULL: true,
+          SKIP_COLUMN_IN_POST: false,
+        },
+        'actor.first_name': {
+          COLUMN_NAME: 'first_name',
+          MYSQL_TYPE: 'varchar',
+          MAX_LENGTH: '45',
+          AUTO_INCREMENT: false,
+          NOT_NULL: true,
+          SKIP_COLUMN_IN_POST: false,
+        },
+      },
     },
   },
 };
@@ -44,8 +62,24 @@ assert.deepStrictEqual(JSON.parse(carbon.schemaMetadata(JSON.stringify(schema)))
     {
       name: 'actor',
       columns: [
-        {name: 'actor_id', qualified: 'actor.actor_id'},
-        {name: 'first_name', qualified: 'actor.first_name'},
+        {
+          name: 'actor_id',
+          qualified: 'actor.actor_id',
+          db_type: 'smallint',
+          max_length: '',
+          nullable: false,
+          auto_increment: true,
+          skip_insert: false,
+        },
+        {
+          name: 'first_name',
+          qualified: 'actor.first_name',
+          db_type: 'varchar',
+          max_length: '45',
+          nullable: false,
+          auto_increment: false,
+          skip_insert: false,
+        },
       ],
       primary: ['actor_id'],
     },
@@ -57,9 +91,14 @@ assert.strictEqual(
 );
 const modelSource = carbon.schemaModels(schema);
 assert(modelSource.includes('export interface Actor'));
-assert(modelSource.includes('actor_id: unknown;'));
+assert(modelSource.includes('actor_id: number;'));
+assert(modelSource.includes('first_name: string;'));
 assert(modelSource.includes('export const ActorMeta = {'));
 assert(modelSource.includes('primary: ["actor_id"],'));
+assert(modelSource.includes('dbTypes: {'));
+assert(modelSource.includes('actor_id: "smallint",'));
+assert(modelSource.includes('nullable: {'));
+assert(modelSource.includes('actor_id: false,'));
 assert.strictEqual(carbon.schema_models({}), '');
 
 const aliasResult = carbon.compile_query(JSON.stringify(query), JSON.stringify(schema), 'mysql');

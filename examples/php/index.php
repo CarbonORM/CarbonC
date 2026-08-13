@@ -18,6 +18,24 @@ $schema = [
                 'actor.actor_id' => 'actor_id',
                 'actor.first_name' => 'first_name',
             ],
+            'TYPE_VALIDATION' => [
+                'actor.actor_id' => [
+                    'COLUMN_NAME' => 'actor_id',
+                    'MYSQL_TYPE' => 'smallint',
+                    'MAX_LENGTH' => '',
+                    'AUTO_INCREMENT' => true,
+                    'NOT_NULL' => true,
+                    'SKIP_COLUMN_IN_POST' => false,
+                ],
+                'actor.first_name' => [
+                    'COLUMN_NAME' => 'first_name',
+                    'MYSQL_TYPE' => 'varchar',
+                    'MAX_LENGTH' => '45',
+                    'AUTO_INCREMENT' => false,
+                    'NOT_NULL' => true,
+                    'SKIP_COLUMN_IN_POST' => false,
+                ],
+            ],
         ],
     ],
 ];
