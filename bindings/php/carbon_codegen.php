@@ -37,6 +37,30 @@ if (!function_exists('carbon_schema_models')) {
         );
     }
 
+    function carbon_codegen_decode_json_field(array $result, string $field)
+    {
+        if (!array_key_exists($field, $result) || !is_string($result[$field])) {
+            throw new InvalidArgumentException($field . ' must be a JSON string');
+        }
+        $decoded = json_decode($result[$field], true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new RuntimeException($field . ' could not be decoded: ' . json_last_error_msg());
+        }
+        return $decoded;
+    }
+
+    function carbon_adapt_compile_result(array $result): array
+    {
+        $result['params'] = carbon_codegen_decode_json_field($result, 'params_json');
+        $result['diagnostics'] = carbon_codegen_decode_json_field($result, 'diagnostics_json');
+        return $result;
+    }
+
+    function carbon_compile_query_result($query, $schema = null, string $dialect = 'mysql'): array
+    {
+        return carbon_adapt_compile_result(carbon_compile_query_value($query, $schema, $dialect));
+    }
+
     function carbon_codegen_string_literal(string $value): string
     {
         return "'" . str_replace(['\\', "'"], ['\\\\', "\\'"], $value) . "'";

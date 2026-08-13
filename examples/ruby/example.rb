@@ -42,7 +42,7 @@ query = {
   'PAGINATION' => {'LIMIT' => 5}
 }
 
-result = CarbonC.compile_query_value(query, schema, 'mysql')
+result = CarbonC.compile_query_result(query, schema, 'mysql')
 
 if result.fetch('status') != 0
   warn result.fetch('error')
@@ -50,8 +50,8 @@ if result.fetch('status') != 0
 end
 
 puts result.fetch('sql')
-puts result.fetch('params_json')
+puts JSON.generate(result.fetch('params'))
 puts result.fetch('allowlist_key')
-puts result.fetch('diagnostics_json')
+puts JSON.generate(result.fetch('diagnostics'))
 puts CarbonC.schema_metadata(JSON.generate(schema))
 puts CarbonC.schema_models(schema)

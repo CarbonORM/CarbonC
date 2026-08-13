@@ -41,7 +41,7 @@ const query = {
   PAGINATION: {LIMIT: 5},
 };
 
-const result = carbon.compileQueryValue(query, schema, 'mysql');
+const result = carbon.compileQueryResult(query, schema, 'mysql');
 
 if (result.status !== 0) {
   console.error(result.error);
@@ -49,8 +49,8 @@ if (result.status !== 0) {
 }
 
 console.log(result.sql);
-console.log(result.params_json);
+console.log(JSON.stringify(result.params));
 console.log(result.allowlist_key);
-console.log(result.diagnostics_json);
+console.log(JSON.stringify(result.diagnostics));
 console.log(carbon.schemaMetadata(JSON.stringify(schema)));
 console.log(carbon.schemaModels(schema));

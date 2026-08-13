@@ -63,6 +63,14 @@ def main() -> None:
     assert ergonomic == result, ergonomic
     ergonomic_alias = carbon_codegen.compile_query(query, schema=schema, dialect="mysql")
     assert ergonomic_alias == result, ergonomic_alias
+    adapted = carbon_codegen.adapt_compile_result(result)
+    assert adapted == {
+        **result,
+        "params": [10],
+        "diagnostics": json.loads(result["diagnostics_json"]),
+    }, adapted
+    typed = carbon_codegen.compile_query_result(query, schema=schema, dialect="mysql")
+    assert typed == adapted, typed
     metadata = json.loads(carbon.schema_metadata(json.dumps(schema)))
     assert metadata == {
         "tables": [

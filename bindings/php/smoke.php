@@ -77,6 +77,13 @@ carbon_assert(
 );
 $ergonomic = carbon_compile_query_value($query, $schema, 'mysql');
 carbon_assert($ergonomic === $result, 'unexpected ergonomic compile result: ' . json_encode($ergonomic));
+$adapted = carbon_adapt_compile_result($result);
+$expectedAdapted = $result;
+$expectedAdapted['params'] = [10];
+$expectedAdapted['diagnostics'] = $diagnostics;
+carbon_assert($adapted === $expectedAdapted, 'unexpected adapted compile result: ' . json_encode($adapted));
+$typed = carbon_compile_query_result($query, $schema, 'mysql');
+carbon_assert($typed === $adapted, 'unexpected typed compile result: ' . json_encode($typed));
 $metadata = json_decode(carbon_schema_metadata(json_encode($schema)), true);
 carbon_assert(
     $metadata === [

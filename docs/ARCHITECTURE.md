@@ -29,9 +29,9 @@ The initial Python, PHP, Node, and Ruby bindings keep the native extensions
 thin: they call the C compiler, return SQL, params JSON, allowlist key, numeric
 status, stable status code, error fields, and normalized schema metadata. The
 package layer around those extensions owns native dict/array/object/hash
-serialization helpers plus typed source generators for Python dataclasses,
-TypeScript interfaces, PHP model classes, and Ruby Struct models. DB execution
-remains outside CarbonC.
+serialization helpers, typed result adapters that decode params/diagnostics JSON,
+and typed source generators for Python dataclasses, TypeScript interfaces, PHP
+model classes, and Ruby Struct models. DB execution remains outside CarbonC.
 
 This keeps the C ABI stable and keeps each language package idiomatic.
 
@@ -74,6 +74,8 @@ The initial compiler supports:
   interfaces, PHP model classes, and Ruby Struct models
 - package-level compile helpers for native Python dicts, PHP arrays, JavaScript
   objects, and Ruby hashes
+- package-level result adapters that retain the raw JSON fields while adding
+  decoded native `params` and `diagnostics` values
 - `dialect`: `mysql`, `postgresql`, or `postgres`
 - `FROM` or legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
@@ -150,7 +152,7 @@ layout changes.
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
-wrappers, package-level native payload helpers and typed source generators, and
-binding-friendly diagnostic JSON. The next implementation step is to cover
-additional C6 grammar and schema-aware write normalization edge cases while
-building typed result adapters above the raw compile result shape.
+wrappers, package-level native payload helpers, typed result adapters, typed
+source generators, and binding-friendly diagnostic JSON. The next implementation
+step is to cover additional C6 grammar and schema-aware write normalization edge
+cases while building query-builder facades above the native payload helpers.

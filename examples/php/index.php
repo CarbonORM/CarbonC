@@ -47,7 +47,7 @@ $query = [
     'PAGINATION' => ['LIMIT' => 5],
 ];
 
-$result = carbon_compile_query_value($query, $schema, 'mysql');
+$result = carbon_compile_query_result($query, $schema, 'mysql');
 
 if ($result['status'] !== 0) {
     fwrite(STDERR, $result['error'] . PHP_EOL);
@@ -55,8 +55,8 @@ if ($result['status'] !== 0) {
 }
 
 echo $result['sql'] . PHP_EOL;
-echo $result['params_json'] . PHP_EOL;
+echo json_encode($result['params']) . PHP_EOL;
 echo $result['allowlist_key'] . PHP_EOL;
-echo $result['diagnostics_json'] . PHP_EOL;
+echo json_encode($result['diagnostics']) . PHP_EOL;
 echo carbon_schema_metadata(json_encode($schema)) . PHP_EOL;
 echo carbon_schema_models($schema, 'CarbonORM\\Generated') . PHP_EOL;

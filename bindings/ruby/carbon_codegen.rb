@@ -13,6 +13,17 @@ module CarbonC
       )
     end
 
+    def adapt_compile_result(result)
+      result.merge(
+        'params' => carbon_codegen_decode_json_field(result, 'params_json'),
+        'diagnostics' => carbon_codegen_decode_json_field(result, 'diagnostics_json')
+      )
+    end
+
+    def compile_query_result(query, schema = nil, dialect = 'mysql')
+      adapt_compile_result(compile_query_value(query, schema, dialect))
+    end
+
     def schema_models(schema = nil, module_name: 'CarbonModels')
       metadata = JSON.parse(schema_metadata(carbon_codegen_schema_json(schema)))
       module_parts = carbon_codegen_module_parts(module_name)
@@ -88,6 +99,13 @@ module CarbonC
       return payload if payload.is_a?(String)
 
       JSON.generate(payload)
+    end
+
+    def carbon_codegen_decode_json_field(result, field)
+      value = result.fetch(field)
+      raise TypeError, "#{field} must be a JSON string" unless value.is_a?(String)
+
+      JSON.parse(value)
     end
 
     def carbon_codegen_module_parts(module_name)

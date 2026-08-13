@@ -65,6 +65,14 @@ expected_diagnostics = {
 raise "unexpected success diagnostics: #{diagnostics.inspect}" unless diagnostics == expected_diagnostics
 ergonomic = CarbonC.compile_query_value(query, schema, 'mysql')
 raise "unexpected ergonomic compile result: #{ergonomic.inspect}" unless ergonomic == result
+adapted = CarbonC.adapt_compile_result(result)
+expected_adapted = result.merge(
+  'params' => [10],
+  'diagnostics' => JSON.parse(result.fetch('diagnostics_json'))
+)
+raise "unexpected adapted compile result: #{adapted.inspect}" unless adapted == expected_adapted
+typed = CarbonC.compile_query_result(query, schema, 'mysql')
+raise "unexpected typed compile result: #{typed.inspect}" unless typed == adapted
 metadata = JSON.parse(CarbonC.schema_metadata(JSON.generate(schema)))
 expected_metadata = {
   'tables' => [

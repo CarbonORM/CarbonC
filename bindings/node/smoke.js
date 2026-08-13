@@ -65,6 +65,15 @@ assert.deepStrictEqual(JSON.parse(result.diagnostics_json), {
 });
 assert.deepStrictEqual(carbon.compileQueryValue(query, schema, 'mysql'), result);
 assert.deepStrictEqual(carbon.compile_query_value(query, schema, 'mysql'), result);
+const adapted = carbon.adaptCompileResult(result);
+assert.deepStrictEqual(adapted, {
+  ...result,
+  params: [10],
+  diagnostics: JSON.parse(result.diagnostics_json),
+});
+assert.deepStrictEqual(carbon.adapt_compile_result(result), adapted);
+assert.deepStrictEqual(carbon.compileQueryResult(query, schema, 'mysql'), adapted);
+assert.deepStrictEqual(carbon.compile_query_result(query, schema, 'mysql'), adapted);
 assert.deepStrictEqual(JSON.parse(carbon.schemaMetadata(JSON.stringify(schema))), {
   tables: [
     {

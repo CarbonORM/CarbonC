@@ -41,14 +41,14 @@ query = {
     "PAGINATION": {"LIMIT": 5},
 }
 
-result = carbon_codegen.compile_query_value(query, schema=schema, dialect="mysql")
+result = carbon_codegen.compile_query_result(query, schema=schema, dialect="mysql")
 
 if result["status"] != 0:
     raise SystemExit(result["error"])
 
 print(result["sql"])
-print(result["params_json"])
+print(result["params"])
 print(result["allowlist_key"])
-print(result["diagnostics_json"])
+print(result["diagnostics"])
 print(carbon.schema_metadata(json.dumps(schema)))
 print(carbon_codegen.schema_models(schema))

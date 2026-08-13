@@ -51,6 +51,30 @@ function compileQueryValue(query, schema, dialect = 'mysql') {
   return native.compileQuery(payloadJson(query, 'query'), schemaJson(schema), dialect);
 }
 
+function decodeJsonField(result, field) {
+  if (!Object.prototype.hasOwnProperty.call(result, field) || typeof result[field] !== 'string') {
+    throw new TypeError(`${field} must be a JSON string`);
+  }
+  try {
+    return JSON.parse(result[field]);
+  } catch (error) {
+    error.message = `${field} could not be decoded: ${error.message}`;
+    throw error;
+  }
+}
+
+function adaptCompileResult(result) {
+  return {
+    ...result,
+    params: decodeJsonField(result, 'params_json'),
+    diagnostics: decodeJsonField(result, 'diagnostics_json'),
+  };
+}
+
+function compileQueryResult(query, schema, dialect = 'mysql') {
+  return adaptCompileResult(compileQueryValue(query, schema, dialect));
+}
+
 function dedupe(name, used) {
   let candidate = name;
   let index = 2;
@@ -181,5 +205,9 @@ native.schemaModels = schemaModels;
 native.schema_models = schemaModels;
 native.compileQueryValue = compileQueryValue;
 native.compile_query_value = compileQueryValue;
+native.adaptCompileResult = adaptCompileResult;
+native.adapt_compile_result = adaptCompileResult;
+native.compileQueryResult = compileQueryResult;
+native.compile_query_result = compileQueryResult;
 
 module.exports = native;

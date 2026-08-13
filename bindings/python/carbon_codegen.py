@@ -34,6 +34,28 @@ def compile_query_value(query: Any, schema: Any = None, dialect: str = "mysql") 
     return carbon.compile_query(_payload_json(query), schema_json=_schema_json(schema), dialect=dialect)
 
 
+def _decode_json_field(result: Mapping[str, Any], field: str) -> Any:
+    value = result.get(field)
+    if not isinstance(value, str):
+        raise TypeError(f"{field} must be a JSON string")
+    return json.loads(value)
+
+
+def adapt_compile_result(result: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a compile result with params and diagnostics decoded to Python values."""
+
+    adapted = dict(result)
+    adapted["params"] = _decode_json_field(result, "params_json")
+    adapted["diagnostics"] = _decode_json_field(result, "diagnostics_json")
+    return adapted
+
+
+def compile_query_result(query: Any, schema: Any = None, dialect: str = "mysql") -> dict[str, Any]:
+    """Compile a native Python query payload and decode JSON result fields."""
+
+    return adapt_compile_result(compile_query_value(query, schema=schema, dialect=dialect))
+
+
 def _dedupe(name: str, used: MutableSet[str]) -> str:
     candidate = name
     index = 2
@@ -171,4 +193,11 @@ def schema_models(schema: Any = None) -> str:
 schema_dataclasses = schema_models
 compile_query = compile_query_value
 
-__all__ = ["compile_query", "compile_query_value", "schema_dataclasses", "schema_models"]
+__all__ = [
+    "adapt_compile_result",
+    "compile_query",
+    "compile_query_result",
+    "compile_query_value",
+    "schema_dataclasses",
+    "schema_models",
+]

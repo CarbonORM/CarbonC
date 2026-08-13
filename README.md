@@ -67,6 +67,8 @@ Supported in this slice:
   TypeScript interfaces, PHP model classes, and Ruby Struct models
 - package-level native payload compile helpers that serialize idiomatic
   dict/array/object/hash inputs into the stable C JSON boundary
+- package-level typed result adapters that add decoded native `params` and
+  `diagnostics` values without removing raw JSON fields
 - `FROM` / legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
@@ -249,6 +251,10 @@ result = carbon_codegen.compile_query_value(
     },
     dialect="mysql",
 )
+typed_result = carbon_codegen.compile_query_result(
+    {"FROM": "actor", "SELECT": ["actor.actor_id"]},
+    schema={"TABLES": {"actor": {"COLUMNS": {"actor.actor_id": "actor_id"}}}},
+)
 metadata_json = carbon.schema_metadata(json.dumps({
     "TABLES": {
         "actor": {
@@ -274,7 +280,9 @@ dataclass_source = carbon_codegen.schema_models({
 })
 ```
 
-The generated dataclass source maps DB metadata into Python annotations such as
+`compile_query_result()` returns the same fields as the raw result plus decoded
+Python `params` and `diagnostics` values. The generated dataclass source maps DB
+metadata into Python annotations such as
 `int`, `float`, `str`, `bool`, `bytes`, `Dict[str, Any]`, and `Optional[...]`,
 and includes `__carbon_db_types__` and `__carbon_nullable__` metadata.
 
@@ -309,6 +317,10 @@ $result = carbon_compile_query_value(
     ],
     "mysql"
 );
+$typedResult = carbon_compile_query_result(
+    ["FROM" => "actor", "SELECT" => ["actor.actor_id"]],
+    ["TABLES" => ["actor" => ["COLUMNS" => ["actor.actor_id" => "actor_id"]]]]
+);
 $metadataJson = carbon_schema_metadata(json_encode([
     "TABLES" => [
         "actor" => [
@@ -334,9 +346,10 @@ $modelSource = carbon_schema_models([
 ], "CarbonORM\\Generated");
 ```
 
-The generated PHP class source keeps properties untyped for runtime
-compatibility, adds PHPDoc type annotations, and includes `DB_TYPES` and
-`NULLABLE` constants.
+`carbon_compile_query_result()` returns the same fields as the raw result plus
+decoded PHP `params` and `diagnostics` values. The generated PHP class source
+keeps properties untyped for runtime compatibility, adds PHPDoc type
+annotations, and includes `DB_TYPES` and `NULLABLE` constants.
 
 Build and smoke-test it from the repository root:
 
@@ -373,6 +386,10 @@ const result = carbon.compileQueryValue(
   },
   'mysql'
 );
+const typedResult = carbon.compileQueryResult(
+  {FROM: 'actor', SELECT: ['actor.actor_id']},
+  {TABLES: {actor: {COLUMNS: {'actor.actor_id': 'actor_id'}}}}
+);
 const metadataJson = carbon.schemaMetadata(JSON.stringify({
   TABLES: {
     actor: {
@@ -398,8 +415,10 @@ const typeSource = carbon.schemaModels({
 });
 ```
 
-The generated TypeScript source maps DB metadata into primitive field types and
-adds `dbTypes` and `nullable` metadata beside each generated interface.
+`compileQueryResult()` returns the same fields as the raw result plus decoded
+JavaScript `params` and `diagnostics` values. The generated TypeScript source
+maps DB metadata into primitive field types and adds `dbTypes` and `nullable`
+metadata beside each generated interface.
 
 Build and smoke-test it from the repository root:
 
@@ -410,8 +429,10 @@ node examples/node/index.js
 ```
 
 The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
-`statusCode()`, `compileQuery()`, `schemaMetadata()`, `schemaModels()`, and
-`normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
+`statusCode()`, `compileQuery()`, `compileQueryValue()`,
+`compileQueryResult()`, `adaptCompileResult()`, `schemaMetadata()`,
+`schemaModels()`, and `normalizeAllowlistSql()`, plus snake_case aliases for the
+multiword functions.
 
 ## Ruby Binding
 
@@ -438,6 +459,10 @@ result = CarbonC.compile_query_value(
   },
   'mysql'
 )
+typed_result = CarbonC.compile_query_result(
+  {'FROM' => 'actor', 'SELECT' => ['actor.actor_id']},
+  {'TABLES' => {'actor' => {'COLUMNS' => {'actor.actor_id' => 'actor_id'}}}}
+)
 metadata_json = CarbonC.schema_metadata(JSON.generate({
   'TABLES' => {
     'actor' => {
@@ -463,8 +488,9 @@ model_source = CarbonC.schema_models({
 })
 ```
 
-The generated Ruby Struct source includes `TYPES` and `NULLABLE` metadata
-constants for runtime consumers.
+`CarbonC.compile_query_result` returns the same fields as the raw result plus
+decoded Ruby `params` and `diagnostics` values. The generated Ruby Struct source
+includes `TYPES` and `NULLABLE` metadata constants for runtime consumers.
 
 Build and smoke-test it from the repository root:
 
@@ -476,11 +502,12 @@ ruby examples/ruby/example.rb
 
 The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.status_code`, `CarbonC.status_message`, `CarbonC.compile_query`,
-`CarbonC.schema_metadata`, and `CarbonC.normalize_allowlist_sql`.
+`CarbonC.compile_query_value`, `CarbonC.compile_query_result`,
+`CarbonC.adapt_compile_result`, `CarbonC.schema_metadata`, and
+`CarbonC.normalize_allowlist_sql`.
 
 ## Next Milestones
 
 1. Expand the remaining CarbonNode C6 grammar behind golden fixtures.
-2. Add typed result adapters and query-builder facades on top of the native
-   payload helpers.
+2. Add query-builder facades on top of the native payload helpers.
 3. Add richer multi-diagnostic reporting for validation batches.
