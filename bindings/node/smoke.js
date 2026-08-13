@@ -74,6 +74,24 @@ assert.deepStrictEqual(adapted, {
 assert.deepStrictEqual(carbon.adapt_compile_result(result), adapted);
 assert.deepStrictEqual(carbon.compileQueryResult(query, schema, 'mysql'), adapted);
 assert.deepStrictEqual(carbon.compile_query_result(query, schema, 'mysql'), adapted);
+const built = carbon.query('actor')
+  .select('actor.actor_id', 'actor.first_name')
+  .where({'actor.actor_id': ['>', 10]})
+  .limit(5);
+assert.deepStrictEqual(built.toPayload(), query);
+assert.deepStrictEqual(built.compile(schema, 'mysql'), adapted);
+assert.deepStrictEqual(
+  carbon.fromTable('actor')
+    .select(['actor.actor_id'])
+    .orderBy('actor.first_name', 'DESC')
+    .limit(5)
+    .toPayload(),
+  {
+    FROM: 'actor',
+    SELECT: ['actor.actor_id'],
+    PAGINATION: {ORDER: [['actor.first_name', 'DESC']], LIMIT: 5},
+  }
+);
 assert.deepStrictEqual(JSON.parse(carbon.schemaMetadata(JSON.stringify(schema))), {
   tables: [
     {

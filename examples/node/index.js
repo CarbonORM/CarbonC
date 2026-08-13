@@ -34,14 +34,11 @@ const schema = {
   },
 };
 
-const query = {
-  FROM: 'actor',
-  SELECT: ['actor.actor_id', 'actor.first_name'],
-  WHERE: {'actor.actor_id': ['>', 10]},
-  PAGINATION: {LIMIT: 5},
-};
-
-const result = carbon.compileQueryResult(query, schema, 'mysql');
+const result = carbon.query('actor')
+  .select('actor.actor_id', 'actor.first_name')
+  .where({'actor.actor_id': ['>', 10]})
+  .limit(5)
+  .compile(schema, 'mysql');
 
 if (result.status !== 0) {
   console.error(result.error);

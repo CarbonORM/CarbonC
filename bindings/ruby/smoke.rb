@@ -73,6 +73,25 @@ expected_adapted = result.merge(
 raise "unexpected adapted compile result: #{adapted.inspect}" unless adapted == expected_adapted
 typed = CarbonC.compile_query_result(query, schema, 'mysql')
 raise "unexpected typed compile result: #{typed.inspect}" unless typed == adapted
+built = CarbonC.query('actor')
+                .select('actor.actor_id', 'actor.first_name')
+                .where({'actor.actor_id' => ['>', 10]})
+                .limit(5)
+raise "unexpected builder payload: #{built.to_payload.inspect}" unless built.to_payload == query
+raise 'unexpected builder compile result' unless built.compile(schema, 'mysql') == adapted
+ordered_payload = CarbonC.from_table('actor')
+                         .select(['actor.actor_id'])
+                         .order_by('actor.first_name', 'DESC')
+                         .limit(5)
+                         .to_payload
+expected_ordered_payload = {
+  'FROM' => 'actor',
+  'SELECT' => ['actor.actor_id'],
+  'PAGINATION' => {'ORDER' => [['actor.first_name', 'DESC']], 'LIMIT' => 5}
+}
+unless ordered_payload == expected_ordered_payload
+  raise "unexpected ordered builder payload: #{ordered_payload.inspect}"
+end
 metadata = JSON.parse(CarbonC.schema_metadata(JSON.generate(schema)))
 expected_metadata = {
   'tables' => [

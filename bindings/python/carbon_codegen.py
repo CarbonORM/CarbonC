@@ -56,6 +56,62 @@ def compile_query_result(query: Any, schema: Any = None, dialect: str = "mysql")
     return adapt_compile_result(compile_query_value(query, schema=schema, dialect=dialect))
 
 
+class Query:
+    """Small package-level query facade that emits canonical CarbonC payloads."""
+
+    def __init__(self, table: Any = None) -> None:
+        self._payload: dict[str, Any] = {}
+        if table is not None:
+            self._payload["FROM"] = table
+
+    def from_table(self, table: Any) -> "Query":
+        self._payload["FROM"] = table
+        return self
+
+    def select(self, *columns: Any) -> "Query":
+        if len(columns) == 1 and isinstance(columns[0], (list, tuple)):
+            self._payload["SELECT"] = list(columns[0])
+        else:
+            self._payload["SELECT"] = list(columns)
+        return self
+
+    def where(self, conditions: Mapping[str, Any]) -> "Query":
+        self._payload["WHERE"] = dict(conditions)
+        return self
+
+    def limit(self, value: int) -> "Query":
+        self._pagination()["LIMIT"] = value
+        return self
+
+    def order_by(self, column: Any, direction: str = "ASC") -> "Query":
+        pagination = self._pagination()
+        order = pagination.setdefault("ORDER", [])
+        if not isinstance(order, list):
+            raise TypeError("PAGINATION.ORDER must be a list")
+        order.append([column, direction])
+        return self
+
+    def to_payload(self) -> dict[str, Any]:
+        return json.loads(json.dumps(self._payload, separators=(",", ":")))
+
+    def compile(self, schema: Any = None, dialect: str = "mysql") -> dict[str, Any]:
+        return compile_query_result(self._payload, schema=schema, dialect=dialect)
+
+    def _pagination(self) -> dict[str, Any]:
+        pagination = self._payload.setdefault("PAGINATION", {})
+        if not isinstance(pagination, dict):
+            raise TypeError("PAGINATION must be a mapping")
+        return pagination
+
+
+def query(table: Any = None) -> Query:
+    return Query(table)
+
+
+def from_table(table: Any) -> Query:
+    return Query(table)
+
+
 def _dedupe(name: str, used: MutableSet[str]) -> str:
     candidate = name
     index = 2
@@ -194,10 +250,13 @@ schema_dataclasses = schema_models
 compile_query = compile_query_value
 
 __all__ = [
+    "Query",
     "adapt_compile_result",
     "compile_query",
     "compile_query_result",
     "compile_query_value",
+    "from_table",
+    "query",
     "schema_dataclasses",
     "schema_models",
 ]

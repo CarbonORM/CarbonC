@@ -71,6 +71,26 @@ def main() -> None:
     }, adapted
     typed = carbon_codegen.compile_query_result(query, schema=schema, dialect="mysql")
     assert typed == adapted, typed
+    built = (
+        carbon_codegen.query("actor")
+        .select("actor.actor_id", "actor.first_name")
+        .where({"actor.actor_id": [">", 10]})
+        .limit(5)
+    )
+    assert built.to_payload() == query, built.to_payload()
+    assert built.compile(schema=schema, dialect="mysql") == adapted
+    ordered_payload = (
+        carbon_codegen.from_table("actor")
+        .select(["actor.actor_id"])
+        .order_by("actor.first_name", "DESC")
+        .limit(5)
+        .to_payload()
+    )
+    assert ordered_payload == {
+        "FROM": "actor",
+        "SELECT": ["actor.actor_id"],
+        "PAGINATION": {"ORDER": [["actor.first_name", "DESC"]], "LIMIT": 5},
+    }, ordered_payload
     metadata = json.loads(carbon.schema_metadata(json.dumps(schema)))
     assert metadata == {
         "tables": [

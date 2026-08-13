@@ -75,6 +75,74 @@ function compileQueryResult(query, schema, dialect = 'mysql') {
   return adaptCompileResult(compileQueryValue(query, schema, dialect));
 }
 
+class CarbonQuery {
+  constructor(table) {
+    this.payload = {};
+    if (table !== undefined && table !== null) {
+      this.payload.FROM = table;
+    }
+  }
+
+  from(table) {
+    this.payload.FROM = table;
+    return this;
+  }
+
+  select(...columns) {
+    if (columns.length === 1 && Array.isArray(columns[0])) {
+      this.payload.SELECT = [...columns[0]];
+    } else {
+      this.payload.SELECT = columns;
+    }
+    return this;
+  }
+
+  where(conditions) {
+    this.payload.WHERE = {...conditions};
+    return this;
+  }
+
+  limit(value) {
+    this.pagination().LIMIT = value;
+    return this;
+  }
+
+  orderBy(column, direction = 'ASC') {
+    const pagination = this.pagination();
+    if (!Array.isArray(pagination.ORDER)) {
+      pagination.ORDER = [];
+    }
+    pagination.ORDER.push([column, direction]);
+    return this;
+  }
+
+  toPayload() {
+    return JSON.parse(JSON.stringify(this.payload));
+  }
+
+  compile(schema, dialect = 'mysql') {
+    return compileQueryResult(this.payload, schema, dialect);
+  }
+
+  pagination() {
+    if (this.payload.PAGINATION === undefined) {
+      this.payload.PAGINATION = {};
+    }
+    if (this.payload.PAGINATION === null || Array.isArray(this.payload.PAGINATION) || typeof this.payload.PAGINATION !== 'object') {
+      throw new TypeError('PAGINATION must be an object');
+    }
+    return this.payload.PAGINATION;
+  }
+}
+
+function query(table) {
+  return new CarbonQuery(table);
+}
+
+function fromTable(table) {
+  return new CarbonQuery(table);
+}
+
 function dedupe(name, used) {
   let candidate = name;
   let index = 2;
@@ -209,5 +277,9 @@ native.adaptCompileResult = adaptCompileResult;
 native.adapt_compile_result = adaptCompileResult;
 native.compileQueryResult = compileQueryResult;
 native.compile_query_result = compileQueryResult;
+native.CarbonQuery = CarbonQuery;
+native.query = query;
+native.fromTable = fromTable;
+native.from_table = fromTable;
 
 module.exports = native;

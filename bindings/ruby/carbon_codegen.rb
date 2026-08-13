@@ -4,7 +4,65 @@ require 'json'
 require_relative 'carbon'
 
 module CarbonC
+  class Query
+    def initialize(table = nil)
+      @payload = {}
+      @payload['FROM'] = table unless table.nil?
+    end
+
+    def from_table(table)
+      @payload['FROM'] = table
+      self
+    end
+
+    def select(*columns)
+      @payload['SELECT'] = columns.length == 1 && columns.first.is_a?(Array) ? columns.first.dup : columns
+      self
+    end
+
+    def where(conditions)
+      @payload['WHERE'] = conditions.dup
+      self
+    end
+
+    def limit(value)
+      pagination['LIMIT'] = value
+      self
+    end
+
+    def order_by(column, direction = 'ASC')
+      pagination['ORDER'] ||= []
+      pagination['ORDER'] << [column, direction]
+      self
+    end
+
+    def to_payload
+      JSON.parse(JSON.generate(@payload))
+    end
+
+    def compile(schema = nil, dialect = 'mysql')
+      CarbonC.compile_query_result(@payload, schema, dialect)
+    end
+
+    private
+
+    def pagination
+      @payload['PAGINATION'] ||= {}
+      raise TypeError, 'PAGINATION must be a Hash' unless @payload['PAGINATION'].is_a?(Hash)
+
+      @payload['PAGINATION']
+    end
+  end
+
   class << self
+    def query(table = nil)
+      Query.new(table)
+    end
+
+    def from_table(table)
+      Query.new(table)
+    end
+
     def compile_query_value(query, schema = nil, dialect = 'mysql')
       compile_query(
         carbon_codegen_payload_json(query),

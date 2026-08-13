@@ -22,6 +22,7 @@ Bindings own runtime integration:
 - async/event-loop behavior
 - framework adapters
 - native payload serialization helpers
+- query-builder facades
 - native model classes and generated types
 - exception mapping
 
@@ -30,8 +31,9 @@ thin: they call the C compiler, return SQL, params JSON, allowlist key, numeric
 status, stable status code, error fields, and normalized schema metadata. The
 package layer around those extensions owns native dict/array/object/hash
 serialization helpers, typed result adapters that decode params/diagnostics JSON,
-and typed source generators for Python dataclasses, TypeScript interfaces, PHP
-model classes, and Ruby Struct models. DB execution remains outside CarbonC.
+query-builder facades, and typed source generators for Python dataclasses,
+TypeScript interfaces, PHP model classes, and Ruby Struct models. DB execution
+remains outside CarbonC.
 
 This keeps the C ABI stable and keeps each language package idiomatic.
 
@@ -76,6 +78,8 @@ The initial compiler supports:
   objects, and Ruby hashes
 - package-level result adapters that retain the raw JSON fields while adding
   decoded native `params` and `diagnostics` values
+- package-level SELECT query-builder facades that emit canonical payloads for
+  table, select, where, limit, and order controls
 - `dialect`: `mysql`, `postgresql`, or `postgres`
 - `FROM` or legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
@@ -152,7 +156,8 @@ layout changes.
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
-wrappers, package-level native payload helpers, typed result adapters, typed
-source generators, and binding-friendly diagnostic JSON. The next implementation
-step is to cover additional C6 grammar and schema-aware write normalization edge
-cases while building query-builder facades above the native payload helpers.
+wrappers, package-level native payload helpers, typed result adapters,
+query-builder facades, typed source generators, and binding-friendly diagnostic
+JSON. The next implementation step is to cover additional C6 grammar and
+schema-aware write normalization edge cases while expanding the facade coverage
+to match the compiler grammar.

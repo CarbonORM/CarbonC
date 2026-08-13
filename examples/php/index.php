@@ -40,14 +40,11 @@ $schema = [
     ],
 ];
 
-$query = [
-    'FROM' => 'actor',
-    'SELECT' => ['actor.actor_id', 'actor.first_name'],
-    'WHERE' => ['actor.actor_id' => ['>', 10]],
-    'PAGINATION' => ['LIMIT' => 5],
-];
-
-$result = carbon_compile_query_result($query, $schema, 'mysql');
+$result = carbon_query('actor')
+    ->select('actor.actor_id', 'actor.first_name')
+    ->where(['actor.actor_id' => ['>', 10]])
+    ->limit(5)
+    ->compile($schema, 'mysql');
 
 if ($result['status'] !== 0) {
     fwrite(STDERR, $result['error'] . PHP_EOL);

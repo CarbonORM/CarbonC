@@ -84,6 +84,26 @@ $expectedAdapted['diagnostics'] = $diagnostics;
 carbon_assert($adapted === $expectedAdapted, 'unexpected adapted compile result: ' . json_encode($adapted));
 $typed = carbon_compile_query_result($query, $schema, 'mysql');
 carbon_assert($typed === $adapted, 'unexpected typed compile result: ' . json_encode($typed));
+$built = carbon_query('actor')
+    ->select('actor.actor_id', 'actor.first_name')
+    ->where(['actor.actor_id' => ['>', 10]])
+    ->limit(5);
+carbon_assert($built->toPayload() === $query, 'unexpected builder payload: ' . json_encode($built->toPayload()));
+carbon_assert($built->compile($schema, 'mysql') === $adapted, 'unexpected builder compile result');
+$orderedPayload = carbon_query()
+    ->fromTable('actor')
+    ->select(['actor.actor_id'])
+    ->orderBy('actor.first_name', 'DESC')
+    ->limit(5)
+    ->toPayload();
+carbon_assert(
+    $orderedPayload === [
+        'FROM' => 'actor',
+        'SELECT' => ['actor.actor_id'],
+        'PAGINATION' => ['ORDER' => [['actor.first_name', 'DESC']], 'LIMIT' => 5],
+    ],
+    'unexpected ordered builder payload: ' . json_encode($orderedPayload)
+);
 $metadata = json_decode(carbon_schema_metadata(json_encode($schema)), true);
 carbon_assert(
     $metadata === [

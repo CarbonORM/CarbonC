@@ -61,6 +61,91 @@ if (!function_exists('carbon_schema_models')) {
         return carbon_adapt_compile_result(carbon_compile_query_value($query, $schema, $dialect));
     }
 
+    if (!class_exists('CarbonQuery', false)) {
+        final class CarbonQuery
+        {
+            /** @var array<string,mixed> */
+            private $payload = [];
+
+            public function __construct($table = null)
+            {
+                if ($table !== null) {
+                    $this->payload['FROM'] = $table;
+                }
+            }
+
+            public function fromTable($table): self
+            {
+                $this->payload['FROM'] = $table;
+                return $this;
+            }
+
+            public function select(...$columns): self
+            {
+                if (count($columns) === 1 && is_array($columns[0])) {
+                    $this->payload['SELECT'] = array_values($columns[0]);
+                } else {
+                    $this->payload['SELECT'] = array_values($columns);
+                }
+                return $this;
+            }
+
+            public function where(array $conditions): self
+            {
+                $this->payload['WHERE'] = $conditions;
+                return $this;
+            }
+
+            public function limit(int $value): self
+            {
+                $pagination =& $this->pagination();
+                $pagination['LIMIT'] = $value;
+                return $this;
+            }
+
+            public function orderBy($column, string $direction = 'ASC'): self
+            {
+                $pagination =& $this->pagination();
+                $pagination['ORDER'][] = [$column, $direction];
+                return $this;
+            }
+
+            public function toPayload(): array
+            {
+                $encoded = json_encode($this->payload);
+                if ($encoded === false) {
+                    throw new RuntimeException('query payload could not be encoded as JSON');
+                }
+                $decoded = json_decode($encoded, true);
+                if (!is_array($decoded)) {
+                    throw new RuntimeException('query payload could not be copied');
+                }
+                return $decoded;
+            }
+
+            public function compile($schema = null, string $dialect = 'mysql'): array
+            {
+                return carbon_compile_query_result($this->payload, $schema, $dialect);
+            }
+
+            private function &pagination(): array
+            {
+                if (!array_key_exists('PAGINATION', $this->payload)) {
+                    $this->payload['PAGINATION'] = [];
+                }
+                if (!is_array($this->payload['PAGINATION'])) {
+                    throw new RuntimeException('PAGINATION must be an array');
+                }
+                return $this->payload['PAGINATION'];
+            }
+        }
+    }
+
+    function carbon_query($table = null): CarbonQuery
+    {
+        return new CarbonQuery($table);
+    }
+
     function carbon_codegen_string_literal(string $value): string
     {
         return "'" . str_replace(['\\', "'"], ['\\\\', "\\'"], $value) . "'";

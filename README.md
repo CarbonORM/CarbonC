@@ -69,6 +69,8 @@ Supported in this slice:
   dict/array/object/hash inputs into the stable C JSON boundary
 - package-level typed result adapters that add decoded native `params` and
   `diagnostics` values without removing raw JSON fields
+- package-level SELECT query-builder facades that emit the same canonical
+  payloads as the native helper layer
 - `FROM` / legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
@@ -233,27 +235,24 @@ ctest --test-dir build --output-on-failure
 The Python binding wraps the same C ABI from
 `bindings/python/carbon_python.c` and returns a plain Python `dict` with
 `status`, `status_code`, `sql`, `params_json`, `allowlist_key`, `error`, and
-`diagnostics_json` fields. `bindings/python/carbon_codegen.py` adds
-package-level native-payload compile helpers and source generation helpers over
-the normalized schema metadata:
+`diagnostics_json` fields. `bindings/python/carbon_codegen.py` adds a
+`Query` facade, native-payload compile helpers, typed result adapters, and
+source generation helpers over the normalized schema metadata:
 
 ```python
 import json
 import carbon
 import carbon_codegen
 
-result = carbon_codegen.compile_query_value(
-    {"FROM": "actor", "SELECT": ["actor.actor_id"]},
-    schema={
-        "TABLES": {
-            "actor": {"COLUMNS": {"actor.actor_id": "actor_id"}}
-        }
-    },
-    dialect="mysql",
-)
-typed_result = carbon_codegen.compile_query_result(
-    {"FROM": "actor", "SELECT": ["actor.actor_id"]},
-    schema={"TABLES": {"actor": {"COLUMNS": {"actor.actor_id": "actor_id"}}}},
+typed_result = (
+    carbon_codegen.query("actor")
+    .select("actor.actor_id")
+    .where({"actor.actor_id": [">", 10]})
+    .limit(5)
+    .compile(
+        schema={"TABLES": {"actor": {"COLUMNS": {"actor.actor_id": "actor_id"}}}},
+        dialect="mysql",
+    )
 )
 metadata_json = carbon.schema_metadata(json.dumps({
     "TABLES": {
@@ -280,6 +279,7 @@ dataclass_source = carbon_codegen.schema_models({
 })
 ```
 
+`Query.to_payload()` returns the canonical dict sent through the C JSON boundary.
 `compile_query_result()` returns the same fields as the raw result plus decoded
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
 metadata into Python annotations such as
@@ -298,29 +298,22 @@ PYTHONPATH=bindings/python python3 bindings/python/smoke.py
 The PHP extension wraps the same compile result shape from
 `bindings/php/carbon_php.c` as an associative array, including
 `diagnostics_json`. The
-`bindings/php/carbon_codegen.php` helper adds `carbon_compile_query_value()` for
-native arrays and generates native PHP model class source over
+`bindings/php/carbon_codegen.php` helper adds `CarbonQuery`,
+`carbon_compile_query_value()` for native arrays, typed result adapters, and
+native PHP model class source over
 `carbon_schema_metadata()`:
 
 ```php
 require_once __DIR__ . "/bindings/php/carbon_codegen.php";
 
-$result = carbon_compile_query_value(
-    ["FROM" => "actor", "SELECT" => ["actor.actor_id"]],
-    [
-        "TABLES" => [
-            "actor" => [
-                "PRIMARY_SHORT" => ["actor_id"],
-                "COLUMNS" => ["actor.actor_id" => "actor_id"],
-            ],
-        ],
-    ],
-    "mysql"
-);
-$typedResult = carbon_compile_query_result(
-    ["FROM" => "actor", "SELECT" => ["actor.actor_id"]],
-    ["TABLES" => ["actor" => ["COLUMNS" => ["actor.actor_id" => "actor_id"]]]]
-);
+$typedResult = carbon_query("actor")
+    ->select("actor.actor_id")
+    ->where(["actor.actor_id" => [">", 10]])
+    ->limit(5)
+    ->compile(
+        ["TABLES" => ["actor" => ["COLUMNS" => ["actor.actor_id" => "actor_id"]]]],
+        "mysql"
+    );
 $metadataJson = carbon_schema_metadata(json_encode([
     "TABLES" => [
         "actor" => [
@@ -346,10 +339,11 @@ $modelSource = carbon_schema_models([
 ], "CarbonORM\\Generated");
 ```
 
-`carbon_compile_query_result()` returns the same fields as the raw result plus
-decoded PHP `params` and `diagnostics` values. The generated PHP class source
-keeps properties untyped for runtime compatibility, adds PHPDoc type
-annotations, and includes `DB_TYPES` and `NULLABLE` constants.
+`CarbonQuery::toPayload()` returns the canonical array sent through the C JSON
+boundary. `carbon_compile_query_result()` returns the same fields as the raw
+result plus decoded PHP `params` and `diagnostics` values. The generated PHP
+class source keeps properties untyped for runtime compatibility, adds PHPDoc
+type annotations, and includes `DB_TYPES` and `NULLABLE` constants.
 
 Build and smoke-test it from the repository root:
 
@@ -361,35 +355,30 @@ php -d extension=bindings/php/modules/carbon.so examples/php/index.php
 
 The extension exposes `carbon_version()`, `carbon_hello_world()`,
 `carbon_status_code()`, `carbon_status_message()`, `carbon_compile_query()`,
-`carbon_schema_metadata()`, and `carbon_normalize_allowlist_sql()`.
+`carbon_compile_query_value()`, `carbon_compile_query_result()`,
+`carbon_adapt_compile_result()`, `carbon_query()`, `carbon_schema_metadata()`,
+and `carbon_normalize_allowlist_sql()`.
 
 ## Node Binding
 
 The Node binding uses plain N-API from `bindings/node/carbon_node.cpp` and
 exports camelCase methods plus snake_case aliases. `bindings/node/index.js`
-adds `compileQueryValue()` / `compile_query_value()` for native objects and a
-package-level TypeScript source generator. Compile results include
+adds `CarbonQuery`, `query()`, `compileQueryValue()` / `compile_query_value()`
+for native objects, typed result adapters, and a package-level TypeScript source
+generator. Compile results include
 `diagnostics_json` beside the status, SQL, params, allowlist, and error fields:
 
 ```js
 const carbon = require('./bindings/node');
 
-const result = carbon.compileQueryValue(
-  {FROM: 'actor', SELECT: ['actor.actor_id']},
-  {
-    TABLES: {
-      actor: {
-        PRIMARY_SHORT: ['actor_id'],
-        COLUMNS: {'actor.actor_id': 'actor_id'},
-      },
-    },
-  },
-  'mysql'
-);
-const typedResult = carbon.compileQueryResult(
-  {FROM: 'actor', SELECT: ['actor.actor_id']},
-  {TABLES: {actor: {COLUMNS: {'actor.actor_id': 'actor_id'}}}}
-);
+const typedResult = carbon.query('actor')
+  .select('actor.actor_id')
+  .where({'actor.actor_id': ['>', 10]})
+  .limit(5)
+  .compile(
+    {TABLES: {actor: {COLUMNS: {'actor.actor_id': 'actor_id'}}}},
+    'mysql'
+  );
 const metadataJson = carbon.schemaMetadata(JSON.stringify({
   TABLES: {
     actor: {
@@ -415,10 +404,11 @@ const typeSource = carbon.schemaModels({
 });
 ```
 
-`compileQueryResult()` returns the same fields as the raw result plus decoded
-JavaScript `params` and `diagnostics` values. The generated TypeScript source
-maps DB metadata into primitive field types and adds `dbTypes` and `nullable`
-metadata beside each generated interface.
+`CarbonQuery.toPayload()` returns the canonical object sent through the C JSON
+boundary. `compileQueryResult()` returns the same fields as the raw result plus
+decoded JavaScript `params` and `diagnostics` values. The generated TypeScript
+source maps DB metadata into primitive field types and adds `dbTypes` and
+`nullable` metadata beside each generated interface.
 
 Build and smoke-test it from the repository root:
 
@@ -430,39 +420,32 @@ node examples/node/index.js
 
 The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `statusCode()`, `compileQuery()`, `compileQueryValue()`,
-`compileQueryResult()`, `adaptCompileResult()`, `schemaMetadata()`,
-`schemaModels()`, and `normalizeAllowlistSql()`, plus snake_case aliases for the
-multiword functions.
+`compileQueryResult()`, `adaptCompileResult()`, `CarbonQuery`, `query()`,
+`fromTable()`, `schemaMetadata()`, `schemaModels()`, and
+`normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
 
 ## Ruby Binding
 
 The Ruby extension wraps the same compile result shape from
 `bindings/ruby/carbon_ruby.c` as a `Hash` with string keys, including
 `diagnostics_json`. The
-`bindings/ruby/carbon_codegen.rb` helper adds `CarbonC.compile_query_value` for
-native hashes and generates Ruby Struct model source over
+`bindings/ruby/carbon_codegen.rb` helper adds `CarbonC::Query`,
+`CarbonC.compile_query_value` for native hashes, typed result adapters, and Ruby
+Struct model source over
 `CarbonC.schema_metadata`:
 
 ```ruby
 require 'json'
 require_relative './bindings/ruby/carbon_codegen'
 
-result = CarbonC.compile_query_value(
-  {'FROM' => 'actor', 'SELECT' => ['actor.actor_id']},
-  {
-    'TABLES' => {
-      'actor' => {
-        'PRIMARY_SHORT' => ['actor_id'],
-        'COLUMNS' => {'actor.actor_id' => 'actor_id'}
-      }
-    }
-  },
-  'mysql'
-)
-typed_result = CarbonC.compile_query_result(
-  {'FROM' => 'actor', 'SELECT' => ['actor.actor_id']},
-  {'TABLES' => {'actor' => {'COLUMNS' => {'actor.actor_id' => 'actor_id'}}}}
-)
+typed_result = CarbonC.query('actor')
+                      .select('actor.actor_id')
+                      .where({'actor.actor_id' => ['>', 10]})
+                      .limit(5)
+                      .compile(
+                        {'TABLES' => {'actor' => {'COLUMNS' => {'actor.actor_id' => 'actor_id'}}}},
+                        'mysql'
+                      )
 metadata_json = CarbonC.schema_metadata(JSON.generate({
   'TABLES' => {
     'actor' => {
@@ -488,9 +471,11 @@ model_source = CarbonC.schema_models({
 })
 ```
 
-`CarbonC.compile_query_result` returns the same fields as the raw result plus
-decoded Ruby `params` and `diagnostics` values. The generated Ruby Struct source
-includes `TYPES` and `NULLABLE` metadata constants for runtime consumers.
+`CarbonC::Query#to_payload` returns the canonical hash sent through the C JSON
+boundary. `CarbonC.compile_query_result` returns the same fields as the raw
+result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
+Struct source includes `TYPES` and `NULLABLE` metadata constants for runtime
+consumers.
 
 Build and smoke-test it from the repository root:
 
@@ -503,11 +488,11 @@ ruby examples/ruby/example.rb
 The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.status_code`, `CarbonC.status_message`, `CarbonC.compile_query`,
 `CarbonC.compile_query_value`, `CarbonC.compile_query_result`,
-`CarbonC.adapt_compile_result`, `CarbonC.schema_metadata`, and
-`CarbonC.normalize_allowlist_sql`.
+`CarbonC.adapt_compile_result`, `CarbonC.query`, `CarbonC.from_table`,
+`CarbonC.schema_metadata`, and `CarbonC.normalize_allowlist_sql`.
 
 ## Next Milestones
 
 1. Expand the remaining CarbonNode C6 grammar behind golden fixtures.
-2. Add query-builder facades on top of the native payload helpers.
-3. Add richer multi-diagnostic reporting for validation batches.
+2. Add richer multi-diagnostic reporting for validation batches.
+3. Add broader query-builder coverage as the remaining C6 grammar lands.

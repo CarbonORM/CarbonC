@@ -34,14 +34,13 @@ schema = {
         }
     }
 
-query = {
-    "FROM": "actor",
-    "SELECT": ["actor.actor_id", "actor.first_name"],
-    "WHERE": {"actor.actor_id": [">", 10]},
-    "PAGINATION": {"LIMIT": 5},
-}
-
-result = carbon_codegen.compile_query_result(query, schema=schema, dialect="mysql")
+result = (
+    carbon_codegen.query("actor")
+    .select("actor.actor_id", "actor.first_name")
+    .where({"actor.actor_id": [">", 10]})
+    .limit(5)
+    .compile(schema=schema, dialect="mysql")
+)
 
 if result["status"] != 0:
     raise SystemExit(result["error"])
