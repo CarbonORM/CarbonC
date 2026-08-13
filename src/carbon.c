@@ -2802,6 +2802,93 @@ static carbon_status carbon_append_write_value(
     return CARBON_STATUS_INVALID_QUERY;
 }
 
+static int carbon_is_root_post_metadata_key(const char *key) {
+    static const char *const metadata_keys[] = {
+            "FROM", "from", "table",
+            "dialect", "DIALECT",
+            "DB", "db",
+            "SELECT", "select",
+            "UPDATE", "update",
+            "DELETE", "delete",
+            "WHERE", "where",
+            "JOIN", "join",
+            "ORDER", "order",
+            "GROUP_BY", "group_by",
+            "HAVING", "having",
+            "INDEX_HINTS", "index_hints",
+            "PAGINATION", "pagination",
+            "INSERT", "insert",
+            "REPLACE", "replace",
+            "dataInsertMultipleRows",
+            "LIMIT", "limit",
+            "PAGE", "page",
+            "GET", "get",
+            "POST", "post",
+            "PUT", "put",
+            "cacheResults",
+            "skipReactBootstrap",
+            "fetchDependencies",
+            "debug",
+            "success",
+            "error"
+    };
+    size_t index;
+
+    if (key == NULL) {
+        return 0;
+    }
+    for (index = 0; index < sizeof(metadata_keys) / sizeof(metadata_keys[0]); ++index) {
+        if (strcmp(key, metadata_keys[index]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int carbon_query_has_read_controls(carbon_json_span query) {
+    static const char *const read_control_names[] = {
+            "SELECT", "select",
+            "WHERE", "where",
+            "JOIN", "join",
+            "GROUP_BY", "group_by",
+            "HAVING", "having",
+            "PAGINATION", "pagination",
+            "ORDER", "order",
+            "LIMIT", "limit",
+            "PAGE", "page"
+    };
+    carbon_json_span unused;
+    size_t index;
+
+    for (index = 0; index < sizeof(read_control_names) / sizeof(read_control_names[0]); ++index) {
+        int found = carbon_object_get_property(query, read_control_names[index], &unused);
+        if (found != 0) {
+            return found;
+        }
+    }
+    return 0;
+}
+
+static int carbon_query_has_root_post_columns(carbon_json_span query) {
+    const char *cursor = NULL;
+    carbon_object_entry entry;
+    int next;
+
+    while ((next = carbon_object_next(query, &cursor, &entry)) == 1) {
+        char *key = carbon_span_string_copy(entry.key);
+
+        if (key == NULL) {
+            return -1;
+        }
+        if (!carbon_is_root_post_metadata_key(key)) {
+            free(key);
+            return 1;
+        }
+        free(key);
+    }
+    return next < 0 ? -1 : 0;
+}
+
 static void carbon_write_columns_free(carbon_write_columns *columns) {
     size_t index;
 
@@ -2880,6 +2967,7 @@ static carbon_status carbon_collect_write_columns(
         carbon_compile_state *state,
         const char *table,
         carbon_json_span rows,
+        int ignore_root_post_metadata,
         carbon_write_columns *columns) {
     const char *cursor = NULL;
     carbon_object_entry entry;
@@ -2887,9 +2975,14 @@ static carbon_status carbon_collect_write_columns(
 
     while ((next = carbon_object_next(rows, &cursor, &entry)) == 1) {
         char *key = carbon_span_string_copy(entry.key);
-        char *short_column = key == NULL ? NULL : carbon_trim_write_column(state, table, key);
+        char *short_column;
         carbon_status status;
 
+        if (key != NULL && ignore_root_post_metadata && carbon_is_root_post_metadata_key(key)) {
+            free(key);
+            continue;
+        }
+        short_column = key == NULL ? NULL : carbon_trim_write_column(state, table, key);
         if (short_column == NULL) {
             free(key);
             return CARBON_STATUS_INVALID_QUERY;
@@ -3200,6 +3293,7 @@ static carbon_status carbon_compile_insert_statement(
         carbon_compile_state *state,
         carbon_json_span query,
         carbon_string_builder *sql,
+        int allow_root_post_row,
         const char **error_message) {
     static const char *const insert_names[] = {"INSERT", "insert"};
     static const char *const replace_names[] = {"REPLACE", "replace"};
@@ -3218,6 +3312,7 @@ static carbon_status carbon_compile_insert_statement(
     int found_multi_row;
     int found_update;
     int using_multi_row_key = 0;
+    int using_root_post_row = 0;
     carbon_status status;
 
     status = carbon_copy_query_table(state, query, &table, error_message);
@@ -3253,10 +3348,16 @@ static carbon_status carbon_compile_insert_statement(
                 goto cleanup;
             }
             if (found_multi_row == 0) {
-                status = CARBON_STATUS_INVALID_QUERY;
-                goto cleanup;
+                if (allow_root_post_row) {
+                    insert_rows = query;
+                    using_root_post_row = 1;
+                } else {
+                    status = CARBON_STATUS_INVALID_QUERY;
+                    goto cleanup;
+                }
+            } else {
+                using_multi_row_key = 1;
             }
-            using_multi_row_key = 1;
         }
     }
 
@@ -3277,7 +3378,7 @@ static carbon_status carbon_compile_insert_statement(
         status = CARBON_STATUS_INVALID_QUERY;
         goto cleanup;
     }
-    status = carbon_collect_write_columns(state, table, first_insert_row, &columns);
+    status = carbon_collect_write_columns(state, table, first_insert_row, using_root_post_row, &columns);
     if (status != CARBON_STATUS_OK) {
         goto cleanup;
     }
@@ -3610,23 +3711,33 @@ static carbon_status carbon_compile_statement(
     static const char *const delete_names[] = {"DELETE", "delete"};
     static const char *const multi_row_names[] = {"dataInsertMultipleRows"};
     carbon_json_span unused;
+    carbon_json_span update_span;
     int has_insert = carbon_object_get_any(query, insert_names, 2, &unused);
     int has_replace = carbon_object_get_any(query, replace_names, 2, &unused);
-    int has_update = carbon_object_get_any(query, update_names, 2, &unused);
+    int has_update = carbon_object_get_any(query, update_names, 2, &update_span);
     int has_delete = carbon_object_get_any(query, delete_names, 2, &unused);
     int has_multi_row = carbon_object_get_any(query, multi_row_names, 1, &unused);
+    int has_read_controls = carbon_query_has_read_controls(query);
+    int has_root_post_columns = carbon_query_has_root_post_columns(query);
 
-    if (has_insert < 0 || has_replace < 0 || has_update < 0 || has_delete < 0 || has_multi_row < 0) {
+    if (has_insert < 0 || has_replace < 0 || has_update < 0 || has_delete < 0 || has_multi_row < 0
+        || has_read_controls < 0 || has_root_post_columns < 0) {
         return CARBON_STATUS_INVALID_JSON;
     }
     if (has_insert > 0 || has_replace > 0 || has_multi_row > 0) {
-        return carbon_compile_insert_statement(state, query, sql, error_message);
+        return carbon_compile_insert_statement(state, query, sql, 0, error_message);
+    }
+    if (has_update > 0 && carbon_span_starts_with(update_span, '[') && has_root_post_columns > 0 && has_read_controls == 0) {
+        return carbon_compile_insert_statement(state, query, sql, 1, error_message);
     }
     if (has_update > 0) {
         return carbon_compile_update_statement(state, query, sql, error_message);
     }
     if (has_delete > 0) {
         return carbon_compile_delete_statement(state, query, sql, error_message);
+    }
+    if (has_root_post_columns > 0 && has_read_controls == 0) {
+        return carbon_compile_insert_statement(state, query, sql, 1, error_message);
     }
     return carbon_compile_select_statement(state, query, 0, sql, NULL, error_message);
 }

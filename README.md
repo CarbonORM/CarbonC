@@ -68,6 +68,8 @@ Supported in this slice:
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
 - explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads,
   including array-valued multi-row `INSERT`/MySQL `REPLACE` rows
+- CarbonNode-compatible root-level POST row inserts when no read operation
+  controls are present
 - CarbonNode-compatible `dataInsertMultipleRows` insert payloads
 - MySQL upsert update lists through `UPDATE: ["column_name"]`
 - PostgreSQL `ON CONFLICT` upserts from `PRIMARY_SHORT` or `PRIMARY` schema
@@ -82,16 +84,19 @@ Supported in this slice:
 - schema-aware table, unqualified-reference, dotted-reference, join-alias, and
   write-column validation when `schema_json` includes a `TABLES` object
 
-Write support is intentionally explicit: this slice accepts operation keys such
-as `INSERT`, `REPLACE`, `UPDATE`, and `DELETE`, not CarbonNode's loose root-level
-POST rows. Single-row and multi-row insert/upsert payloads are covered now,
-including `dataInsertMultipleRows`; later rows bind `null` for missing first-row
-columns to match CarbonNode's batch insert behavior. PostgreSQL writes currently
-cover simple insert/update/delete forms and schema-derived conflict targets for
+Write support accepts explicit operation keys such as `INSERT`, `REPLACE`,
+`UPDATE`, and `DELETE`. It also accepts CarbonNode-style root-level POST rows
+like `{"FROM":"actor","first_name":"ALICE"}` when no read controls such as
+`SELECT`, `WHERE`, `JOIN`, `GROUP_BY`, `HAVING`, or `PAGINATION` are present.
+Root-level POST rows ignore request metadata keys such as `DB`, `cacheResults`,
+and `UPDATE: [...]`; that `UPDATE` array remains upsert metadata. Single-row and
+multi-row insert/upsert payloads are covered now, including
+`dataInsertMultipleRows`; later rows bind `null` for missing first-row columns to
+match CarbonNode's batch insert behavior. PostgreSQL writes currently cover
+simple insert/update/delete forms and schema-derived conflict targets for
 `ON CONFLICT` upserts, plus `INNER` joined updates through `UPDATE ... FROM` and
 `INNER` joined deletes through `DELETE ... USING`. PostgreSQL non-`INNER` joined
-writes, derived joined writes, and loose root-level POST normalization are later
-work.
+writes and derived joined writes are later work.
 
 Schema validation is opt-in for this slice. Passing `{}` keeps syntax-only
 identifier checks. Passing a `TABLES` object validates unqualified references
@@ -266,8 +271,8 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 ## Next Milestones
 
-1. Expand fixture coverage for derived joins, loose POST-row normalization, and
-   schema-aware write normalization.
+1. Expand fixture coverage for derived joins and schema-aware write
+   normalization.
 2. Expand schema validation to generated type metadata and binding-friendly
    diagnostic paths.
 3. Add package-level ergonomics for each binding without moving DB execution

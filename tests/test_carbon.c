@@ -227,6 +227,102 @@ static void test_postgresql_multi_row_insert_write_returning(void) {
     carbon_context_free(context);
 }
 
+static void test_loose_root_post_insert_ignores_metadata(void) {
+    carbon_context *context = carbon_context_new();
+    const char schema[] =
+            "{\"TABLES\":{\"actor\":{"
+            "\"COLUMNS\":{\"actor.actor_id\":\"actor_id\","
+            "\"actor.first_name\":\"first_name\","
+            "\"actor.last_name\":\"last_name\"}"
+            "}}}";
+    const char query[] =
+            "{\"FROM\":\"actor\","
+            "\"DB\":\"billing\","
+            "\"cacheResults\":false,"
+            "\"actor.first_name\":\"ALICE\","
+            "\"last_name\":\"ONE\"}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = schema,
+            .schema_json_length = sizeof(schema) - 1,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "INSERT INTO `actor` (`first_name`, `last_name`) VALUES (?, ?)");
+    assert_buffer_equals(&result.params_json, "[\"ALICE\",\"ONE\"]");
+    assert_buffer_equals(&result.allowlist_key,
+                         "INSERT INTO `actor` (`first_name`, `last_name`) VALUES (? \xC3\x97" "2) \xC3\x97*");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
+static void test_loose_root_post_upsert_uses_update_array_metadata(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] =
+            "{\"FROM\":\"actor\","
+            "\"actor.actor_id\":7,"
+            "\"actor.first_name\":\"ALICE\","
+            "\"last_name\":\"ONE\","
+            "\"UPDATE\":[\"first_name\",\"last_name\"]}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "INSERT INTO `actor` (`actor_id`, `first_name`, `last_name`) VALUES (?, ?, ?) "
+                         "ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`), `last_name` = VALUES(`last_name`)");
+    assert_buffer_equals(&result.params_json, "[7,\"ALICE\",\"ONE\"]");
+    assert_buffer_equals(&result.allowlist_key,
+                         "INSERT INTO `actor` (`actor_id`, `first_name`, `last_name`) VALUES (? \xC3\x97" "3) \xC3\x97* "
+                         "ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`), `last_name` = VALUES(`last_name`)");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
+static void test_postgresql_loose_root_post_insert_returning(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] =
+            "{\"dialect\":\"postgresql\","
+            "\"FROM\":\"actor\","
+            "\"first_name\":\"ALICE\"}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "INSERT INTO \"actor\" (\"first_name\") VALUES ($1) RETURNING *");
+    assert_buffer_equals(&result.params_json, "[\"ALICE\"]");
+    assert_buffer_equals(&result.allowlist_key,
+                         "INSERT INTO \"actor\" (\"first_name\") VALUES ($1) RETURNING *");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
 static void test_postgresql_upsert_do_nothing_from_primary_metadata(void) {
     carbon_context *context = carbon_context_new();
     const char schema[] =
@@ -830,6 +926,7 @@ static void test_golden_fixtures(void) {
     run_fixture("not-exists-correlated");
     run_fixture("insert-basic");
     run_fixture("insert-multi-row");
+    run_fixture("loose-post-row");
     run_fixture("replace-upsert");
     run_fixture("update-where");
     run_fixture("delete-where");
@@ -847,6 +944,9 @@ int main(void) {
     test_multiple_where_uses_and();
     test_postgresql_insert_write_returning();
     test_postgresql_multi_row_insert_write_returning();
+    test_loose_root_post_insert_ignores_metadata();
+    test_loose_root_post_upsert_uses_update_array_metadata();
+    test_postgresql_loose_root_post_insert_returning();
     test_postgresql_upsert_do_nothing_from_primary_metadata();
     test_postgresql_upsert_requires_primary_metadata();
     test_data_insert_multiple_rows_upsert_defaults_missing_values();

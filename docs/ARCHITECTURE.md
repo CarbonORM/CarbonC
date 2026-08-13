@@ -72,6 +72,8 @@ The initial compiler supports:
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
 - explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads,
   including array-valued multi-row `INSERT`/MySQL `REPLACE` rows
+- CarbonNode-compatible root-level POST row inserts when no read operation
+  controls are present
 - CarbonNode-compatible `dataInsertMultipleRows` insert payloads
 - MySQL upsert update lists through `UPDATE: ["column_name"]`
 - PostgreSQL `ON CONFLICT` upserts from `PRIMARY_SHORT` or `PRIMARY` schema
@@ -94,6 +96,12 @@ slice. PostgreSQL `INNER` joined updates compile to `UPDATE ... FROM`, and
 `INNER` joined deletes compile to `DELETE ... USING`; non-`INNER` joined writes
 and derived joined writes remain outside the v0.1 compiler boundary.
 
+Root-level POST row normalization is intentionally narrow because the C ABI does
+not carry the HTTP method. A payload with `FROM`/`table`, no explicit write
+payload, no read controls, and at least one non-metadata root key compiles as an
+insert row. `UPDATE: [...]` is treated as upsert metadata for that row, while
+`UPDATE: {...}` remains an update statement.
+
 When `TABLES` metadata is present, the compiler validates `FROM` tables, joined
 tables, unqualified current-table references, dotted column references,
 join-alias references, insert/update/upsert write columns against C6 `COLUMNS`
@@ -106,5 +114,5 @@ language bindings can adopt the validator incrementally.
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers. The next implementation step is to expand those fixtures to derived
-joins, generated type metadata, binding-friendly diagnostic paths, loose
-POST-row normalization, and package-level ergonomics.
+joins, generated type metadata, binding-friendly diagnostic paths,
+schema-aware write normalization, and package-level ergonomics.
