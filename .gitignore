@@ -9,9 +9,11 @@ Testing/
 *.dylib
 *.dll
 *.exe
+*.o
 *.la
 *.lo
 *.loT
+*.bundle
 
 bindings/php/.deps/
 bindings/php/.libs/
@@ -40,3 +42,5 @@ bindings/php/libtool
 bindings/php/modules/
 bindings/php/run-tests.php
 bindings/node/build/
+bindings/ruby/Makefile
+bindings/ruby/mkmf.log

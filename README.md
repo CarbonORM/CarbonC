@@ -214,12 +214,44 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `compileQuery()`, and `normalizeAllowlistSql()`, plus snake_case aliases for the
 multiword functions.
 
+## Ruby Binding
+
+The Ruby extension wraps the same compile result shape from
+`bindings/ruby/carbon_ruby.c` as a `Hash` with string keys:
+
+```ruby
+require 'json'
+require_relative './bindings/ruby/carbon'
+
+result = CarbonC.compile_query(
+  JSON.generate({'FROM' => 'actor', 'SELECT' => ['actor.actor_id']}),
+  JSON.generate({
+    'TABLES' => {
+      'actor' => {'COLUMNS' => {'actor.actor_id' => 'actor_id'}}
+    }
+  }),
+  'mysql'
+)
+```
+
+Build and smoke-test it from the repository root:
+
+```bash
+(cd bindings/ruby && bash build.sh)
+ruby bindings/ruby/smoke.rb
+ruby examples/ruby/example.rb
+```
+
+The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
+`CarbonC.status_message`, `CarbonC.compile_query`, and
+`CarbonC.normalize_allowlist_sql`.
+
 ## Next Milestones
 
 1. Expand fixture coverage for derived joins, multi-row writes, PostgreSQL
    conflict targets, and schema-aware write normalization.
 2. Expand schema validation to unqualified references, generated type metadata,
    and binding-friendly diagnostic paths.
-3. Add a Ruby wrapper for the compile result shape without moving DB execution
+3. Add package-level ergonomics for each binding without moving DB execution
    into C.
 4. Add structured error codes and paths for binding-friendly diagnostics.
