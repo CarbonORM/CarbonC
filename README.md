@@ -127,12 +127,39 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+## Python Binding
+
+The first native language binding wraps the same C ABI from
+`bindings/python/carbon_python.c` and returns a plain Python `dict`:
+
+```python
+import json
+import carbon
+
+result = carbon.compile_query(
+    json.dumps({"FROM": "actor", "SELECT": ["actor.actor_id"]}),
+    schema_json=json.dumps({
+        "TABLES": {
+            "actor": {"COLUMNS": {"actor.actor_id": "actor_id"}}
+        }
+    }),
+    dialect="mysql",
+)
+```
+
+Build and smoke-test it from the repository root:
+
+```bash
+(cd bindings/python && python3 setup.py build_ext --inplace)
+PYTHONPATH=bindings/python python3 bindings/python/smoke.py
+```
+
 ## Next Milestones
 
 1. Expand fixture coverage for derived joins, multi-row writes, PostgreSQL
    conflict targets, and schema-aware write normalization.
 2. Expand schema validation to unqualified references, generated type metadata,
    and binding-friendly diagnostic paths.
-3. Add structured error codes and paths for binding-friendly diagnostics.
-4. Wrap the kernel from Node N-API, PHP, Python, and Ruby without moving DB
-   execution into C.
+3. Add Node N-API, PHP, and Ruby wrappers for the compile result shape without
+   moving DB execution into C.
+4. Add structured error codes and paths for binding-friendly diagnostics.

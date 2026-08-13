@@ -24,6 +24,10 @@ Bindings own runtime integration:
 - native model classes and generated types
 - exception mapping
 
+The initial Python binding is intentionally thin: it calls the C compiler,
+returns SQL, params JSON, allowlist key, status, and error fields, and leaves DB
+execution to the Python package layer.
+
 This keeps the C ABI stable and keeps each language package idiomatic.
 
 ## Data Flow
@@ -87,7 +91,8 @@ incrementally.
 ## Direction
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
-`tests/fixtures/*.case`. The next implementation step is to expand those
-fixtures to derived joins, multi-row writes, PostgreSQL conflict targets,
-unqualified-reference validation, and generated type metadata. That should
-happen before expanding language bindings beyond smoke wrappers.
+`tests/fixtures/*.case`, plus a native Python smoke wrapper. The next
+implementation step is to expand those fixtures to derived joins, multi-row
+writes, PostgreSQL conflict targets, unqualified-reference validation, and
+generated type metadata, then carry the same compile-result wrapper shape to
+Node, PHP, and Ruby.
