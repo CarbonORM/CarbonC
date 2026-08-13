@@ -2392,6 +2392,144 @@ static carbon_status carbon_append_join_clauses(
     return next < 0 ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OK;
 }
 
+static carbon_status carbon_append_wrapped_condition_part(
+        carbon_string_builder *conditions,
+        const char *condition) {
+    if (condition == NULL || condition[0] == '\0') {
+        return CARBON_STATUS_OK;
+    }
+    if (conditions->length > 0 && !carbon_builder_append(conditions, " AND ")) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    return carbon_builder_append_wrapped_expression(conditions, condition)
+           ? CARBON_STATUS_OK
+           : CARBON_STATUS_OUT_OF_MEMORY;
+}
+
+static carbon_status carbon_append_postgresql_delete_using(
+        carbon_compile_state *state,
+        carbon_json_span query,
+        carbon_string_builder *sql,
+        carbon_string_builder *conditions,
+        const char **error_message) {
+    static const char *const join_names[] = {"JOIN", "join"};
+    carbon_json_span joins;
+    const char *join_cursor = NULL;
+    carbon_object_entry join_entry;
+    int found = carbon_object_get_any(query, join_names, 2, &joins);
+    int next;
+    int wrote_using = 0;
+
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_OK;
+    }
+    if (!carbon_span_starts_with(joins, '{')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    while ((next = carbon_object_next(joins, &join_cursor, &join_entry)) == 1) {
+        char *join_kind = carbon_span_string_copy(join_entry.key);
+        char *normalized_join_kind = join_kind == NULL ? NULL : carbon_normalize_join_type(join_kind);
+        const char *target_cursor = NULL;
+        carbon_object_entry target_entry;
+        int target_next;
+
+        free(join_kind);
+        if (normalized_join_kind == NULL || !carbon_span_starts_with(join_entry.value, '{')) {
+            free(normalized_join_kind);
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        if (strcmp(normalized_join_kind, "INNER") != 0) {
+            if (error_message != NULL) {
+                *error_message = "PostgreSQL DELETE USING currently supports INNER joins only";
+            }
+            free(normalized_join_kind);
+            return CARBON_STATUS_UNSUPPORTED_QUERY;
+        }
+
+        while ((target_next = carbon_object_next(join_entry.value, &target_cursor, &target_entry)) == 1) {
+            char *raw_target = carbon_span_string_copy(target_entry.key);
+            char *table = NULL;
+            char *alias = NULL;
+            carbon_string_builder on_clause = {0};
+            carbon_status status = CARBON_STATUS_OK;
+
+            if (raw_target == NULL || !carbon_parse_join_target(raw_target, &table, &alias)) {
+                free(raw_target);
+                free(normalized_join_kind);
+                return CARBON_STATUS_INVALID_QUERY;
+            }
+            free(raw_target);
+
+            status = carbon_schema_validate_table(state, table);
+            if (status != CARBON_STATUS_OK) {
+                free(table);
+                free(alias);
+                free(normalized_join_kind);
+                return status;
+            }
+
+            if (!wrote_using) {
+                if (!carbon_builder_append(sql, " USING ")) {
+                    free(table);
+                    free(alias);
+                    free(normalized_join_kind);
+                    return CARBON_STATUS_OUT_OF_MEMORY;
+                }
+            } else if (!carbon_builder_append(sql, ", ")) {
+                free(table);
+                free(alias);
+                free(normalized_join_kind);
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+            if (!carbon_append_quoted_table(sql, state->dialect, table)) {
+                free(table);
+                free(alias);
+                free(normalized_join_kind);
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+            if (alias != NULL
+                && (!carbon_builder_append(sql, " AS ")
+                    || !carbon_append_quoted_table(sql, state->dialect, alias))) {
+                free(table);
+                free(alias);
+                free(normalized_join_kind);
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+            wrote_using = 1;
+
+            if (carbon_span_starts_with(target_entry.value, '{')) {
+                status = carbon_build_where_node(state, target_entry.value, "AND", &on_clause);
+            } else {
+                status = CARBON_STATUS_INVALID_QUERY;
+            }
+            free(table);
+            free(alias);
+            if (status != CARBON_STATUS_OK) {
+                carbon_builder_free(&on_clause);
+                free(normalized_join_kind);
+                return status;
+            }
+            status = carbon_append_wrapped_condition_part(conditions, on_clause.data);
+            carbon_builder_free(&on_clause);
+            if (status != CARBON_STATUS_OK) {
+                free(normalized_join_kind);
+                return status;
+            }
+        }
+
+        free(normalized_join_kind);
+        if (target_next < 0) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+    }
+
+    return next < 0 ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OK;
+}
+
 static carbon_status carbon_append_group_by(
         carbon_compile_state *state,
         carbon_json_span query,
@@ -3330,6 +3468,7 @@ static carbon_status carbon_compile_delete_statement(
     carbon_json_span where_span;
     carbon_json_span join_span;
     char *table = NULL;
+    carbon_string_builder postgresql_conditions = {0};
     carbon_query_scope scope;
     const carbon_query_scope *previous_scope = state->scope;
     int found;
@@ -3360,11 +3499,6 @@ static carbon_status carbon_compile_delete_statement(
         status = CARBON_STATUS_INVALID_JSON;
         goto cleanup;
     }
-    if (state->dialect == CARBON_DIALECT_POSTGRESQL && has_join > 0) {
-        status = CARBON_STATUS_UNSUPPORTED_QUERY;
-        goto cleanup;
-    }
-
     if (state->dialect == CARBON_DIALECT_MYSQL) {
         if (!carbon_builder_append(sql, "DELETE ")
             || !carbon_append_quoted_table(sql, state->dialect, table)
@@ -3377,10 +3511,18 @@ static carbon_status carbon_compile_delete_statement(
         if (status != CARBON_STATUS_OK) {
             goto cleanup;
         }
-    } else if (!carbon_builder_append(sql, "DELETE FROM ")
-               || !carbon_append_quoted_table(sql, state->dialect, table)) {
-        status = CARBON_STATUS_OUT_OF_MEMORY;
-        goto cleanup;
+    } else {
+        if (!carbon_builder_append(sql, "DELETE FROM ")
+            || !carbon_append_quoted_table(sql, state->dialect, table)) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto cleanup;
+        }
+        if (has_join > 0) {
+            status = carbon_append_postgresql_delete_using(state, query, sql, &postgresql_conditions, error_message);
+            if (status != CARBON_STATUS_OK) {
+                goto cleanup;
+            }
+        }
     }
 
     found = carbon_object_get_any(query, where_names, 2, &where_span);
@@ -3395,18 +3537,31 @@ static carbon_status carbon_compile_delete_statement(
             carbon_builder_free(&where);
             goto cleanup;
         }
-        if (where.length > 0 && (!carbon_builder_append(sql, " WHERE ")
-                                 || !carbon_builder_append(sql, where.data))) {
-            carbon_builder_free(&where);
+        if (state->dialect == CARBON_DIALECT_POSTGRESQL) {
+            status = carbon_append_wrapped_condition_part(&postgresql_conditions, where.data);
+        } else if (where.length > 0 && (!carbon_builder_append(sql, " WHERE ")
+                                        || !carbon_builder_append(sql, where.data))) {
             status = CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        if (status != CARBON_STATUS_OK) {
+            carbon_builder_free(&where);
             goto cleanup;
         }
         carbon_builder_free(&where);
+    }
+
+    if (state->dialect == CARBON_DIALECT_POSTGRESQL
+        && postgresql_conditions.length > 0
+        && (!carbon_builder_append(sql, " WHERE ")
+            || !carbon_builder_append(sql, postgresql_conditions.data))) {
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto cleanup;
     }
     status = CARBON_STATUS_OK;
 
 cleanup:
     state->scope = previous_scope;
+    carbon_builder_free(&postgresql_conditions);
     free(table);
     return status;
 }

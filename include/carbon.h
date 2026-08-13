@@ -63,7 +63,8 @@ void carbon_compile_result_free(carbon_compile_result *result);
  * allowlist key. If schema_json contains a TABLES object, table names,
  * unqualified current-table references, dotted references, join aliases, and
  * write columns are validated against that schema. PostgreSQL upsert conflict
- * targets are derived from PRIMARY_SHORT or PRIMARY schema metadata. The result
+ * targets are derived from PRIMARY_SHORT or PRIMARY schema metadata, and
+ * PostgreSQL INNER joined deletes compile through DELETE ... USING. The result
  * is initialized by this function. If a caller reuses a prior result object, it
  * must call carbon_compile_result_free() first.
  */
