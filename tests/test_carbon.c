@@ -288,6 +288,30 @@ static void test_multiple_where_uses_and(void) {
     carbon_context_free(context);
 }
 
+static void test_match_against_rejects_bare_search_string(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] =
+            "{\"FROM\":\"actor\","
+            "\"SELECT\":[\"actor.actor_id\"],"
+            "\"WHERE\":{\"actor.first_name\":[\"MATCH_AGAINST\",[\"alpha beta\",\"BOOLEAN\"]]}}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
+    assert(result.status == CARBON_STATUS_INVALID_QUERY);
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
 static void test_postgresql_insert_write_returning(void) {
     carbon_context *context = carbon_context_new();
     const char query[] =
@@ -1251,6 +1275,7 @@ static void test_golden_fixtures(void) {
     run_fixture("spatial-order");
     run_fixture("where-in-between");
     run_fixture("where-boolean-groups");
+    run_fixture("match-against");
     run_fixture("join-alias");
     run_fixture("derived-join");
     run_fixture("group-having");
@@ -1279,6 +1304,7 @@ int main(void) {
     test_schema_metadata_rejects_invalid_columns();
     test_schema_metadata_type_validation();
     test_multiple_where_uses_and();
+    test_match_against_rejects_bare_search_string();
     test_postgresql_insert_write_returning();
     test_postgresql_multi_row_insert_write_returning();
     test_loose_root_post_insert_ignores_metadata();

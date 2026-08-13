@@ -193,6 +193,23 @@ def main() -> None:
             },
         ]
     }
+    assert carbon_codegen.match_against("alpha beta", "BOOLEAN") == [
+        "MATCH_AGAINST",
+        [["LIT", "alpha beta"], "BOOLEAN"],
+    ]
+    fulltext = (
+        carbon_codegen.query("actor")
+        .select("actor.actor_id")
+        .where_match_against("actor.first_name", "alpha beta", "BOOLEAN")
+        .limit(10)
+        .compile(schema=schema, dialect="mysql")
+    )
+    assert fulltext["status"] == 0, fulltext
+    assert fulltext["sql"] == (
+        "SELECT actor.actor_id FROM `actor` "
+        "WHERE (MATCH(actor.first_name) AGAINST(? IN BOOLEAN MODE)) LIMIT 10"
+    ), fulltext
+    assert fulltext["params"] == ["alpha beta"], fulltext
     boolean_grouped = (
         carbon_codegen.query("actor")
         .select("actor.actor_id")

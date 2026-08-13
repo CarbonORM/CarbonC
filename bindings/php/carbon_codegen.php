@@ -133,6 +133,15 @@ if (!function_exists('carbon_schema_models')) {
         return ['NOT_IN', carbon_codegen_set_operand($values)];
     }
 
+    function carbon_match_against($search, ?string $mode = null): array
+    {
+        $payload = [is_string($search) ? carbon_lit($search) : $search];
+        if ($mode !== null) {
+            $payload[] = $mode;
+        }
+        return ['MATCH_AGAINST', $payload];
+    }
+
     function carbon_exists_spec(string $outerColumn, $query, ?string $innerColumn = null): array
     {
         $spec = [$outerColumn, carbon_codegen_subselect_operand($query)];
@@ -334,6 +343,13 @@ if (!function_exists('carbon_schema_models')) {
             {
                 $where =& $this->wherePayload();
                 $where[$column] = carbon_not_between($start, $end);
+                return $this;
+            }
+
+            public function whereMatchAgainst(string $column, $search, ?string $mode = null): self
+            {
+                $where =& $this->wherePayload();
+                $where[$column] = carbon_match_against($search, $mode);
                 return $this;
             }
 

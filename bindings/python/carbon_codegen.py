@@ -99,6 +99,10 @@ class Query:
         self._where()[column] = not_between(start, end)
         return self
 
+    def where_match_against(self, column: str, search: Any, mode: str | None = None) -> "Query":
+        self._where()[column] = match_against(search, mode)
+        return self
+
     def where_exists(self, outer_column: str, subquery: Any, inner_column: str | None = None) -> "Query":
         self._append_exists("EXISTS", exists_spec(outer_column, subquery, inner_column))
         return self
@@ -324,6 +328,13 @@ def not_in(values: Any) -> list[Any]:
     return ["NOT_IN", _set_operand(values)]
 
 
+def match_against(search: Any, mode: str | None = None) -> list[Any]:
+    payload = [_match_search_operand(search)]
+    if mode is not None:
+        payload.append(mode)
+    return ["MATCH_AGAINST", payload]
+
+
 def exists_spec(outer_column: str, query: Any, inner_column: str | None = None) -> list[Any]:
     spec = [outer_column, _subselect_operand(query)]
     if inner_column is not None:
@@ -380,6 +391,12 @@ def _set_operand(values: Any) -> Any:
     if isinstance(values, Query):
         return subselect(values)
     return Query._copy_payload_value(values)
+
+
+def _match_search_operand(search: Any) -> Any:
+    if isinstance(search, str):
+        return lit(search)
+    return Query._copy_payload_value(search)
 
 
 def _dedupe(name: str, used: MutableSet[str]) -> str:
@@ -538,6 +555,7 @@ __all__ = [
     "group",
     "in_",
     "lit",
+    "match_against",
     "model_column",
     "model_columns",
     "model_query",

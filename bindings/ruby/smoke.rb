@@ -192,6 +192,23 @@ actual_boolean_group_payload = CarbonC.and_group(
 unless actual_boolean_group_payload == expected_boolean_group_payload
   raise "unexpected boolean group helper payload: #{actual_boolean_group_payload.inspect}"
 end
+expected_match_against_payload = [
+  'MATCH_AGAINST',
+  [['LIT', 'alpha beta'], 'BOOLEAN']
+]
+unless CarbonC.match_against('alpha beta', 'BOOLEAN') == expected_match_against_payload
+  raise "unexpected MATCH_AGAINST helper payload: #{CarbonC.match_against('alpha beta', 'BOOLEAN').inspect}"
+end
+fulltext = CarbonC.query('actor')
+                  .select('actor.actor_id')
+                  .where_match_against('actor.first_name', 'alpha beta', 'BOOLEAN')
+                  .limit(10)
+                  .compile(schema, 'mysql')
+raise "unexpected full-text compile status: #{fulltext.inspect}" unless fulltext.fetch('status') == 0
+unless fulltext.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (MATCH(actor.first_name) AGAINST(? IN BOOLEAN MODE)) LIMIT 10'
+  raise "unexpected full-text sql: #{fulltext.fetch('sql')}"
+end
+raise "unexpected full-text params: #{fulltext.fetch('params').inspect}" unless fulltext.fetch('params') == ['alpha beta']
 boolean_grouped = CarbonC.query('actor')
                          .select('actor.actor_id')
                          .where_between('actor.actor_id', 1, 10)

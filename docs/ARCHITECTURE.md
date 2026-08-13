@@ -87,8 +87,8 @@ The initial compiler supports:
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
   `RIGHT_OUTER` table aliases and stringified derived targets
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`,
-  `NOT_IN`, `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `LIT`, and
-  `PARAM`
+  `NOT_IN`, `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`,
+  `MATCH_AGAINST`, `LIT`, and `PARAM`
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
 - explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads,
@@ -159,7 +159,8 @@ CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers, package-level native payload helpers, typed result adapters,
 read/write/subselect/predicate query-builder facades, boolean-group compiler
-wrapping, typed source generators, model-aware query scaffolds, and binding-friendly diagnostic
-JSON. The next implementation step is to cover additional C6 grammar and
-schema-aware write normalization edge cases while importing higher-level package
-examples from production C6 query shapes.
+wrapping, typed source generators, model-aware query scaffolds, full-text
+`MATCH_AGAINST` predicates, and binding-friendly diagnostic JSON. The next
+implementation step is to cover additional C6 grammar and schema-aware write
+normalization edge cases while importing higher-level package examples from
+production C6 query shapes.

@@ -50,6 +50,11 @@ module CarbonC
       self
     end
 
+    def where_match_against(column, search_value, mode = nil)
+      where_payload[column] = CarbonC.match_against(search_value, mode)
+      self
+    end
+
     def where_exists(outer_column, subquery, inner_column = nil)
       append_exists('EXISTS', CarbonC.exists_spec(outer_column, subquery, inner_column))
     end
@@ -261,6 +266,12 @@ module CarbonC
       ['NOT_IN', carbon_codegen_set_operand(values)]
     end
 
+    def match_against(search_value, mode = nil)
+      payload = [carbon_codegen_match_search_operand(search_value)]
+      payload << mode unless mode.nil?
+      ['MATCH_AGAINST', payload]
+    end
+
     def exists_spec(outer_column, query, inner_column = nil)
       spec = [outer_column, carbon_codegen_subselect_operand(query)]
       spec << inner_column unless inner_column.nil?
@@ -459,6 +470,10 @@ module CarbonC
       return subselect(values) if values.is_a?(Query)
 
       carbon_codegen_query_payload(values)
+    end
+
+    def carbon_codegen_match_search_operand(search_value)
+      search_value.is_a?(String) ? lit(search_value) : carbon_codegen_query_payload(search_value)
     end
 
     def carbon_codegen_decode_json_field(result, field)

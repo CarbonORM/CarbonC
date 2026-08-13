@@ -181,6 +181,21 @@ assert.deepStrictEqual(
     ],
   }
 );
+assert.deepStrictEqual(carbon.matchAgainst('alpha beta', 'BOOLEAN'), [
+  'MATCH_AGAINST',
+  [['LIT', 'alpha beta'], 'BOOLEAN'],
+]);
+const fulltext = carbon.query('actor')
+  .select('actor.actor_id')
+  .whereMatchAgainst('actor.first_name', 'alpha beta', 'BOOLEAN')
+  .limit(10)
+  .compile(schema, 'mysql');
+assert.strictEqual(fulltext.status, 0, JSON.stringify(fulltext));
+assert.strictEqual(
+  fulltext.sql,
+  'SELECT actor.actor_id FROM `actor` WHERE (MATCH(actor.first_name) AGAINST(? IN BOOLEAN MODE)) LIMIT 10'
+);
+assert.deepStrictEqual(fulltext.params, ['alpha beta']);
 const booleanGrouped = carbon.query('actor')
   .select('actor.actor_id')
   .whereBetween('actor.actor_id', 1, 10)

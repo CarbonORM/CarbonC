@@ -145,6 +145,14 @@ function notInList(values) {
   return ['NOT_IN', setOperand(values)];
 }
 
+function matchAgainst(search, mode) {
+  const payload = [matchSearchOperand(search)];
+  if (mode !== undefined && mode !== null) {
+    payload.push(mode);
+  }
+  return ['MATCH_AGAINST', payload];
+}
+
 function existsSpec(outerColumn, query, innerColumn) {
   const spec = [outerColumn, subselectOperand(query)];
   if (innerColumn !== undefined && innerColumn !== null) {
@@ -241,6 +249,13 @@ function setOperand(values) {
   return copyPayloadValue(values);
 }
 
+function matchSearchOperand(search) {
+  if (typeof search === 'string') {
+    return lit(search);
+  }
+  return copyPayloadValue(search);
+}
+
 class CarbonQuery {
   constructor(table) {
     this.payload = {};
@@ -290,6 +305,11 @@ class CarbonQuery {
 
   whereNotBetween(column, start, end) {
     this.whereMap()[column] = notBetween(start, end);
+    return this;
+  }
+
+  whereMatchAgainst(column, search, mode) {
+    this.whereMap()[column] = matchAgainst(search, mode);
     return this;
   }
 
@@ -619,6 +639,8 @@ native.inList = inList;
 native.in_list = inList;
 native.notInList = notInList;
 native.not_in_list = notInList;
+native.matchAgainst = matchAgainst;
+native.match_against = matchAgainst;
 native.existsSpec = existsSpec;
 native.exists_spec = existsSpec;
 native.exists = exists;

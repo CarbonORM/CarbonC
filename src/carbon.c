@@ -1461,6 +1461,7 @@ static const char *carbon_operator_format(const char *op) {
     if (strcmp(op, "NOT BETWEEN") == 0) return "NOT BETWEEN";
     if (strcmp(op, "EXISTS") == 0) return "EXISTS";
     if (strcmp(op, "NOT_EXISTS") == 0 || strcmp(op, "NOT EXISTS") == 0) return "NOT EXISTS";
+    if (strcmp(op, "MATCH_AGAINST") == 0) return "MATCH_AGAINST";
     return NULL;
 }
 
@@ -1515,6 +1516,11 @@ static carbon_status carbon_append_reference_from_string(
 }
 
 static carbon_status carbon_append_condition_operand(
+        carbon_compile_state *state,
+        carbon_json_span value,
+        carbon_string_builder *sql);
+
+static carbon_status carbon_append_expression(
         carbon_compile_state *state,
         carbon_json_span value,
         carbon_string_builder *sql);
@@ -1822,6 +1828,162 @@ static carbon_status carbon_build_exists_operator(
     return next < 0 || !wrote ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OK;
 }
 
+static carbon_status carbon_append_match_against_search(
+        carbon_compile_state *state,
+        carbon_json_span search,
+        carbon_string_builder *sql) {
+    carbon_json_span head_span;
+    char *head = NULL;
+    char *token = NULL;
+    size_t count;
+    carbon_status status = CARBON_STATUS_OK;
+
+    search = carbon_trim_span(search);
+
+    if (carbon_span_starts_with(search, '"')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    if (carbon_span_starts_with(search, '[')) {
+        if (!carbon_array_count(search, &count)
+            || count != 2
+            || carbon_array_get(search, 0, &head_span) != 1) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        head = carbon_span_string_copy(head_span);
+        token = head == NULL ? NULL : carbon_upper_copy(head);
+        if (token == NULL) {
+            status = head == NULL ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OUT_OF_MEMORY;
+            goto cleanup;
+        }
+        if (strcmp(token, "LIT") != 0 && strcmp(token, "PARAM") != 0) {
+            status = CARBON_STATUS_INVALID_QUERY;
+            goto cleanup;
+        }
+        status = carbon_append_expression(state, search, sql);
+        goto cleanup;
+    }
+
+    if (carbon_span_is_scalar_json(search)) {
+        return carbon_append_param(state, search, sql);
+    }
+
+    return CARBON_STATUS_INVALID_QUERY;
+
+cleanup:
+    free(head);
+    free(token);
+    return status;
+}
+
+static carbon_status carbon_append_match_against_mode(
+        carbon_json_span mode,
+        carbon_string_builder *sql) {
+    char *mode_raw = NULL;
+    char *token = NULL;
+    carbon_status status = CARBON_STATUS_OK;
+
+    if (mode.start == NULL) {
+        return CARBON_STATUS_OK;
+    }
+    mode = carbon_trim_span(mode);
+    if (mode.start >= mode.end || !carbon_span_starts_with(mode, '"')) {
+        return CARBON_STATUS_OK;
+    }
+
+    mode_raw = carbon_span_string_copy(mode);
+    token = mode_raw == NULL ? NULL : carbon_upper_copy(mode_raw);
+    if (token == NULL) {
+        status = mode_raw == NULL ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+
+    if (strcmp(token, "BOOLEAN") == 0) {
+        if (!carbon_builder_append(sql, " IN BOOLEAN MODE")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+        }
+    } else if (strcmp(token, "WITH QUERY EXPANSION") == 0) {
+        if (!carbon_builder_append(sql, " WITH QUERY EXPANSION")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+        }
+    } else if (strcmp(token, "NATURAL LANGUAGE MODE") == 0) {
+        if (!carbon_builder_append(sql, " IN NATURAL LANGUAGE MODE")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+        }
+    }
+
+cleanup:
+    free(mode_raw);
+    free(token);
+    return status;
+}
+
+static carbon_status carbon_build_match_against_operator(
+        carbon_compile_state *state,
+        carbon_json_span left,
+        carbon_json_span right,
+        const char *context_column,
+        carbon_string_builder *sql) {
+    carbon_json_span search;
+    carbon_json_span mode = {0};
+    carbon_string_builder search_sql = {0};
+    char *owned_column = NULL;
+    const char *column = context_column;
+    size_t count;
+    carbon_status status = CARBON_STATUS_OK;
+
+    if (column == NULL) {
+        owned_column = carbon_copy_identifier_from_span(left, 0);
+        column = owned_column;
+    }
+    if (column == NULL || !carbon_identifier_valid(column) || strcmp(column, "*") == 0) {
+        status = CARBON_STATUS_INVALID_QUERY;
+        goto cleanup;
+    }
+
+    status = carbon_schema_validate_reference_identifier(state, column);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+
+    if (!carbon_span_starts_with(right, '[')
+        || !carbon_array_count(right, &count)
+        || count == 0
+        || carbon_array_get(right, 0, &search) != 1) {
+        status = CARBON_STATUS_INVALID_QUERY;
+        goto cleanup;
+    }
+    if (count > 1 && carbon_array_get(right, 1, &mode) != 1) {
+        status = CARBON_STATUS_INVALID_QUERY;
+        goto cleanup;
+    }
+
+    status = carbon_append_match_against_search(state, search, &search_sql);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+
+    if (!carbon_builder_append(sql, "(MATCH(")
+        || !carbon_builder_append(sql, column)
+        || !carbon_builder_append(sql, ") AGAINST(")
+        || !carbon_builder_append(sql, search_sql.data == NULL ? "" : search_sql.data)) {
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+    status = carbon_append_match_against_mode(mode, sql);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+    if (!carbon_builder_append(sql, "))")) {
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+    }
+
+cleanup:
+    carbon_builder_free(&search_sql);
+    free(owned_column);
+    return status;
+}
+
 static carbon_status carbon_append_expression(
         carbon_compile_state *state,
         carbon_json_span value,
@@ -2092,6 +2254,10 @@ static carbon_status carbon_build_operator(
         }
     } else {
         return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    if (strcmp(operator_sql, "MATCH_AGAINST") == 0) {
+        return carbon_build_match_against_operator(state, left, right, context_column, sql);
     }
 
     if (strcmp(operator_sql, "IN") == 0 || strcmp(operator_sql, "NOT IN") == 0) {

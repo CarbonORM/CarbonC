@@ -206,6 +206,21 @@ carbon_assert(
     ],
     'unexpected boolean group helper payload'
 );
+carbon_assert(
+    carbon_match_against('alpha beta', 'BOOLEAN') === ['MATCH_AGAINST', [['LIT', 'alpha beta'], 'BOOLEAN']],
+    'unexpected MATCH_AGAINST helper payload'
+);
+$fulltext = carbon_query('actor')
+    ->select('actor.actor_id')
+    ->whereMatchAgainst('actor.first_name', 'alpha beta', 'BOOLEAN')
+    ->limit(10)
+    ->compile($schema, 'mysql');
+carbon_assert($fulltext['status'] === 0, 'unexpected full-text compile status: ' . json_encode($fulltext));
+carbon_assert(
+    $fulltext['sql'] === 'SELECT actor.actor_id FROM `actor` WHERE (MATCH(actor.first_name) AGAINST(? IN BOOLEAN MODE)) LIMIT 10',
+    'unexpected full-text sql: ' . $fulltext['sql']
+);
+carbon_assert($fulltext['params'] === ['alpha beta'], 'unexpected full-text params: ' . json_encode($fulltext['params']));
 $booleanGrouped = carbon_query('actor')
     ->select('actor.actor_id')
     ->whereBetween('actor.actor_id', 1, 10)

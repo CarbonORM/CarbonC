@@ -77,7 +77,8 @@ Supported in this slice:
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
   `RIGHT_OUTER` table aliases and stringified derived targets
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
-  `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `LIT`, and `PARAM`
+  `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `MATCH_AGAINST`, `LIT`,
+  and `PARAM`
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
 - explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads,
@@ -285,7 +286,7 @@ for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), scalar
 subselect helpers, derived `join_subselect` targets, advanced predicate helpers
 (`where_op`, `where_in`, `where_not_in`, `where_between`, `where_not_between`,
-`where_exists`, `where_not_exists`), composable boolean group helpers
+`where_match_against`, `where_exists`, `where_not_exists`), composable boolean group helpers
 (`condition`, `and_`, `or_`, `where_and`, `where_or`), limit/page, and order
 controls.
 `compile_query_result()` returns the same fields as the raw result plus decoded
@@ -354,7 +355,7 @@ boundary for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), scalar
 `carbon_subselect()` helpers, derived `joinSubselect()` targets, advanced
 predicate helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`,
-`whereNotBetween`, `whereExists`, `whereNotExists`), composable boolean group
+`whereNotBetween`, `whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group
 helpers (`carbon_condition`, `carbon_and_group`, `carbon_or_group`, `whereAnd`,
 `whereOr`), limit/page, and order controls. `carbon_compile_query_result()`
 returns the same fields as the
@@ -429,7 +430,7 @@ boundary for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), scalar
 `subselect()` helpers, derived `joinSubselect()` targets, advanced predicate
 helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
-`whereExists`, `whereNotExists`), composable boolean group helpers
+`whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group helpers
 (`condition`, `andGroup`, `orGroup`, `whereAnd`, `whereOr`), limit/page, and order controls.
 `compileQueryResult()` returns the same fields as the raw result
 plus decoded JavaScript `params` and `diagnostics` values. The generated
@@ -508,7 +509,7 @@ boundary for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), scalar
 `CarbonC.subselect` helpers, derived `join_subselect` targets, advanced
 predicate helpers (`where_op`, `where_in`, `where_not_in`, `where_between`,
-`where_not_between`, `where_exists`, `where_not_exists`), composable boolean
+`where_not_between`, `where_match_against`, `where_exists`, `where_not_exists`), composable boolean
 group helpers (`CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
 `where_and`, `where_or`), limit/page, and order controls.
 `CarbonC.compile_query_result` returns the same fields as the raw
