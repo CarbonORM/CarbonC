@@ -541,6 +541,50 @@ carbon_assert(
     'unexpected model query sql: ' . $modelBuilt['sql']
 );
 carbon_assert($modelBuilt['params'] === [0], 'unexpected model query params: ' . json_encode($modelBuilt['params']));
+carbon_assert(
+    carbon_model_values(Actor::class, [Actor::FIELD_FIRST_NAME => 'ALICE']) === ['actor.first_name' => 'ALICE'],
+    'unexpected model values payload'
+);
+$modelInserted = carbon_model_insert(Actor::class, [Actor::FIELD_FIRST_NAME => 'ALICE'])
+    ->compile($schema, CarbonDialect::MYSQL);
+carbon_assert(
+    $modelInserted['sql'] === 'INSERT INTO `actor` (`first_name`) VALUES (?)',
+    'unexpected model insert sql: ' . $modelInserted['sql']
+);
+carbon_assert($modelInserted['params'] === ['ALICE'], 'unexpected model insert params: ' . json_encode($modelInserted['params']));
+$modelUpdated = carbon_model_update(Actor::class, [Actor::FIELD_FIRST_NAME => 'BOB'])
+    ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 0)
+    ->compile($schema, CarbonDialect::MYSQL);
+carbon_assert(
+    $modelUpdated['sql'] === 'UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) > ?',
+    'unexpected model update sql: ' . $modelUpdated['sql']
+);
+carbon_assert($modelUpdated['params'] === ['BOB', 0], 'unexpected model update params: ' . json_encode($modelUpdated['params']));
+$modelUpserted = carbon_model_upsert(
+    Actor::class,
+    [Actor::FIELD_ACTOR_ID => 1, Actor::FIELD_FIRST_NAME => 'ALICE'],
+    [Actor::FIELD_FIRST_NAME]
+)->compile($schema, CarbonDialect::MYSQL);
+carbon_assert(
+    $modelUpserted['sql'] === 'INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)',
+    'unexpected model upsert sql: ' . $modelUpserted['sql']
+);
+carbon_assert($modelUpserted['params'] === [1, 'ALICE'], 'unexpected model upsert params: ' . json_encode($modelUpserted['params']));
+carbon_assert(
+    carbon_model_replace(Actor::class, [Actor::FIELD_FIRST_NAME => 'BOB'])->toPayload() === [
+        'FROM' => 'actor',
+        'REPLACE' => ['actor.first_name' => 'BOB'],
+    ],
+    'unexpected model replace payload'
+);
+carbon_assert(
+    carbon_model_do_nothing(Actor::class, [Actor::FIELD_ACTOR_ID => 1])->toPayload() === [
+        'FROM' => 'actor',
+        'INSERT' => ['actor.actor_id' => 1],
+        'UPDATE' => [],
+    ],
+    'unexpected model do-nothing payload'
+);
 
 $rejected = carbon_compile_query(
     json_encode(['FROM' => 'actor', 'SELECT' => ['actor.last_name']]),

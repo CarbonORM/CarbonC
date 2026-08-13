@@ -395,6 +395,33 @@ def model_select(model: Any, *fields: str) -> Query:
     return model_query(model).select(selected)
 
 
+def model_values(model: Any, values: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(values, Mapping):
+        raise TypeError("model values must be a mapping")
+    return {model_column(model, str(field)): Query._copy_payload_value(value) for field, value in values.items()}
+
+
+def model_insert(model: Any, values: Mapping[str, Any]) -> Query:
+    return model_query(model).insert(model_values(model, values))
+
+
+def model_replace(model: Any, values: Mapping[str, Any]) -> Query:
+    return model_query(model).replace(model_values(model, values))
+
+
+def model_update(model: Any, values: Mapping[str, Any]) -> Query:
+    return model_query(model).update(model_values(model, values))
+
+
+def model_upsert(model: Any, values: Mapping[str, Any], *fields: str) -> Query:
+    update_fields = list(fields[0]) if len(fields) == 1 and isinstance(fields[0], (list, tuple)) else list(fields)
+    return model_insert(model, values).upsert(update_fields)
+
+
+def model_do_nothing(model: Any, values: Mapping[str, Any]) -> Query:
+    return model_insert(model, values).do_nothing()
+
+
 def subselect(query: Any) -> list[Any]:
     return [C6C.SUBSELECT, _query_payload(query)]
 
@@ -775,8 +802,14 @@ __all__ = [
     "model_column",
     "model_columns",
     "model_query",
+    "model_do_nothing",
+    "model_insert",
+    "model_replace",
     "model_select",
     "model_table",
+    "model_update",
+    "model_upsert",
+    "model_values",
     "not_between",
     "not_exists",
     "not_in",

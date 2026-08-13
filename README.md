@@ -303,6 +303,10 @@ typed_result = (
     .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
 )
 field_selected = carbon_codegen.model_select(Actor, Actor.FIELD_ACTOR_ID)
+write_result = carbon_codegen.model_insert(
+    Actor,
+    {Actor.FIELD_FIRST_NAME: "ALICE"},
+).compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
 metadata_json = carbon.schema_metadata(json.dumps(schema))
 dataclass_source = carbon_codegen.schema_models(schema)
 ```
@@ -326,8 +330,10 @@ includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field constants such as
 `Actor.FIELD_ACTOR_ID`, direct column constants such as `Actor.ACTOR_ID`, and
 retains `__carbon_db_types__` / `__carbon_nullable__` metadata. Runtime helpers
 such as `model_query()`, `model_select()`, and `model_column()` consume that
-generated metadata to build schema-backed `Query` payloads without hand-typed
-field names.
+generated metadata to build schema-backed `Query` payloads. Model write helpers
+such as `model_insert()`, `model_replace()`, `model_update()`,
+`model_upsert()`, and `model_do_nothing()` accept values keyed by generated
+field constants and map them to qualified write columns.
 
 Build and smoke-test it from the repository root:
 
@@ -374,6 +380,9 @@ $typedResult = carbon_query(Actor::TABLE)
     ->limit(5)
     ->compile($schema, CarbonDialect::MYSQL);
 $fieldSelected = carbon_model_select(Actor::class, Actor::FIELD_ACTOR_ID);
+$writeResult = carbon_model_insert(Actor::class, [
+    Actor::FIELD_FIRST_NAME => "ALICE",
+])->compile($schema, CarbonDialect::MYSQL);
 $metadataJson = carbon_schema_metadata(json_encode($schema));
 $namespacedModelSource = carbon_schema_models($schema, "CarbonORM\\Generated");
 ```
@@ -399,7 +408,10 @@ constants such as `Actor::FIELD_ACTOR_ID`, direct column constants such as
 `Actor::ACTOR_ID`, `DB_TYPES`, and `NULLABLE`. Runtime helpers such as
 `carbon_model_query()`, `carbon_model_select()`, and `carbon_model_column()`
 consume generated class constants or metadata arrays to build schema-backed
-`CarbonQuery` payloads without hand-typed field names.
+`CarbonQuery` payloads. Model write helpers such as `carbon_model_insert()`,
+`carbon_model_replace()`, `carbon_model_update()`, `carbon_model_upsert()`, and
+`carbon_model_do_nothing()` accept values keyed by generated field constants and
+map them to qualified write columns.
 
 Build and smoke-test it from the repository root:
 
@@ -414,6 +426,9 @@ The PHP surface exposes `carbon_version()`, `carbon_hello_world()`,
 `carbon_compile_query_value()`, `carbon_compile_query_result()`,
 `carbon_adapt_compile_result()`, `carbon_query()`, `carbon_force_index()`,
 `carbon_use_index()`, `carbon_ignore_index()`, `C6C`, `C6`, `CarbonDialect`,
+`carbon_model_query()`, `carbon_model_select()`, `carbon_model_column()`,
+`carbon_model_insert()`, `carbon_model_replace()`, `carbon_model_update()`,
+`carbon_model_upsert()`, `carbon_model_do_nothing()`,
 `carbon_schema_metadata()`,
 and `carbon_normalize_allowlist_sql()`.
 
@@ -463,6 +478,9 @@ const typedResult = carbon.query(ActorTable)
   .limit(5)
   .compile(schema, carbon.CarbonDialect.MYSQL);
 const fieldSelected = carbon.modelSelect(ActorMeta, ActorFields.actor_id);
+const writeResult = carbon.modelInsert(ActorMeta, {
+  [ActorFields.first_name]: 'ALICE',
+}).compile(schema, carbon.CarbonDialect.MYSQL);
 const metadataJson = JSON.stringify(metadata);
 ```
 
@@ -483,7 +501,10 @@ TypeScript source maps DB metadata into primitive field types, exports
 and adds `fields`, `dbTypes`, and `nullable` metadata to the generated `*Meta`
 object. Runtime helpers such as `modelQuery()`, `modelSelect()`, and
 `modelColumn()` consume generated `*Meta` objects to build schema-backed
-`CarbonQuery` payloads without hand-typed field names.
+`CarbonQuery` payloads. Model write helpers such as `modelInsert()`,
+`modelReplace()`, `modelUpdate()`, `modelUpsert()`, and `modelDoNothing()`
+accept values keyed by generated field constants and map them to qualified write
+columns.
 
 Build and smoke-test it from the repository root:
 
@@ -501,7 +522,8 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `call()`, `alias()`, `distinct()`, `between()`, `inList()`, `existsSpec()`,
 `exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
 `forceIndex()`, `useIndex()`, `ignoreIndex()`, `modelQuery()`, `modelSelect()`,
-`modelColumn()`, `schemaMetadata()`, `schemaModels()`, and
+`modelColumn()`, `modelInsert()`, `modelReplace()`, `modelUpdate()`,
+`modelUpsert()`, `modelDoNothing()`, `schemaMetadata()`, `schemaModels()`, and
 `normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
 
 ## Ruby Binding
@@ -546,6 +568,10 @@ typed_result = CarbonC.query(CarbonModels::Actor::TABLE)
                       .limit(5)
                       .compile(schema, CarbonC::Dialect::MYSQL)
 field_selected = CarbonC.model_select(CarbonModels::Actor, CarbonModels::Actor::FIELD_ACTOR_ID)
+write_result = CarbonC.model_insert(
+  CarbonModels::Actor,
+  CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'
+).compile(schema, CarbonC::Dialect::MYSQL)
 metadata_json = CarbonC.schema_metadata(JSON.generate(schema))
 model_source = CarbonC.schema_models(schema)
 ```
@@ -569,8 +595,11 @@ such as `CarbonModels::Actor::FIELD_ACTOR_ID`, direct column constants such as
 `CarbonModels::Actor::ACTOR_ID`, plus `TYPES` and `NULLABLE` metadata constants
 for runtime consumers. Runtime helpers such as `CarbonC.model_query`,
 `CarbonC.model_select`, and `CarbonC.model_column` consume generated constants
-or metadata hashes to build schema-backed `CarbonC::Query` payloads without
-hand-typed field names.
+or metadata hashes to build schema-backed `CarbonC::Query` payloads. Model write
+helpers such as `CarbonC.model_insert`, `CarbonC.model_replace`,
+`CarbonC.model_update`, `CarbonC.model_upsert`, and `CarbonC.model_do_nothing`
+accept values keyed by generated field constants and map them to qualified write
+columns.
 
 Build and smoke-test it from the repository root:
 
@@ -593,6 +622,8 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
 `CarbonC.force_index`, `CarbonC.use_index`, `CarbonC.ignore_index`,
 `CarbonC.model_query`, `CarbonC.model_select`, `CarbonC.model_column`,
+`CarbonC.model_insert`, `CarbonC.model_replace`, `CarbonC.model_update`,
+`CarbonC.model_upsert`, `CarbonC.model_do_nothing`,
 `CarbonC.schema_metadata`, and
 `CarbonC.normalize_allowlist_sql`.
 

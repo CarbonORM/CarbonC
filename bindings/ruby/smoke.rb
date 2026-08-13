@@ -513,6 +513,54 @@ unless model_built.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (ac
   raise "unexpected model query sql: #{model_built.fetch('sql')}"
 end
 raise "unexpected model query params: #{model_built.fetch('params').inspect}" unless model_built.fetch('params') == [0]
+model_values = CarbonC.model_values(
+  CarbonModels::Actor,
+  CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'
+)
+raise "unexpected model values payload: #{model_values.inspect}" unless model_values == {'actor.first_name' => 'ALICE'}
+model_inserted = CarbonC.model_insert(
+  CarbonModels::Actor,
+  CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'
+).compile(schema, CarbonC::Dialect::MYSQL)
+unless model_inserted.fetch('sql') == 'INSERT INTO `actor` (`first_name`) VALUES (?)'
+  raise "unexpected model insert sql: #{model_inserted.fetch('sql')}"
+end
+raise "unexpected model insert params: #{model_inserted.fetch('params').inspect}" unless model_inserted.fetch('params') == ['ALICE']
+model_updated = CarbonC.model_update(
+  CarbonModels::Actor,
+  CarbonModels::Actor::FIELD_FIRST_NAME => 'BOB'
+).where_op(CarbonModels::Actor::ACTOR_ID, CarbonC::C6C::GREATER_THAN, 0)
+ .compile(schema, CarbonC::Dialect::MYSQL)
+unless model_updated.fetch('sql') == 'UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) > ?'
+  raise "unexpected model update sql: #{model_updated.fetch('sql')}"
+end
+raise "unexpected model update params: #{model_updated.fetch('params').inspect}" unless model_updated.fetch('params') == ['BOB', 0]
+model_upserted = CarbonC.model_upsert(
+  CarbonModels::Actor,
+  {
+    CarbonModels::Actor::FIELD_ACTOR_ID => 1,
+    CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'
+  },
+  [CarbonModels::Actor::FIELD_FIRST_NAME]
+).compile(schema, CarbonC::Dialect::MYSQL)
+unless model_upserted.fetch('sql') == 'INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)'
+  raise "unexpected model upsert sql: #{model_upserted.fetch('sql')}"
+end
+raise "unexpected model upsert params: #{model_upserted.fetch('params').inspect}" unless model_upserted.fetch('params') == [1, 'ALICE']
+model_replace_payload = CarbonC.model_replace(
+  CarbonModels::Actor,
+  CarbonModels::Actor::FIELD_FIRST_NAME => 'BOB'
+).to_payload
+unless model_replace_payload == {'FROM' => 'actor', 'REPLACE' => {'actor.first_name' => 'BOB'}}
+  raise "unexpected model replace payload: #{model_replace_payload.inspect}"
+end
+model_do_nothing_payload = CarbonC.model_do_nothing(
+  CarbonModels::Actor,
+  CarbonModels::Actor::FIELD_ACTOR_ID => 1
+).to_payload
+unless model_do_nothing_payload == {'FROM' => 'actor', 'INSERT' => {'actor.actor_id' => 1}, 'UPDATE' => []}
+  raise "unexpected model do-nothing payload: #{model_do_nothing_payload.inspect}"
+end
 
 rejected = CarbonC.compile_query(
   JSON.generate({'FROM' => 'actor', 'SELECT' => ['actor.last_name']}),

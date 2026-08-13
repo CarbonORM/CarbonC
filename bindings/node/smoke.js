@@ -476,6 +476,37 @@ const modelBuilt = carbon.modelSelect(actorMeta, actorMeta.fields.actor_id)
   .compile(schema, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(modelBuilt.sql, 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1');
 assert.deepStrictEqual(modelBuilt.params, [0]);
+assert.deepStrictEqual(carbon.modelValues(actorMeta, {[actorMeta.fields.first_name]: 'ALICE'}), {
+  'actor.first_name': 'ALICE',
+});
+const modelInserted = carbon.modelInsert(actorMeta, {[actorMeta.fields.first_name]: 'ALICE'})
+  .compile(schema, carbon.CarbonDialect.MYSQL);
+assert.strictEqual(modelInserted.sql, 'INSERT INTO `actor` (`first_name`) VALUES (?)');
+assert.deepStrictEqual(modelInserted.params, ['ALICE']);
+const modelUpdated = carbon.modelUpdate(actorMeta, {[actorMeta.fields.first_name]: 'BOB'})
+  .whereOp(actorMeta.columns.actor_id, carbon.C6C.GREATER_THAN, 0)
+  .compile(schema, carbon.CarbonDialect.MYSQL);
+assert.strictEqual(modelUpdated.sql, 'UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) > ?');
+assert.deepStrictEqual(modelUpdated.params, ['BOB', 0]);
+const modelUpserted = carbon.modelUpsert(
+  actorMeta,
+  {[actorMeta.fields.actor_id]: 1, [actorMeta.fields.first_name]: 'ALICE'},
+  [actorMeta.fields.first_name]
+).compile(schema, carbon.CarbonDialect.MYSQL);
+assert.strictEqual(
+  modelUpserted.sql,
+  'INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)'
+);
+assert.deepStrictEqual(modelUpserted.params, [1, 'ALICE']);
+assert.deepStrictEqual(carbon.modelReplace(actorMeta, {[actorMeta.fields.first_name]: 'BOB'}).toPayload(), {
+  FROM: 'actor',
+  REPLACE: {'actor.first_name': 'BOB'},
+});
+assert.deepStrictEqual(carbon.modelDoNothing(actorMeta, {[actorMeta.fields.actor_id]: 1}).toPayload(), {
+  FROM: 'actor',
+  INSERT: {'actor.actor_id': 1},
+  UPDATE: [],
+});
 assert.strictEqual(carbon.schema_models({}), '');
 
 const aliasResult = carbon.compile_query(JSON.stringify(query), JSON.stringify(schema), carbon.CarbonDialect.MYSQL);

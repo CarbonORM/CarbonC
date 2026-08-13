@@ -191,7 +191,7 @@ CarbonC now carries the first CarbonNode-derived golden fixtures under
 wrappers, package-level native payload helpers, typed result adapters,
 read/write/subselect/predicate query-builder facades, boolean-group compiler
 wrapping, C6 token constants, dialect constants, typed source generators with
-generated field and column constants, model-aware query scaffolds, full-text
+generated field and column constants, model-aware read/write query scaffolds, full-text
 `MATCH_AGAINST` predicates, boolean spatial-function predicates, canonical
 custom-call expressions, expression-valued writes, MySQL index hints, and binding-friendly
 diagnostic JSON. The next

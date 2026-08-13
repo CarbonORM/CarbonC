@@ -486,6 +486,34 @@ module CarbonC
       model_query(model).select(selected)
     end
 
+    def model_values(model, values)
+      raise TypeError, 'model values must be a Hash' unless values.is_a?(Hash)
+
+      values.each_with_object({}) do |(field, value), mapped|
+        mapped[model_column(model, field)] = carbon_codegen_query_payload(value)
+      end
+    end
+
+    def model_insert(model, values)
+      model_query(model).insert(model_values(model, values))
+    end
+
+    def model_replace(model, values)
+      model_query(model).replace(model_values(model, values))
+    end
+
+    def model_update(model, values)
+      model_query(model).update(model_values(model, values))
+    end
+
+    def model_upsert(model, values, fields)
+      model_insert(model, values).upsert(fields)
+    end
+
+    def model_do_nothing(model, values)
+      model_insert(model, values).do_nothing
+    end
+
     def compile_query_value(query, schema = nil, dialect = Dialect::MYSQL)
       compile_query(
         carbon_codegen_payload_json(query),

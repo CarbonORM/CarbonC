@@ -521,6 +521,41 @@ def main() -> None:
     )
     assert model_built["sql"] == "SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 1", model_built
     assert model_built["params"] == [0], model_built
+    assert carbon_codegen.model_values(actor_model, {actor_model.FIELD_FIRST_NAME: "ALICE"}) == {
+        "actor.first_name": "ALICE",
+    }
+    model_inserted = carbon_codegen.model_insert(actor_model, {actor_model.FIELD_FIRST_NAME: "ALICE"}).compile(
+        schema=schema,
+        dialect=carbon_codegen.CarbonDialect.MYSQL,
+    )
+    assert model_inserted["sql"] == "INSERT INTO `actor` (`first_name`) VALUES (?)", model_inserted
+    assert model_inserted["params"] == ["ALICE"], model_inserted
+    model_updated = (
+        carbon_codegen.model_update(actor_model, {actor_model.FIELD_FIRST_NAME: "BOB"})
+        .where_op(actor_model.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 0)
+        .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
+    )
+    assert model_updated["sql"] == "UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) > ?", model_updated
+    assert model_updated["params"] == ["BOB", 0], model_updated
+    model_upserted = carbon_codegen.model_upsert(
+        actor_model,
+        {actor_model.FIELD_ACTOR_ID: 1, actor_model.FIELD_FIRST_NAME: "ALICE"},
+        actor_model.FIELD_FIRST_NAME,
+    ).compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
+    assert model_upserted["sql"] == (
+        "INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) "
+        "ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)"
+    ), model_upserted
+    assert model_upserted["params"] == [1, "ALICE"], model_upserted
+    assert carbon_codegen.model_replace(actor_model, {actor_model.FIELD_FIRST_NAME: "BOB"}).to_payload() == {
+        "FROM": "actor",
+        "REPLACE": {"actor.first_name": "BOB"},
+    }
+    assert carbon_codegen.model_do_nothing(actor_model, {actor_model.FIELD_ACTOR_ID: 1}).to_payload() == {
+        "FROM": "actor",
+        "INSERT": {"actor.actor_id": 1},
+        "UPDATE": [],
+    }
 
     rejected = carbon.compile_query(
         json.dumps({"FROM": "actor", "SELECT": ["actor.last_name"]}),

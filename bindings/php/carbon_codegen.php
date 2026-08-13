@@ -395,6 +395,40 @@ if (!function_exists('carbon_schema_models')) {
         return carbon_model_query($model)->select($selected);
     }
 
+    function carbon_model_values($model, array $values): array
+    {
+        $mapped = [];
+        foreach ($values as $field => $value) {
+            $mapped[carbon_model_column($model, (string) $field)] = $value;
+        }
+        return $mapped;
+    }
+
+    function carbon_model_insert($model, array $values): CarbonQuery
+    {
+        return carbon_model_query($model)->insert(carbon_model_values($model, $values));
+    }
+
+    function carbon_model_replace($model, array $values): CarbonQuery
+    {
+        return carbon_model_query($model)->replace(carbon_model_values($model, $values));
+    }
+
+    function carbon_model_update($model, array $values): CarbonQuery
+    {
+        return carbon_model_query($model)->update(carbon_model_values($model, $values));
+    }
+
+    function carbon_model_upsert($model, array $values, array $fields): CarbonQuery
+    {
+        return carbon_model_insert($model, $values)->upsert($fields);
+    }
+
+    function carbon_model_do_nothing($model, array $values): CarbonQuery
+    {
+        return carbon_model_insert($model, $values)->doNothing();
+    }
+
     function carbon_codegen_subselect_operand($query)
     {
         if (is_array($query)) {

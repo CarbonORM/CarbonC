@@ -348,6 +348,35 @@ function modelSelect(model, ...fields) {
   return modelQuery(model).select(selected);
 }
 
+function modelValues(model, values) {
+  if (values === null || Array.isArray(values) || typeof values !== 'object') {
+    throw new TypeError('model values must be an object');
+  }
+  return Object.fromEntries(
+    Object.entries(values).map(([field, value]) => [modelColumn(model, field), copyPayloadValue(value)])
+  );
+}
+
+function modelInsert(model, values) {
+  return modelQuery(model).insert(modelValues(model, values));
+}
+
+function modelReplace(model, values) {
+  return modelQuery(model).replace(modelValues(model, values));
+}
+
+function modelUpdate(model, values) {
+  return modelQuery(model).update(modelValues(model, values));
+}
+
+function modelUpsert(model, values, fields) {
+  return modelInsert(model, values).upsert(fields);
+}
+
+function modelDoNothing(model, values) {
+  return modelInsert(model, values).doNothing();
+}
+
 function subselectOperand(query) {
   if (Array.isArray(query)
     && query.length === 2
@@ -836,5 +865,17 @@ native.modelQuery = modelQuery;
 native.model_query = modelQuery;
 native.modelSelect = modelSelect;
 native.model_select = modelSelect;
+native.modelValues = modelValues;
+native.model_values = modelValues;
+native.modelInsert = modelInsert;
+native.model_insert = modelInsert;
+native.modelReplace = modelReplace;
+native.model_replace = modelReplace;
+native.modelUpdate = modelUpdate;
+native.model_update = modelUpdate;
+native.modelUpsert = modelUpsert;
+native.model_upsert = modelUpsert;
+native.modelDoNothing = modelDoNothing;
+native.model_do_nothing = modelDoNothing;
 
 module.exports = native;
