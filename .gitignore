@@ -1,0 +1,11 @@
+build/
+build-*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Testing/
+*.a
+*.so
+*.dylib
+*.dll
+*.exe

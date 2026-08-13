@@ -7,7 +7,7 @@ PHP_FUNCTION(carbon_version) {
 }
 
 PHP_FUNCTION(carbon_hello_world) {
-        helloWorld();
+        RETURN_STRING(carbon_hello_world());
 }
 
 const zend_function_entry carbon_functions[] = {
