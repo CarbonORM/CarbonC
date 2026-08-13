@@ -426,11 +426,14 @@ assert(modelSource.includes('export interface Actor'));
 assert(modelSource.includes('actor_id: number;'));
 assert(modelSource.includes('first_name: string;'));
 assert(modelSource.includes('export const ActorTable = "actor" as const;'));
+assert(modelSource.includes('export const ActorFields = {'));
+assert(modelSource.includes('actor_id: "actor_id",'));
 assert(modelSource.includes('export const ActorColumns = {'));
 assert(modelSource.includes('actor_id: "actor.actor_id",'));
 assert(modelSource.includes('export const ActorMeta = {'));
 assert(modelSource.includes('table: ActorTable,'));
 assert(modelSource.includes('primary: ["actor_id"],'));
+assert(modelSource.includes('fields: ActorFields,'));
 assert(modelSource.includes('columns: ActorColumns,'));
 assert(modelSource.includes('dbTypes: {'));
 assert(modelSource.includes('actor_id: "smallint",'));
@@ -438,13 +441,17 @@ assert(modelSource.includes('nullable: {'));
 assert(modelSource.includes('actor_id: false,'));
 const actorMeta = {
   table: 'actor',
+  fields: {
+    actor_id: 'actor_id',
+    first_name: 'first_name',
+  },
   columns: {
     actor_id: 'actor.actor_id',
     first_name: 'actor.first_name',
   },
 };
 assert.strictEqual(carbon.modelTable(actorMeta), 'actor');
-assert.strictEqual(carbon.modelColumn(actorMeta, 'first_name'), 'actor.first_name');
+assert.strictEqual(carbon.modelColumn(actorMeta, actorMeta.fields.first_name), 'actor.first_name');
 assert.deepStrictEqual(carbon.modelSelect(actorMeta).toPayload(), {
   FROM: 'actor',
   SELECT: ['actor.actor_id', 'actor.first_name'],
@@ -460,7 +467,7 @@ assert.strictEqual(
   'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 1'
 );
 assert.deepStrictEqual(constantBuilt.params, [0]);
-const modelBuilt = carbon.modelSelect(actorMeta, 'actor_id')
+const modelBuilt = carbon.modelSelect(actorMeta, actorMeta.fields.actor_id)
   .whereOp(actorMeta.columns.actor_id, carbon.C6C.GREATER_THAN, 0)
   .limit(1)
   .compile(schema, 'mysql');

@@ -300,6 +300,7 @@ typed_result = (
     .limit(5)
     .compile(schema=schema, dialect="mysql")
 )
+field_selected = carbon_codegen.model_select(Actor, Actor.FIELD_ACTOR_ID)
 metadata_json = carbon.schema_metadata(json.dumps(schema))
 dataclass_source = carbon_codegen.schema_models(schema)
 ```
@@ -318,11 +319,12 @@ subselect helpers, derived `join_subselect` targets, advanced predicate helpers
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
 metadata into Python annotations such as
 `int`, `float`, `str`, `bool`, `bytes`, `Dict[str, Any]`, and `Optional[...]`,
-includes `TABLE`, `PRIMARY`, `COLUMNS`, direct column constants such as
-`Actor.ACTOR_ID`, and retains `__carbon_db_types__` /
-`__carbon_nullable__` metadata. Runtime helpers such as `model_query()`,
-`model_select()`, and `model_column()` consume that generated metadata to build
-schema-backed `Query` payloads.
+includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field constants such as
+`Actor.FIELD_ACTOR_ID`, direct column constants such as `Actor.ACTOR_ID`, and
+retains `__carbon_db_types__` / `__carbon_nullable__` metadata. Runtime helpers
+such as `model_query()`, `model_select()`, and `model_column()` consume that
+generated metadata to build schema-backed `Query` payloads without hand-typed
+field names.
 
 Build and smoke-test it from the repository root:
 
@@ -367,6 +369,7 @@ $typedResult = carbon_query(Actor::TABLE)
     ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 10)
     ->limit(5)
     ->compile($schema, "mysql");
+$fieldSelected = carbon_model_select(Actor::class, Actor::FIELD_ACTOR_ID);
 $metadataJson = carbon_schema_metadata(json_encode($schema));
 $namespacedModelSource = carbon_schema_models($schema, "CarbonORM\\Generated");
 ```
@@ -387,11 +390,12 @@ helpers (`carbon_condition`, `carbon_and_group`, `carbon_or_group`, `whereAnd`,
 returns the same fields as the
 raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
 class source keeps properties untyped for runtime compatibility, adds PHPDoc type
-annotations, and includes `TABLE`, `PRIMARY`, `COLUMNS`, direct column constants
-such as `Actor::ACTOR_ID`, `DB_TYPES`, and `NULLABLE`. Runtime helpers such as
-`carbon_model_query()`, `carbon_model_select()`, and
-`carbon_model_column()` consume generated class constants or metadata arrays to
-build schema-backed `CarbonQuery` payloads.
+annotations, and includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field
+constants such as `Actor::FIELD_ACTOR_ID`, direct column constants such as
+`Actor::ACTOR_ID`, `DB_TYPES`, and `NULLABLE`. Runtime helpers such as
+`carbon_model_query()`, `carbon_model_select()`, and `carbon_model_column()`
+consume generated class constants or metadata arrays to build schema-backed
+`CarbonQuery` payloads without hand-typed field names.
 
 Build and smoke-test it from the repository root:
 
@@ -440,15 +444,20 @@ const typeSource = carbon.schemaModels(schema);
 // The generated TypeScript module exports the same ActorTable/ActorColumns shape.
 const actorMetadata = metadata.tables[0];
 const ActorTable = actorMetadata.name;
+const ActorFields = Object.freeze(Object.fromEntries(
+  actorMetadata.columns.map((column) => [column.name, column.name])
+));
 const ActorColumns = Object.freeze(Object.fromEntries(
   actorMetadata.columns.map((column) => [column.name, column.qualified])
 ));
+const ActorMeta = {table: ActorTable, fields: ActorFields, columns: ActorColumns};
 
 const typedResult = carbon.query(ActorTable)
   .select(ActorColumns.actor_id)
   .whereOp(ActorColumns.actor_id, carbon.C6C.GREATER_THAN, 10)
   .limit(5)
   .compile(schema, 'mysql');
+const fieldSelected = carbon.modelSelect(ActorMeta, ActorFields.actor_id);
 const metadataJson = JSON.stringify(metadata);
 ```
 
@@ -465,10 +474,11 @@ helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
 `compileQueryResult()` returns the same fields as the raw result
 plus decoded JavaScript `params` and `diagnostics` values. The generated
 TypeScript source maps DB metadata into primitive field types, exports
-`ActorTable` / `ActorColumns` constants beside each interface, and adds `dbTypes`
-and `nullable` metadata to the generated `*Meta` object. Runtime helpers such as
-`modelQuery()`, `modelSelect()`, and `modelColumn()` consume generated `*Meta`
-objects to build schema-backed `CarbonQuery` payloads.
+`ActorTable`, `ActorFields`, and `ActorColumns` constants beside each interface,
+and adds `fields`, `dbTypes`, and `nullable` metadata to the generated `*Meta`
+object. Runtime helpers such as `modelQuery()`, `modelSelect()`, and
+`modelColumn()` consume generated `*Meta` objects to build schema-backed
+`CarbonQuery` payloads without hand-typed field names.
 
 Build and smoke-test it from the repository root:
 
@@ -528,6 +538,7 @@ typed_result = CarbonC.query(CarbonModels::Actor::TABLE)
                       )
                       .limit(5)
                       .compile(schema, 'mysql')
+field_selected = CarbonC.model_select(CarbonModels::Actor, CarbonModels::Actor::FIELD_ACTOR_ID)
 metadata_json = CarbonC.schema_metadata(JSON.generate(schema))
 model_source = CarbonC.schema_models(schema)
 ```
@@ -546,11 +557,13 @@ helpers (`index_hints`, `force_index`, `use_index`, `ignore_index`), limit/page,
 and order controls.
 `CarbonC.compile_query_result` returns the same fields as the raw
 result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
-Struct source includes `TABLE`, `PRIMARY`, `COLUMNS`, direct column constants
-such as `CarbonModels::Actor::ACTOR_ID`, plus `TYPES` and `NULLABLE` metadata
-constants for runtime consumers. Runtime helpers such as `CarbonC.model_query`,
+Struct source includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field constants
+such as `CarbonModels::Actor::FIELD_ACTOR_ID`, direct column constants such as
+`CarbonModels::Actor::ACTOR_ID`, plus `TYPES` and `NULLABLE` metadata constants
+for runtime consumers. Runtime helpers such as `CarbonC.model_query`,
 `CarbonC.model_select`, and `CarbonC.model_column` consume generated constants
-or metadata hashes to build schema-backed `CarbonC::Query` payloads.
+or metadata hashes to build schema-backed `CarbonC::Query` payloads without
+hand-typed field names.
 
 Build and smoke-test it from the repository root:
 

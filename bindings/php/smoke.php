@@ -486,12 +486,15 @@ carbon_assert(
 $models = carbon_schema_models($schema, 'CarbonORM\\Generated');
 carbon_assert(strpos($models, 'namespace CarbonORM\\Generated;') !== false, 'expected generated namespace');
 carbon_assert(strpos($models, 'final class Actor') !== false, 'expected generated Actor class');
+carbon_assert(strpos($models, "public const FIELD_ACTOR_ID = 'actor_id';") !== false, 'expected generated actor_id field constant');
+carbon_assert(strpos($models, "public const FIELD_FIRST_NAME = 'first_name';") !== false, 'expected generated first_name field constant');
+carbon_assert(strpos($models, "public const FIELDS = [") !== false, 'expected generated FIELDS constant');
 carbon_assert(strpos($models, "public const ACTOR_ID = 'actor.actor_id';") !== false, 'expected generated actor_id constant');
 carbon_assert(strpos($models, "public const FIRST_NAME = 'actor.first_name';") !== false, 'expected generated first_name constant');
 carbon_assert(strpos($models, "public const PRIMARY = ['actor_id'];") !== false, 'expected generated primary metadata');
 carbon_assert(strpos($models, "public const DB_TYPES = ['actor_id' => 'smallint', 'first_name' => 'varchar'];") !== false, 'expected generated DB type metadata');
 carbon_assert(strpos($models, "public const NULLABLE = ['actor_id' => false, 'first_name' => false];") !== false, 'expected generated nullable metadata');
-carbon_assert(strpos($models, "'actor_id' => self::ACTOR_ID") !== false, 'expected generated COLUMNS to use constants');
+carbon_assert(strpos($models, "self::FIELD_ACTOR_ID => self::ACTOR_ID") !== false, 'expected generated COLUMNS to use constants');
 carbon_assert(strpos($models, '/** @var int */') !== false, 'expected generated int docblock');
 carbon_assert(strpos($models, '/** @var string */') !== false, 'expected generated string docblock');
 carbon_assert(strpos($models, 'public $actor_id;') !== false, 'expected generated actor_id property');
@@ -501,10 +504,13 @@ carbon_assert(is_string($globalModelsEval), 'expected generated global model sou
 eval($globalModelsEval);
 carbon_assert(carbon_model_table(Actor::class) === 'actor', 'unexpected model table');
 carbon_assert(Actor::TABLE === 'actor', 'unexpected generated TABLE constant');
+carbon_assert(Actor::FIELD_ACTOR_ID === 'actor_id', 'unexpected generated FIELD_ACTOR_ID constant');
+carbon_assert(Actor::FIELD_FIRST_NAME === 'first_name', 'unexpected generated FIELD_FIRST_NAME constant');
+carbon_assert(Actor::FIELDS === ['actor_id', 'first_name'], 'unexpected generated FIELDS constant');
 carbon_assert(Actor::ACTOR_ID === 'actor.actor_id', 'unexpected generated ACTOR_ID constant');
 carbon_assert(Actor::FIRST_NAME === 'actor.first_name', 'unexpected generated FIRST_NAME constant');
 carbon_assert(Actor::COLUMNS['actor_id'] === Actor::ACTOR_ID, 'unexpected generated COLUMNS constant value');
-carbon_assert(carbon_model_column(Actor::class, 'first_name') === 'actor.first_name', 'unexpected model column');
+carbon_assert(carbon_model_column(Actor::class, Actor::FIELD_FIRST_NAME) === 'actor.first_name', 'unexpected model column');
 carbon_assert(
     carbon_model_select(Actor::class)->toPayload() === [
         'FROM' => 'actor',
@@ -523,7 +529,7 @@ carbon_assert(
     'unexpected constant-built query sql: ' . $constantBuilt['sql']
 );
 carbon_assert($constantBuilt['params'] === [0], 'unexpected constant-built query params: ' . json_encode($constantBuilt['params']));
-$modelBuilt = carbon_model_select(Actor::class, 'actor_id')
+$modelBuilt = carbon_model_select(Actor::class, Actor::FIELD_ACTOR_ID)
     ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 0)
     ->limit(1)
     ->compile($schema, 'mysql');

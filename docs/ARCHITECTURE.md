@@ -35,8 +35,9 @@ serialization helpers, typed result adapters that decode params/diagnostics JSON
 query-builder facades, CarbonNode-compatible `C6C` token constants, C
 `CARBON_C6_*` macros, and typed source generators for Python dataclasses,
 TypeScript interfaces, PHP model classes, and Ruby Struct models. Generated
-model sources expose table and column constants so query authors do not
-hand-type schema identifiers. DB execution remains outside CarbonC.
+model sources expose table, field-name, and qualified-column constants so query
+authors do not hand-type schema identifiers. DB execution remains outside
+CarbonC.
 
 This keeps the C ABI stable and keeps each language package idiomatic.
 
@@ -143,9 +144,10 @@ silently compiling weaker SQL.
 with ordered table names, ordered `columns` entries (`name` plus `qualified`),
 and `primary` short-column names. Bindings can parse that shape to generate
 language-native models without duplicating C6 schema interpretation. Those
-generators emit native table/column constants (`Actor.ACTOR_ID`,
-`Actor::ACTOR_ID`, `ActorColumns.actor_id`, etc.) and metadata maps that point
-back to the same values. When a table includes CarbonNode-style
+generators emit native table, field-name, and qualified-column constants
+(`Actor.FIELD_ACTOR_ID`, `Actor::ACTOR_ID`, `ActorFields.actor_id`,
+`ActorColumns.actor_id`, etc.) and metadata maps that point back to the same
+values. When a table includes CarbonNode-style
 `TYPE_VALIDATION`, column entries also include optional `db_type`, `max_length`,
 `nullable`, `auto_increment`, and `skip_insert` fields. Object-valued `COLUMNS`
 entries may also carry those fields directly for schema sources that do not
@@ -184,8 +186,8 @@ CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers, package-level native payload helpers, typed result adapters,
 read/write/subselect/predicate query-builder facades, boolean-group compiler
-wrapping, C6 token constants, typed source generators with generated column
-constants, model-aware query scaffolds, full-text
+wrapping, C6 token constants, typed source generators with generated field and
+column constants, model-aware query scaffolds, full-text
 `MATCH_AGAINST` predicates, boolean spatial-function predicates, canonical
 custom-call expressions, expression-valued writes, MySQL index hints, and binding-friendly
 diagnostic JSON. The next

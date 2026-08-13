@@ -462,10 +462,13 @@ raise "unexpected metadata: #{metadata.inspect}" unless metadata == expected_met
 models = CarbonC.schema_models(schema)
 raise "unexpected model source: #{models}" unless models.include?('module CarbonModels')
 raise "unexpected model source: #{models}" unless models.include?('Actor = Struct.new(:actor_id, :first_name, keyword_init: true)')
+raise "unexpected model source: #{models}" unless models.include?('Actor::FIELD_ACTOR_ID = "actor_id"')
+raise "unexpected model source: #{models}" unless models.include?('Actor::FIELD_FIRST_NAME = "first_name"')
+raise "unexpected model source: #{models}" unless models.include?('Actor::FIELDS = [Actor::FIELD_ACTOR_ID, Actor::FIELD_FIRST_NAME].freeze')
 raise "unexpected model source: #{models}" unless models.include?('Actor::ACTOR_ID = "actor.actor_id"')
 raise "unexpected model source: #{models}" unless models.include?('Actor::FIRST_NAME = "actor.first_name"')
 raise "unexpected model source: #{models}" unless models.include?('PRIMARY = ["actor_id"].freeze')
-raise "unexpected model source: #{models}" unless models.include?('"actor_id" => Actor::ACTOR_ID')
+raise "unexpected model source: #{models}" unless models.include?('Actor::FIELD_ACTOR_ID => Actor::ACTOR_ID')
 raise "unexpected model source: #{models}" unless models.include?('TYPES = {')
 raise "unexpected model source: #{models}" unless models.include?('"actor_id" => :integer')
 raise "unexpected model source: #{models}" unless models.include?('NULLABLE = {')
@@ -473,10 +476,13 @@ raise "unexpected model source: #{models}" unless models.include?('"actor_id" =>
 eval(models)
 raise 'unexpected model table' unless CarbonC.model_table(CarbonModels::Actor) == 'actor'
 raise 'unexpected generated TABLE constant' unless CarbonModels::Actor::TABLE == 'actor'
+raise 'unexpected generated FIELD_ACTOR_ID constant' unless CarbonModels::Actor::FIELD_ACTOR_ID == 'actor_id'
+raise 'unexpected generated FIELD_FIRST_NAME constant' unless CarbonModels::Actor::FIELD_FIRST_NAME == 'first_name'
+raise 'unexpected generated FIELDS constant' unless CarbonModels::Actor::FIELDS == ['actor_id', 'first_name']
 raise 'unexpected generated ACTOR_ID constant' unless CarbonModels::Actor::ACTOR_ID == 'actor.actor_id'
 raise 'unexpected generated FIRST_NAME constant' unless CarbonModels::Actor::FIRST_NAME == 'actor.first_name'
 raise 'unexpected generated COLUMNS constant value' unless CarbonModels::Actor::COLUMNS['actor_id'] == CarbonModels::Actor::ACTOR_ID
-unless CarbonC.model_column(CarbonModels::Actor, 'first_name') == 'actor.first_name'
+unless CarbonC.model_column(CarbonModels::Actor, CarbonModels::Actor::FIELD_FIRST_NAME) == 'actor.first_name'
   raise 'unexpected model column'
 end
 expected_model_select_payload = {
@@ -496,7 +502,7 @@ unless constant_built.fetch('sql') == 'SELECT actor.actor_id, actor.first_name F
   raise "unexpected constant-built query sql: #{constant_built.fetch('sql')}"
 end
 raise "unexpected constant-built query params: #{constant_built.fetch('params').inspect}" unless constant_built.fetch('params') == [0]
-model_built = CarbonC.model_select(CarbonModels::Actor, 'actor_id')
+model_built = CarbonC.model_select(CarbonModels::Actor, CarbonModels::Actor::FIELD_ACTOR_ID)
                      .where_op(CarbonModels::Actor::ACTOR_ID, CarbonC::C6C::GREATER_THAN, 0)
                      .limit(1)
                      .compile(schema, 'mysql')

@@ -718,6 +718,12 @@ function schemaModels(schema) {
     lines.push('}');
     lines.push('');
     lines.push(`export const ${name}Table = ${JSON.stringify(table.name || '')} as const;`);
+    lines.push(`export const ${name}Fields = {`);
+    for (const column of table.columns || []) {
+      lines.push(`  ${propertyName(column.name)}: ${JSON.stringify(column.name || '')},`);
+    }
+    lines.push('} as const;');
+    lines.push('');
     lines.push(`export const ${name}Columns = {`);
     for (const column of table.columns || []) {
       lines.push(`  ${propertyName(column.name)}: ${JSON.stringify(column.qualified || '')},`);
@@ -727,6 +733,7 @@ function schemaModels(schema) {
     lines.push(`export const ${name}Meta = {`);
     lines.push(`  table: ${name}Table,`);
     lines.push(`  primary: ${JSON.stringify(table.primary || [])},`);
+    lines.push(`  fields: ${name}Fields,`);
     lines.push(`  columns: ${name}Columns,`);
     lines.push('  dbTypes: {');
     for (const column of table.columns || []) {

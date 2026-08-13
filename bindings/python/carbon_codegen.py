@@ -12,7 +12,7 @@ import carbon
 
 _CLASS_SPLIT_RE = re.compile(r"[^0-9A-Za-z]+")
 _FIELD_RE = re.compile(r"[^0-9A-Za-z_]")
-_MODEL_CONSTANT_RESERVED = {"TABLE", "PRIMARY", "COLUMNS", "COLUMN_NAMES", "DB_TYPES", "NULLABLE"}
+_MODEL_CONSTANT_RESERVED = {"TABLE", "PRIMARY", "FIELDS", "COLUMNS", "COLUMN_NAMES", "DB_TYPES", "NULLABLE"}
 
 
 class C6C:
@@ -589,6 +589,14 @@ def _tuple_literal(values: Sequence[str]) -> str:
     return "(" + ", ".join(repr(value) for value in values) + ")"
 
 
+def _constant_tuple_literal(values: Sequence[str]) -> str:
+    if not values:
+        return "()"
+    if len(values) == 1:
+        return f"({values[0]},)"
+    return "(" + ", ".join(values) + ")"
+
+
 def _append_dict_literal(lines: list[str], name: str, values: Mapping[str, str]) -> None:
     if not values:
         lines.append(f"    {name} = {{}}")
@@ -599,13 +607,13 @@ def _append_dict_literal(lines: list[str], name: str, values: Mapping[str, str])
     lines.append("    }")
 
 
-def _append_column_dict_literal(lines: list[str], name: str, values: Mapping[str, str]) -> None:
+def _append_constant_dict_literal(lines: list[str], name: str, values: Mapping[str, str]) -> None:
     if not values:
         lines.append(f"    {name} = {{}}")
         return
     lines.append(f"    {name} = {{")
-    for key, constant in values.items():
-        lines.append(f"        {key!r}: {constant},")
+    for key, value in values.items():
+        lines.append(f"        {key}: {value},")
     lines.append("    }")
 
 
@@ -658,11 +666,12 @@ def schema_models(schema: Any = None) -> str:
         class_name = _class_name(table_name, used_classes)
         used_fields: set[str] = set()
         used_constants: set[str] = set(_MODEL_CONSTANT_RESERVED)
-        fields: list[tuple[str, str, str, str, str | None, bool | None, str]] = []
+        fields: list[tuple[str, str, str, str, str | None, bool | None, str, str]] = []
         for column in table.get("columns", []):
             original_name = str(column.get("name", ""))
             field_name = _field_name(original_name, used_fields)
-            constant_name = _constant_name(field_name, used_constants)
+            field_constant_name = _constant_name(f"FIELD_{field_name}", used_constants)
+            column_constant_name = _constant_name(field_name, used_constants)
             db_type = column.get("db_type")
             nullable = column.get("nullable")
             fields.append((
@@ -672,7 +681,8 @@ def schema_models(schema: Any = None) -> str:
                 _python_type(column),
                 str(db_type) if db_type is not None else None,
                 nullable if isinstance(nullable, bool) else None,
-                constant_name,
+                column_constant_name,
+                field_constant_name,
             ))
 
         lines.append("@dataclass")
@@ -681,26 +691,37 @@ def schema_models(schema: Any = None) -> str:
         lines.append("    __carbon_table__ = TABLE")
         lines.append(f"    PRIMARY = {_tuple_literal([str(value) for value in table.get('primary', [])])}")
         lines.append("    __carbon_primary__ = PRIMARY")
-        for _, _, qualified, _, _, _, constant in fields:
-            lines.append(f"    {constant} = {qualified!r}")
-        _append_column_dict_literal(lines, "__carbon_columns__", {field: constant for field, _, _, _, _, _, constant in fields})
+        for _, original, _, _, _, _, _, field_constant in fields:
+            lines.append(f"    {field_constant} = {original!r}")
+        lines.append(f"    FIELDS = {_constant_tuple_literal([field_constant for _, _, _, _, _, _, _, field_constant in fields])}")
+        for _, _, qualified, _, _, _, column_constant, _ in fields:
+            lines.append(f"    {column_constant} = {qualified!r}")
+        _append_constant_dict_literal(
+            lines,
+            "__carbon_columns__",
+            {field_constant: column_constant for _, _, _, _, _, _, column_constant, field_constant in fields},
+        )
         lines.append("    COLUMNS = __carbon_columns__")
-        _append_dict_literal(lines, "__carbon_column_names__", {field: original for field, original, _, _, _, _, _ in fields})
+        _append_constant_dict_literal(
+            lines,
+            "__carbon_column_names__",
+            {field_constant: repr(original) for _, original, _, _, _, _, _, field_constant in fields},
+        )
         lines.append("    COLUMN_NAMES = __carbon_column_names__")
         _append_dict_literal(
             lines,
             "__carbon_db_types__",
-            {field: db_type for field, _, _, _, db_type, _, _ in fields if db_type is not None},
+            {field: db_type for field, _, _, _, db_type, _, _, _ in fields if db_type is not None},
         )
         lines.append("    DB_TYPES = __carbon_db_types__")
         _append_bool_dict_literal(
             lines,
             "__carbon_nullable__",
-            {field: nullable for field, _, _, _, _, nullable, _ in fields if nullable is not None},
+            {field: nullable for field, _, _, _, _, nullable, _, _ in fields if nullable is not None},
         )
         lines.append("    NULLABLE = __carbon_nullable__")
         if fields:
-            for field, _, _, python_type, _, _, _ in fields:
+            for field, _, _, python_type, _, _, _, _ in fields:
                 lines.append(f"    {field}: {python_type} = None")
         lines.append("")
 

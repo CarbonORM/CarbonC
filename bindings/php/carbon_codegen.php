@@ -797,6 +797,7 @@ if (!function_exists('carbon_schema_models')) {
         $reserved = [
             'TABLE' => true,
             'PRIMARY' => true,
+            'FIELDS' => true,
             'COLUMNS' => true,
             'COLUMN_NAMES' => true,
             'DB_TYPES' => true,
@@ -870,12 +871,14 @@ if (!function_exists('carbon_schema_models')) {
             $usedConstants = [
                 'TABLE' => true,
                 'PRIMARY' => true,
+                'FIELDS' => true,
                 'COLUMNS' => true,
                 'COLUMN_NAMES' => true,
                 'DB_TYPES' => true,
                 'NULLABLE' => true,
             ];
             $columns = [];
+            $fieldConstants = [];
             $columnConstants = [];
             $columnNames = [];
             $dbTypes = [];
@@ -884,6 +887,7 @@ if (!function_exists('carbon_schema_models')) {
             foreach (($table['columns'] ?? []) as $column) {
                 $property = carbon_codegen_property_name((string) ($column['name'] ?? ''), $usedProperties);
                 $columns[$property] = (string) ($column['qualified'] ?? '');
+                $fieldConstants[$property] = carbon_codegen_constant_name('FIELD_' . $property, $usedConstants);
                 $columnConstants[$property] = carbon_codegen_constant_name($property, $usedConstants);
                 $columnNames[$property] = (string) ($column['name'] ?? '');
                 if (array_key_exists('db_type', $column)) {
@@ -898,6 +902,14 @@ if (!function_exists('carbon_schema_models')) {
             $lines[] = 'final class ' . $className;
             $lines[] = '{';
             $lines[] = '    public const TABLE = ' . carbon_codegen_string_literal($tableName) . ';';
+            foreach ($columnNames as $property => $columnName) {
+                $lines[] = '    public const ' . $fieldConstants[$property] . ' = ' . carbon_codegen_string_literal($columnName) . ';';
+            }
+            $lines[] = '    public const FIELDS = [';
+            foreach ($fieldConstants as $fieldConstant) {
+                $lines[] = '        self::' . $fieldConstant . ',';
+            }
+            $lines[] = '    ];';
             foreach ($columns as $property => $qualified) {
                 $lines[] = '    public const ' . $columnConstants[$property] . ' = ' . carbon_codegen_string_literal($qualified) . ';';
             }
@@ -906,12 +918,12 @@ if (!function_exists('carbon_schema_models')) {
             $lines[] = '    public const NULLABLE = ' . carbon_codegen_map_literal($nullable) . ';';
             $lines[] = '    public const COLUMNS = [';
             foreach ($columns as $property => $qualified) {
-                $lines[] = '        ' . carbon_codegen_string_literal($property) . ' => self::' . $columnConstants[$property] . ',';
+                $lines[] = '        self::' . $fieldConstants[$property] . ' => self::' . $columnConstants[$property] . ',';
             }
             $lines[] = '    ];';
             $lines[] = '    public const COLUMN_NAMES = [';
             foreach ($columnNames as $property => $columnName) {
-                $lines[] = '        ' . carbon_codegen_string_literal($property) . ' => ' . carbon_codegen_string_literal($columnName) . ',';
+                $lines[] = '        self::' . $fieldConstants[$property] . ' => ' . carbon_codegen_string_literal($columnName) . ',';
             }
             $lines[] = '    ];';
             if ($columns !== []) {

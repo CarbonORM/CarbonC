@@ -516,6 +516,7 @@ module CarbonC
         used_constants = {
           'TABLE' => true,
           'PRIMARY' => true,
+          'FIELDS' => true,
           'COLUMNS' => true,
           'COLUMN_NAMES' => true,
           'TYPES' => true,
@@ -523,40 +524,46 @@ module CarbonC
         }
         fields = table.fetch('columns', []).map do |column|
           field = carbon_codegen_field_name(column.fetch('name', ''), used_fields)
-          constant = carbon_codegen_constant_name(field, used_constants)
-          [field, column.fetch('name', ''), column.fetch('qualified', ''), column, constant]
+          field_constant = carbon_codegen_constant_name("FIELD_#{field}", used_constants)
+          column_constant = carbon_codegen_constant_name(field, used_constants)
+          [field, column.fetch('name', ''), column.fetch('qualified', ''), column, column_constant, field_constant]
         end
 
         if fields.empty?
           lines << "#{base_indent}#{class_name} = Class.new"
         else
-          field_list = fields.map { |field, _, _, _, _| ":#{field}" }.join(', ')
+          field_list = fields.map { |field, _, _, _, _, _| ":#{field}" }.join(', ')
           lines << "#{base_indent}#{class_name} = Struct.new(#{field_list}, keyword_init: true)"
         end
         lines << "#{base_indent}#{class_name}::TABLE = #{JSON.generate(table.fetch('name', ''))}"
         lines << "#{base_indent}#{class_name}::PRIMARY = #{JSON.generate(table.fetch('primary', []))}.freeze"
-        fields.each do |_, _, qualified, _, constant|
-          lines << "#{base_indent}#{class_name}::#{constant} = #{JSON.generate(qualified)}"
+        fields.each do |_, original, _, _, _, field_constant|
+          lines << "#{base_indent}#{class_name}::#{field_constant} = #{JSON.generate(original)}"
+        end
+        field_constants = fields.map { |_, _, _, _, _, field_constant| "#{class_name}::#{field_constant}" }
+        lines << "#{base_indent}#{class_name}::FIELDS = [#{field_constants.join(', ')}].freeze"
+        fields.each do |_, _, qualified, _, column_constant, _|
+          lines << "#{base_indent}#{class_name}::#{column_constant} = #{JSON.generate(qualified)}"
         end
         lines << "#{base_indent}#{class_name}::COLUMNS = {"
-        fields.each do |field, _, _, _, constant|
-          lines << "#{base_indent}  #{JSON.generate(field)} => #{class_name}::#{constant},"
+        fields.each do |_, _, _, _, column_constant, field_constant|
+          lines << "#{base_indent}  #{class_name}::#{field_constant} => #{class_name}::#{column_constant},"
         end
         lines << "#{base_indent}}.freeze"
         lines << "#{base_indent}#{class_name}::COLUMN_NAMES = {"
-        fields.each do |field, original, _, _, _|
-          lines << "#{base_indent}  #{JSON.generate(field)} => #{JSON.generate(original)},"
+        fields.each do |_, original, _, _, _, field_constant|
+          lines << "#{base_indent}  #{class_name}::#{field_constant} => #{JSON.generate(original)},"
         end
         lines << "#{base_indent}}.freeze"
         lines << "#{base_indent}#{class_name}::TYPES = {"
-        fields.each do |field, _, _, column, _|
+        fields.each do |field, _, _, column, _, _|
           next unless column.key?('db_type')
 
           lines << "#{base_indent}  #{JSON.generate(field)} => :#{carbon_codegen_ruby_type(column)},"
         end
         lines << "#{base_indent}}.freeze"
         lines << "#{base_indent}#{class_name}::NULLABLE = {"
-        fields.each do |field, _, _, column, _|
+        fields.each do |field, _, _, column, _, _|
           next unless column.key?('nullable')
 
           lines << "#{base_indent}  #{JSON.generate(field)} => #{column.fetch('nullable') ? 'true' : 'false'},"

@@ -465,11 +465,14 @@ def main() -> None:
     models = carbon_codegen.schema_models(schema)
     assert "class Actor:" in models, models
     assert "TABLE = 'actor'" in models, models
+    assert "FIELD_ACTOR_ID = 'actor_id'" in models, models
+    assert "FIELD_FIRST_NAME = 'first_name'" in models, models
+    assert "FIELDS = (FIELD_ACTOR_ID, FIELD_FIRST_NAME)" in models, models
     assert "ACTOR_ID = 'actor.actor_id'" in models, models
     assert "FIRST_NAME = 'actor.first_name'" in models, models
     assert "PRIMARY = ('actor_id',)" in models, models
     assert "__carbon_primary__ = PRIMARY" in models, models
-    assert "'actor_id': ACTOR_ID" in models, models
+    assert "FIELD_ACTOR_ID: ACTOR_ID" in models, models
     assert "__carbon_db_types__ = {" in models, models
     assert "'actor_id': 'smallint'" in models, models
     assert "__carbon_nullable__ = {" in models, models
@@ -483,10 +486,13 @@ def main() -> None:
     assert carbon_codegen.C6C.GREATER_THAN == ">"
     assert carbon_codegen.model_table(actor_model) == "actor"
     assert actor_model.TABLE == "actor"
+    assert actor_model.FIELD_ACTOR_ID == "actor_id"
+    assert actor_model.FIELD_FIRST_NAME == "first_name"
+    assert actor_model.FIELDS == ("actor_id", "first_name")
     assert actor_model.ACTOR_ID == "actor.actor_id"
     assert actor_model.FIRST_NAME == "actor.first_name"
     assert actor_model.COLUMNS["actor_id"] == actor_model.ACTOR_ID
-    assert carbon_codegen.model_column(actor_model, "first_name") == "actor.first_name"
+    assert carbon_codegen.model_column(actor_model, actor_model.FIELD_FIRST_NAME) == "actor.first_name"
     assert carbon_codegen.model_select(actor_model).to_payload() == {
         "FROM": "actor",
         "SELECT": ["actor.actor_id", "actor.first_name"],
@@ -505,7 +511,7 @@ def main() -> None:
     ), constant_built
     assert constant_built["params"] == [0], constant_built
     model_built = (
-        carbon_codegen.model_select(actor_model, "actor_id")
+        carbon_codegen.model_select(actor_model, actor_model.FIELD_ACTOR_ID)
         .where_op(actor_model.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 0)
         .limit(1)
         .compile(schema=schema, dialect="mysql")
