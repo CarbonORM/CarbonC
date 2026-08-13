@@ -121,6 +121,38 @@ expected_join_payload = {
 unless join_payload == expected_join_payload
   raise "unexpected join builder payload: #{join_payload.inspect}"
 end
+expected_force_index_payload = {
+  'FORCE INDEX' => ['idx_county_id', 'idx_property_units_location']
+}
+unless CarbonC.force_index('idx_county_id', 'idx_property_units_location') == expected_force_index_payload
+  raise 'unexpected force index helper payload'
+end
+hint_payload = CarbonC.query('property_units')
+                      .select('property_units.unit_id')
+                      .force_index('idx_county_id', 'idx_property_units_location')
+                      .limit(10)
+                      .to_payload
+expected_hint_payload = {
+  'FROM' => 'property_units',
+  'SELECT' => ['property_units.unit_id'],
+  'INDEX_HINTS' => expected_force_index_payload,
+  'PAGINATION' => {'LIMIT' => 10}
+}
+unless hint_payload == expected_hint_payload
+  raise "unexpected index hint builder payload: #{hint_payload.inspect}"
+end
+hinted_join = CarbonC.query('actor')
+                     .select('actor.actor_id', 'fa.film_id')
+                     .join('INNER', 'film_actor fa', {'fa.actor_id' => ['=', 'actor.actor_id']})
+                     .index_hints(
+                       'actor' => CarbonC.ignore_index('idx_actor_last_name'),
+                       'film_actor fa' => CarbonC.use_index('idx_film_actor_actor_id')
+                     )
+                     .limit(5)
+                     .compile(nil, 'mysql')
+unless hinted_join.fetch('sql') == 'SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) ON ((fa.actor_id) = actor.actor_id) LIMIT 5'
+  raise "unexpected hinted join sql: #{hinted_join.fetch('sql')}"
+end
 recent_actor_ids = CarbonC.query('film_actor')
                           .select('film_actor.actor_id')
                           .where({'film_actor.film_id' => ['>', 10]})

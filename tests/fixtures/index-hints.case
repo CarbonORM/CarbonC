@@ -1,0 +1,8 @@
+-- query
+{"FROM":"property_units","SELECT":["property_units.unit_id"],"INDEX_HINTS":{"FORCE INDEX":["idx_county_id","idx_property_units_location"],"USE_INDEX":"idx_location_lookup"},"WHERE":{"property_units.unit_id":[">",1]},"PAGINATION":{"LIMIT":10}}
+-- sql
+SELECT property_units.unit_id FROM `property_units` FORCE INDEX (`idx_county_id`, `idx_property_units_location`) USE INDEX (`idx_location_lookup`) WHERE (property_units.unit_id) > ? LIMIT 10
+-- params
+[1]
+-- allowlist
+SELECT property_units.unit_id FROM `property_units` FORCE INDEX (`idx_county_id`, `idx_property_units_location`) USE INDEX (`idx_location_lookup`) WHERE (property_units.unit_id) > ? LIMIT ?

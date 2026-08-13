@@ -122,6 +122,35 @@ assert.deepStrictEqual(
     JOIN: {INNER: {'film_actor fa': {'fa.actor_id': ['=', 'actor.actor_id']}}},
   }
 );
+assert.deepStrictEqual(carbon.forceIndex('idx_county_id', 'idx_property_units_location'), {
+  'FORCE INDEX': ['idx_county_id', 'idx_property_units_location'],
+});
+assert.deepStrictEqual(
+  carbon.fromTable('property_units')
+    .select('property_units.unit_id')
+    .forceIndex('idx_county_id', 'idx_property_units_location')
+    .limit(10)
+    .toPayload(),
+  {
+    FROM: 'property_units',
+    SELECT: ['property_units.unit_id'],
+    INDEX_HINTS: {'FORCE INDEX': ['idx_county_id', 'idx_property_units_location']},
+    PAGINATION: {LIMIT: 10},
+  }
+);
+const hintedJoin = carbon.query('actor')
+  .select('actor.actor_id', 'fa.film_id')
+  .join('INNER', 'film_actor fa', {'fa.actor_id': ['=', 'actor.actor_id']})
+  .indexHints({
+    actor: carbon.ignoreIndex('idx_actor_last_name'),
+    'film_actor fa': carbon.useIndex('idx_film_actor_actor_id'),
+  })
+  .limit(5)
+  .compile(undefined, 'mysql');
+assert.strictEqual(
+  hintedJoin.sql,
+  'SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) ON ((fa.actor_id) = actor.actor_id) LIMIT 5'
+);
 const recentActorIds = carbon.query('film_actor')
   .select('film_actor.actor_id')
   .where({'film_actor.film_id': ['>', 10]})

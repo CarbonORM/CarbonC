@@ -103,6 +103,7 @@ The initial compiler supports:
   metadata, including `UPDATE: []` / `DO NOTHING`
 - PostgreSQL `UPDATE ... FROM` for `INNER` joined table aliases
 - PostgreSQL `DELETE ... USING` for `INNER` joined table aliases
+- MySQL `INDEX_HINTS` on base and joined tables, with PostgreSQL no-op emission
 - `PAGINATION.ORDER`, compatible top-level `ORDER`, `LIMIT`, and `PAGE`
 - MySQL and PostgreSQL placeholder styles
 - allowlist normalization for parenthesized bind groups, multi-row `VALUES`
@@ -125,6 +126,10 @@ pagination order declarations are invalid.
 Derived JOIN targets stay ABI-neutral: bindings pass a JSON string key whose
 decoded value is an object containing `SUBSELECT` and `AS`, and the associated
 JOIN value remains the `ON` clause.
+
+`INDEX_HINTS` supports CarbonNode's `FORCE INDEX`, `USE INDEX`, and
+`IGNORE INDEX` hint specs. Target-keyed maps are resolved by alias, `table alias`,
+table, and `__base__` precedence before emitting MySQL syntax.
 
 Unsupported query shapes return `CARBON_STATUS_UNSUPPORTED_QUERY` rather than
 silently compiling weaker SQL.
@@ -173,7 +178,7 @@ wrappers, package-level native payload helpers, typed result adapters,
 read/write/subselect/predicate query-builder facades, boolean-group compiler
 wrapping, typed source generators, model-aware query scaffolds, full-text
 `MATCH_AGAINST` predicates, boolean spatial-function predicates, canonical
-custom-call expressions, expression-valued writes, and binding-friendly
+custom-call expressions, expression-valued writes, MySQL index hints, and binding-friendly
 diagnostic JSON. The next
 implementation step is to cover additional C6 grammar and schema-aware write
 normalization edge cases while importing higher-level package examples from

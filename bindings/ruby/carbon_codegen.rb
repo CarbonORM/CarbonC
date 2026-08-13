@@ -92,6 +92,26 @@ module CarbonC
       join(kind, CarbonC.derived_target(alias_name, subquery), on)
     end
 
+    def index_hints(hints)
+      @payload['INDEX_HINTS'] = copy_payload_value(hints)
+      self
+    end
+
+    def force_index(*indexes)
+      @payload['INDEX_HINTS'] = CarbonC.force_index(*indexes)
+      self
+    end
+
+    def use_index(*indexes)
+      @payload['INDEX_HINTS'] = CarbonC.use_index(*indexes)
+      self
+    end
+
+    def ignore_index(*indexes)
+      @payload['INDEX_HINTS'] = CarbonC.ignore_index(*indexes)
+      self
+    end
+
     def group_by(*expressions)
       @payload['GROUP_BY'] = if expressions.length == 1 && expressions.first.is_a?(Array)
                                expressions.first.dup
@@ -290,6 +310,23 @@ module CarbonC
       payload = [carbon_codegen_match_search_operand(search_value)]
       payload << mode unless mode.nil?
       ['MATCH_AGAINST', payload]
+    end
+
+    def index_hint(kind, *indexes)
+      values = indexes.length == 1 && indexes.first.is_a?(Array) ? indexes.first.dup : indexes
+      {kind => values}
+    end
+
+    def force_index(*indexes)
+      index_hint('FORCE INDEX', *indexes)
+    end
+
+    def use_index(*indexes)
+      index_hint('USE INDEX', *indexes)
+    end
+
+    def ignore_index(*indexes)
+      index_hint('IGNORE INDEX', *indexes)
     end
 
     def exists_spec(outer_column, query, inner_column = nil)

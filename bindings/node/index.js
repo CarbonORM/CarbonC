@@ -173,6 +173,29 @@ function matchAgainst(search, mode) {
   return ['MATCH_AGAINST', payload];
 }
 
+function indexValues(indexes) {
+  if (indexes.length === 1 && Array.isArray(indexes[0])) {
+    return [...indexes[0]];
+  }
+  return [...indexes];
+}
+
+function indexHint(kind, ...indexes) {
+  return {[kind]: indexValues(indexes)};
+}
+
+function forceIndex(...indexes) {
+  return indexHint('FORCE INDEX', ...indexes);
+}
+
+function useIndex(...indexes) {
+  return indexHint('USE INDEX', ...indexes);
+}
+
+function ignoreIndex(...indexes) {
+  return indexHint('IGNORE INDEX', ...indexes);
+}
+
 function existsSpec(outerColumn, query, innerColumn) {
   const spec = [outerColumn, subselectOperand(query)];
   if (innerColumn !== undefined && innerColumn !== null) {
@@ -372,6 +395,26 @@ class CarbonQuery {
 
   joinSubselect(kind, alias, subquery, on) {
     return this.join(kind, derivedTarget(alias, subquery), on);
+  }
+
+  indexHints(hints) {
+    this.payload.INDEX_HINTS = copyPayloadValue(hints);
+    return this;
+  }
+
+  forceIndex(...indexes) {
+    this.payload.INDEX_HINTS = forceIndex(...indexes);
+    return this;
+  }
+
+  useIndex(...indexes) {
+    this.payload.INDEX_HINTS = useIndex(...indexes);
+    return this;
+  }
+
+  ignoreIndex(...indexes) {
+    this.payload.INDEX_HINTS = ignoreIndex(...indexes);
+    return this;
   }
 
   groupBy(...expressions) {
@@ -670,6 +713,14 @@ native.notInList = notInList;
 native.not_in_list = notInList;
 native.matchAgainst = matchAgainst;
 native.match_against = matchAgainst;
+native.indexHint = indexHint;
+native.index_hint = indexHint;
+native.forceIndex = forceIndex;
+native.force_index = forceIndex;
+native.useIndex = useIndex;
+native.use_index = useIndex;
+native.ignoreIndex = ignoreIndex;
+native.ignore_index = ignoreIndex;
 native.existsSpec = existsSpec;
 native.exists_spec = existsSpec;
 native.exists = exists;

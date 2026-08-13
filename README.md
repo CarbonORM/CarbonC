@@ -77,6 +77,8 @@ Supported in this slice:
   CarbonNode known functions, and canonical `CALL` custom-function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
   `RIGHT_OUTER` table aliases and stringified derived targets
+- MySQL `INDEX_HINTS` for base and joined tables, including CarbonNode-compatible
+  `FORCE INDEX`, `USE INDEX`, and `IGNORE INDEX` shapes
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
   `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `MATCH_AGAINST`, `LIT`,
   `PARAM`, and boolean spatial-function predicates
@@ -116,6 +118,11 @@ declarations are rejected.
 Derived JOIN targets use the same JSON-only ABI as other compiler inputs: the
 JOIN target key is a stringified object with `SUBSELECT` and `AS`, while the
 JOIN target value remains the `ON` clause.
+
+`INDEX_HINTS` accepts CarbonNode's base hint form (`["idx"]`, `"idx"`, or an
+object keyed by `FORCE INDEX`, `USE INDEX`, and `IGNORE INDEX`) and target-keyed
+maps for joined tables. MySQL emits hints after the base table or joined alias;
+PostgreSQL accepts the payload and emits no hint syntax.
 
 Write support accepts explicit operation keys such as `INSERT`, `REPLACE`,
 `UPDATE`, and `DELETE`. It also accepts CarbonNode-style root-level POST rows
@@ -301,7 +308,8 @@ subselect helpers, derived `join_subselect` targets, advanced predicate helpers
 `where_match_against`, `where_exists`, `where_not_exists`), composable boolean group helpers
 (`condition`, `and_`, `or_`, `where_and`, `where_or`), expression helpers
 (`fn`, `custom_call`, `call`, `lit`, `param`, `st_contains`, `st_within`,
-`mbr_contains`), limit/page, and order controls.
+`mbr_contains`), index hint helpers (`index_hints`, `force_index`,
+`use_index`, `ignore_index`), limit/page, and order controls.
 `compile_query_result()` returns the same fields as the raw result plus decoded
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
 metadata into Python annotations such as
@@ -372,7 +380,9 @@ predicate helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`,
 helpers (`carbon_condition`, `carbon_and_group`, `carbon_or_group`, `whereAnd`,
 `whereOr`), expression helpers (`carbon_fn`, `carbon_custom_call`,
 `carbon_call`, `carbon_lit`, `carbon_param`, `carbon_st_contains`,
-`carbon_st_within`, `carbon_mbr_contains`), limit/page, and order controls.
+`carbon_st_within`, `carbon_mbr_contains`), index hint helpers
+(`indexHints`, `forceIndex`, `useIndex`, `ignoreIndex`, `carbon_force_index`,
+`carbon_use_index`, `carbon_ignore_index`), limit/page, and order controls.
 `carbon_compile_query_result()`
 returns the same fields as the
 raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
@@ -393,7 +403,8 @@ php -d extension=bindings/php/modules/carbon.so examples/php/index.php
 The extension exposes `carbon_version()`, `carbon_hello_world()`,
 `carbon_status_code()`, `carbon_status_message()`, `carbon_compile_query()`,
 `carbon_compile_query_value()`, `carbon_compile_query_result()`,
-`carbon_adapt_compile_result()`, `carbon_query()`, `carbon_schema_metadata()`,
+`carbon_adapt_compile_result()`, `carbon_query()`, `carbon_force_index()`,
+`carbon_use_index()`, `carbon_ignore_index()`, `carbon_schema_metadata()`,
 and `carbon_normalize_allowlist_sql()`.
 
 ## Node Binding
@@ -449,7 +460,8 @@ helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
 `whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group helpers
 (`condition`, `andGroup`, `orGroup`, `whereAnd`, `whereOr`), expression helpers
 (`fn`, `customCall`, `call`, `lit`, `param`, `stContains`, `stWithin`,
-`mbrContains`), limit/page, and order controls.
+`mbrContains`), index hint helpers (`indexHints`, `forceIndex`, `useIndex`,
+`ignoreIndex`), limit/page, and order controls.
 `compileQueryResult()` returns the same fields as the raw result
 plus decoded JavaScript `params` and `diagnostics` values. The generated
 TypeScript source maps DB metadata into primitive field types and adds `dbTypes`
@@ -471,8 +483,8 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `fromTable()`, `subselect()`, `derivedTarget()`, `op()`, `lit()`, `param()`,
 `call()`, `alias()`, `distinct()`, `between()`, `inList()`, `existsSpec()`,
 `exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
-`modelQuery()`, `modelSelect()`, `modelColumn()`, `schemaMetadata()`,
-`schemaModels()`, and
+`forceIndex()`, `useIndex()`, `ignoreIndex()`, `modelQuery()`, `modelSelect()`,
+`modelColumn()`, `schemaMetadata()`, `schemaModels()`, and
 `normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
 
 ## Ruby Binding
@@ -531,7 +543,8 @@ predicate helpers (`where_op`, `where_in`, `where_not_in`, `where_between`,
 group helpers (`CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
 `where_and`, `where_or`), expression helpers (`CarbonC.fn`,
 `CarbonC.custom_call`, `CarbonC.call`, `CarbonC.lit`, `CarbonC.param`,
-`CarbonC.st_contains`, `CarbonC.st_within`, `CarbonC.mbr_contains`), limit/page,
+`CarbonC.st_contains`, `CarbonC.st_within`, `CarbonC.mbr_contains`), index hint
+helpers (`index_hints`, `force_index`, `use_index`, `ignore_index`), limit/page,
 and order controls.
 `CarbonC.compile_query_result` returns the same fields as the raw
 result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
@@ -557,6 +570,7 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.distinct`, `CarbonC.between`, `CarbonC.in_list`,
 `CarbonC.exists_spec`, `CarbonC.exists`, `CarbonC.not_exists`,
 `CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
+`CarbonC.force_index`, `CarbonC.use_index`, `CarbonC.ignore_index`,
 `CarbonC.model_query`, `CarbonC.model_select`, `CarbonC.model_column`,
 `CarbonC.schema_metadata`, and
 `CarbonC.normalize_allowlist_sql`.

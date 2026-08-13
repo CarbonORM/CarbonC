@@ -127,6 +127,31 @@ static void test_identifier_rejection(void) {
     carbon_context_free(context);
 }
 
+static void test_index_hints_reject_invalid_index_name(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] =
+            "{\"FROM\":\"actor\","
+            "\"SELECT\":[\"actor.actor_id\"],"
+            "\"INDEX_HINTS\":{\"FORCE INDEX\":[\"idx_actor_id\",\"bad-name\"]}}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
+    assert(result.status == CARBON_STATUS_INVALID_QUERY);
+    assert_buffer_equals(&result.error, "invalid query");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
 static void test_allowlist_normalizer(void) {
     carbon_buffer out;
     carbon_buffer error;
@@ -1413,6 +1438,8 @@ static void test_golden_fixtures(void) {
     run_fixture("top-level-order");
     run_fixture("root-order-limit-page");
     run_fixture("spatial-order");
+    run_fixture("index-hints");
+    run_fixture("join-index-hints");
     run_fixture("where-spatial-predicates");
     run_fixture("where-in-between");
     run_fixture("where-boolean-groups");
@@ -1443,6 +1470,7 @@ int main(void) {
     test_mysql_select_where_limit();
     test_postgresql_select_string_param();
     test_identifier_rejection();
+    test_index_hints_reject_invalid_index_name();
     test_allowlist_normalizer();
     test_schema_metadata_normalizer();
     test_schema_metadata_rejects_invalid_columns();

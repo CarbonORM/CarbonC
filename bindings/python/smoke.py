@@ -121,6 +121,40 @@ def main() -> None:
         "SELECT": ["actor.actor_id"],
         "JOIN": {"INNER": {"film_actor fa": {"fa.actor_id": ["=", "actor.actor_id"]}}},
     }, join_payload
+    assert carbon_codegen.force_index("idx_county_id", "idx_property_units_location") == {
+        "FORCE INDEX": ["idx_county_id", "idx_property_units_location"]
+    }
+    hint_payload = (
+        carbon_codegen.from_table("property_units")
+        .select("property_units.unit_id")
+        .force_index("idx_county_id", "idx_property_units_location")
+        .limit(10)
+        .to_payload()
+    )
+    assert hint_payload == {
+        "FROM": "property_units",
+        "SELECT": ["property_units.unit_id"],
+        "INDEX_HINTS": {"FORCE INDEX": ["idx_county_id", "idx_property_units_location"]},
+        "PAGINATION": {"LIMIT": 10},
+    }, hint_payload
+    hinted_join = (
+        carbon_codegen.query("actor")
+        .select("actor.actor_id", "fa.film_id")
+        .join("INNER", "film_actor fa", {"fa.actor_id": ["=", "actor.actor_id"]})
+        .index_hints(
+            {
+                "actor": carbon_codegen.ignore_index("idx_actor_last_name"),
+                "film_actor fa": carbon_codegen.use_index("idx_film_actor_actor_id"),
+            }
+        )
+        .limit(5)
+        .compile(dialect="mysql")
+    )
+    assert hinted_join["sql"] == (
+        "SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) "
+        "INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) "
+        "ON ((fa.actor_id) = actor.actor_id) LIMIT 5"
+    ), hinted_join
     recent_actor_ids = (
         carbon_codegen.query("film_actor")
         .select("film_actor.actor_id")

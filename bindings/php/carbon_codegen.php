@@ -167,6 +167,34 @@ if (!function_exists('carbon_schema_models')) {
         return ['MATCH_AGAINST', $payload];
     }
 
+    function carbon_codegen_index_values(array $indexes): array
+    {
+        if (count($indexes) === 1 && is_array($indexes[0])) {
+            return array_values($indexes[0]);
+        }
+        return array_values($indexes);
+    }
+
+    function carbon_index_hint(string $kind, ...$indexes): array
+    {
+        return [$kind => carbon_codegen_index_values($indexes)];
+    }
+
+    function carbon_force_index(...$indexes): array
+    {
+        return carbon_index_hint('FORCE INDEX', ...$indexes);
+    }
+
+    function carbon_use_index(...$indexes): array
+    {
+        return carbon_index_hint('USE INDEX', ...$indexes);
+    }
+
+    function carbon_ignore_index(...$indexes): array
+    {
+        return carbon_index_hint('IGNORE INDEX', ...$indexes);
+    }
+
     function carbon_exists_spec(string $outerColumn, $query, ?string $innerColumn = null): array
     {
         $spec = [$outerColumn, carbon_codegen_subselect_operand($query)];
@@ -424,6 +452,30 @@ if (!function_exists('carbon_schema_models')) {
             public function joinSubselect(string $kind, string $alias, $query, array $on): self
             {
                 return $this->join($kind, carbon_derived_target($alias, $query), $on);
+            }
+
+            public function indexHints($hints): self
+            {
+                $this->payload['INDEX_HINTS'] = $hints;
+                return $this;
+            }
+
+            public function forceIndex(...$indexes): self
+            {
+                $this->payload['INDEX_HINTS'] = carbon_force_index(...$indexes);
+                return $this;
+            }
+
+            public function useIndex(...$indexes): self
+            {
+                $this->payload['INDEX_HINTS'] = carbon_use_index(...$indexes);
+                return $this;
+            }
+
+            public function ignoreIndex(...$indexes): self
+            {
+                $this->payload['INDEX_HINTS'] = carbon_ignore_index(...$indexes);
+                return $this;
             }
 
             public function groupBy(...$expressions): self

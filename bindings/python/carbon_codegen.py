@@ -134,6 +134,22 @@ class Query:
     def join_subselect(self, kind: str, alias: str, subquery: Any, on: Mapping[str, Any]) -> "Query":
         return self.join(kind, derived_target(alias, subquery), on)
 
+    def index_hints(self, hints: Any) -> "Query":
+        self._payload["INDEX_HINTS"] = self._copy_payload_value(hints)
+        return self
+
+    def force_index(self, *indexes: Any) -> "Query":
+        self._payload["INDEX_HINTS"] = force_index(*indexes)
+        return self
+
+    def use_index(self, *indexes: Any) -> "Query":
+        self._payload["INDEX_HINTS"] = use_index(*indexes)
+        return self
+
+    def ignore_index(self, *indexes: Any) -> "Query":
+        self._payload["INDEX_HINTS"] = ignore_index(*indexes)
+        return self
+
     def group_by(self, *expressions: Any) -> "Query":
         if len(expressions) == 1 and isinstance(expressions[0], (list, tuple)):
             self._payload["GROUP_BY"] = list(expressions[0])
@@ -355,6 +371,26 @@ def match_against(search: Any, mode: str | None = None) -> list[Any]:
     return ["MATCH_AGAINST", payload]
 
 
+def index_hint(kind: str, *indexes: Any) -> dict[str, list[Any]]:
+    if len(indexes) == 1 and isinstance(indexes[0], (list, tuple)):
+        values = list(indexes[0])
+    else:
+        values = list(indexes)
+    return {kind: values}
+
+
+def force_index(*indexes: Any) -> dict[str, list[Any]]:
+    return index_hint("FORCE INDEX", *indexes)
+
+
+def use_index(*indexes: Any) -> dict[str, list[Any]]:
+    return index_hint("USE INDEX", *indexes)
+
+
+def ignore_index(*indexes: Any) -> dict[str, list[Any]]:
+    return index_hint("IGNORE INDEX", *indexes)
+
+
 def exists_spec(outer_column: str, query: Any, inner_column: str | None = None) -> list[Any]:
     spec = [outer_column, _subselect_operand(query)]
     if inner_column is not None:
@@ -573,9 +609,12 @@ __all__ = [
     "exists",
     "exists_spec",
     "fn",
+    "force_index",
     "from_table",
     "group",
+    "ignore_index",
     "in_",
+    "index_hint",
     "lit",
     "match_against",
     "mbr_contains",
@@ -596,4 +635,5 @@ __all__ = [
     "st_contains",
     "st_within",
     "subselect",
+    "use_index",
 ]
