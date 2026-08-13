@@ -5,12 +5,15 @@ if (!extension_loaded('carbon')) {
     exit(1);
 }
 
+require_once __DIR__ . '/../../bindings/php/carbon_codegen.php';
+
 echo carbon_version();
 echo PHP_EOL;
 
 $schema = [
     'TABLES' => [
         'actor' => [
+            'PRIMARY_SHORT' => ['actor_id'],
             'COLUMNS' => [
                 'actor.actor_id' => 'actor_id',
                 'actor.first_name' => 'first_name',
@@ -37,3 +40,4 @@ echo $result['sql'] . PHP_EOL;
 echo $result['params_json'] . PHP_EOL;
 echo $result['allowlist_key'] . PHP_EOL;
 echo carbon_schema_metadata(json_encode($schema)) . PHP_EOL;
+echo carbon_schema_models($schema, 'CarbonORM\\Generated') . PHP_EOL;

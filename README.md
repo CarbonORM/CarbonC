@@ -60,6 +60,8 @@ Supported in this slice:
 
 - schema metadata normalization into deterministic JSON for generated binding
   types
+- package-level source generation helpers for Python dataclasses, TypeScript
+  interfaces, PHP model classes, and Ruby Struct models
 - `FROM` / legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
@@ -183,11 +185,13 @@ ctest --test-dir build --output-on-failure
 The Python binding wraps the same C ABI from
 `bindings/python/carbon_python.c` and returns a plain Python `dict` with
 `status`, `status_code`, `sql`, `params_json`, `allowlist_key`, and `error`
-fields:
+fields. `bindings/python/carbon_codegen.py` adds package-level source
+generation helpers over the normalized schema metadata:
 
 ```python
 import json
 import carbon
+import carbon_codegen
 
 result = carbon.compile_query(
     json.dumps({"FROM": "actor", "SELECT": ["actor.actor_id"]}),
@@ -200,9 +204,20 @@ result = carbon.compile_query(
 )
 metadata_json = carbon.schema_metadata(json.dumps({
     "TABLES": {
-        "actor": {"COLUMNS": {"actor.actor_id": "actor_id"}}
+        "actor": {
+            "PRIMARY_SHORT": ["actor_id"],
+            "COLUMNS": {"actor.actor_id": "actor_id"}
+        }
     }
 }))
+dataclass_source = carbon_codegen.schema_models({
+    "TABLES": {
+        "actor": {
+            "PRIMARY_SHORT": ["actor_id"],
+            "COLUMNS": {"actor.actor_id": "actor_id"}
+        }
+    }
+})
 ```
 
 Build and smoke-test it from the repository root:
@@ -215,23 +230,41 @@ PYTHONPATH=bindings/python python3 bindings/python/smoke.py
 ## PHP Binding
 
 The PHP extension wraps the same compile result shape from
-`bindings/php/carbon_php.c` as an associative array:
+`bindings/php/carbon_php.c` as an associative array. The
+`bindings/php/carbon_codegen.php` helper generates native PHP model class
+source over `carbon_schema_metadata()`:
 
 ```php
+require_once __DIR__ . "/bindings/php/carbon_codegen.php";
+
 $result = carbon_compile_query(
     json_encode(["FROM" => "actor", "SELECT" => ["actor.actor_id"]]),
     json_encode([
         "TABLES" => [
-            "actor" => ["COLUMNS" => ["actor.actor_id" => "actor_id"]],
+            "actor" => [
+                "PRIMARY_SHORT" => ["actor_id"],
+                "COLUMNS" => ["actor.actor_id" => "actor_id"],
+            ],
         ],
     ]),
     "mysql"
 );
 $metadataJson = carbon_schema_metadata(json_encode([
     "TABLES" => [
-        "actor" => ["COLUMNS" => ["actor.actor_id" => "actor_id"]],
+        "actor" => [
+            "PRIMARY_SHORT" => ["actor_id"],
+            "COLUMNS" => ["actor.actor_id" => "actor_id"],
+        ],
     ],
 ]));
+$modelSource = carbon_schema_models([
+    "TABLES" => [
+        "actor" => [
+            "PRIMARY_SHORT" => ["actor_id"],
+            "COLUMNS" => ["actor.actor_id" => "actor_id"],
+        ],
+    ],
+], "CarbonORM\\Generated");
 ```
 
 Build and smoke-test it from the repository root:
@@ -249,7 +282,8 @@ The extension exposes `carbon_version()`, `carbon_hello_world()`,
 ## Node Binding
 
 The Node binding uses plain N-API from `bindings/node/carbon_node.cpp` and
-exports camelCase methods plus snake_case aliases:
+exports camelCase methods plus snake_case aliases. `bindings/node/index.js`
+adds a package-level TypeScript source generator:
 
 ```js
 const carbon = require('./bindings/node');
@@ -258,16 +292,30 @@ const result = carbon.compileQuery(
   JSON.stringify({FROM: 'actor', SELECT: ['actor.actor_id']}),
   JSON.stringify({
     TABLES: {
-      actor: {COLUMNS: {'actor.actor_id': 'actor_id'}},
+      actor: {
+        PRIMARY_SHORT: ['actor_id'],
+        COLUMNS: {'actor.actor_id': 'actor_id'},
+      },
     },
   }),
   'mysql'
 );
 const metadataJson = carbon.schemaMetadata(JSON.stringify({
   TABLES: {
-    actor: {COLUMNS: {'actor.actor_id': 'actor_id'}},
+    actor: {
+      PRIMARY_SHORT: ['actor_id'],
+      COLUMNS: {'actor.actor_id': 'actor_id'},
+    },
   },
 }));
+const typeSource = carbon.schemaModels({
+  TABLES: {
+    actor: {
+      PRIMARY_SHORT: ['actor_id'],
+      COLUMNS: {'actor.actor_id': 'actor_id'},
+    },
+  },
+});
 ```
 
 Build and smoke-test it from the repository root:
@@ -279,32 +327,48 @@ node examples/node/index.js
 ```
 
 The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
-`statusCode()`, `compileQuery()`, `schemaMetadata()`, and
+`statusCode()`, `compileQuery()`, `schemaMetadata()`, `schemaModels()`, and
 `normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
 
 ## Ruby Binding
 
 The Ruby extension wraps the same compile result shape from
-`bindings/ruby/carbon_ruby.c` as a `Hash` with string keys:
+`bindings/ruby/carbon_ruby.c` as a `Hash` with string keys. The
+`bindings/ruby/carbon_codegen.rb` helper generates Ruby Struct model source
+over `CarbonC.schema_metadata`:
 
 ```ruby
 require 'json'
-require_relative './bindings/ruby/carbon'
+require_relative './bindings/ruby/carbon_codegen'
 
 result = CarbonC.compile_query(
   JSON.generate({'FROM' => 'actor', 'SELECT' => ['actor.actor_id']}),
   JSON.generate({
     'TABLES' => {
-      'actor' => {'COLUMNS' => {'actor.actor_id' => 'actor_id'}}
+      'actor' => {
+        'PRIMARY_SHORT' => ['actor_id'],
+        'COLUMNS' => {'actor.actor_id' => 'actor_id'}
+      }
     }
   }),
   'mysql'
 )
 metadata_json = CarbonC.schema_metadata(JSON.generate({
   'TABLES' => {
-    'actor' => {'COLUMNS' => {'actor.actor_id' => 'actor_id'}}
+    'actor' => {
+      'PRIMARY_SHORT' => ['actor_id'],
+      'COLUMNS' => {'actor.actor_id' => 'actor_id'}
+    }
   }
 }))
+model_source = CarbonC.schema_models({
+  'TABLES' => {
+    'actor' => {
+      'PRIMARY_SHORT' => ['actor_id'],
+      'COLUMNS' => {'actor.actor_id' => 'actor_id'}
+    }
+  }
+})
 ```
 
 Build and smoke-test it from the repository root:
@@ -321,7 +385,8 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 ## Next Milestones
 
-1. Generate package-native type/model surfaces from normalized schema metadata.
+1. Expand generated model/type surfaces with scalar DB types and nullability
+   once schema metadata carries that information.
 2. Expand schema validation to binding-friendly diagnostic paths.
 3. Add package-level ergonomics for each binding without moving DB execution
    into C.

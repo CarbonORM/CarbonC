@@ -1,14 +1,16 @@
 import json
 
 import carbon
+import carbon_codegen
 
 
 schema = {
-    "TABLES": {
-        "actor": {
-            "COLUMNS": {
-                "actor.actor_id": "actor_id",
-                "actor.first_name": "first_name",
+        "TABLES": {
+            "actor": {
+                "PRIMARY_SHORT": ["actor_id"],
+                "COLUMNS": {
+                    "actor.actor_id": "actor_id",
+                    "actor.first_name": "first_name",
             }
         }
     }
@@ -30,3 +32,4 @@ print(result["sql"])
 print(result["params_json"])
 print(result["allowlist_key"])
 print(carbon.schema_metadata(json.dumps(schema)))
+print(carbon_codegen.schema_models(schema))

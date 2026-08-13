@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
 require 'json'
-require_relative 'carbon'
+require_relative 'carbon_codegen'
 
 schema = {
   'TABLES' => {
     'actor' => {
+      'PRIMARY_SHORT' => ['actor_id'],
       'COLUMNS' => {
         'actor.actor_id' => 'actor_id',
         'actor.first_name' => 'first_name'
@@ -45,11 +46,16 @@ expected_metadata = {
         {'name' => 'actor_id', 'qualified' => 'actor.actor_id'},
         {'name' => 'first_name', 'qualified' => 'actor.first_name'}
       ],
-      'primary' => []
+      'primary' => ['actor_id']
     }
   ]
 }
 raise "unexpected metadata: #{metadata.inspect}" unless metadata == expected_metadata
+models = CarbonC.schema_models(schema)
+raise "unexpected model source: #{models}" unless models.include?('module CarbonModels')
+raise "unexpected model source: #{models}" unless models.include?('Actor = Struct.new(:actor_id, :first_name, keyword_init: true)')
+raise "unexpected model source: #{models}" unless models.include?('PRIMARY = ["actor_id"].freeze')
+raise "unexpected model source: #{models}" unless models.include?('"actor_id" => "actor.actor_id"')
 
 rejected = CarbonC.compile_query(
   JSON.generate({'FROM' => 'actor', 'SELECT' => ['actor.last_name']}),

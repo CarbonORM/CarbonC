@@ -5,6 +5,8 @@ if (!extension_loaded('carbon')) {
     exit(1);
 }
 
+require_once __DIR__ . '/carbon_codegen.php';
+
 function carbon_assert(bool $condition, string $message): void
 {
     if (!$condition) {
@@ -16,6 +18,7 @@ function carbon_assert(bool $condition, string $message): void
 $schema = [
     'TABLES' => [
         'actor' => [
+            'PRIMARY_SHORT' => ['actor_id'],
             'COLUMNS' => [
                 'actor.actor_id' => 'actor_id',
                 'actor.first_name' => 'first_name',
@@ -54,12 +57,17 @@ carbon_assert(
                     ['name' => 'actor_id', 'qualified' => 'actor.actor_id'],
                     ['name' => 'first_name', 'qualified' => 'actor.first_name'],
                 ],
-                'primary' => [],
+                'primary' => ['actor_id'],
             ],
         ],
     ],
     'unexpected metadata: ' . json_encode($metadata)
 );
+$models = carbon_schema_models($schema, 'CarbonORM\\Generated');
+carbon_assert(strpos($models, 'namespace CarbonORM\\Generated;') !== false, 'expected generated namespace');
+carbon_assert(strpos($models, 'final class Actor') !== false, 'expected generated Actor class');
+carbon_assert(strpos($models, "public const PRIMARY = ['actor_id'];") !== false, 'expected generated primary metadata');
+carbon_assert(strpos($models, 'public $actor_id;') !== false, 'expected generated actor_id property');
 
 $rejected = carbon_compile_query(
     json_encode(['FROM' => 'actor', 'SELECT' => ['actor.last_name']]),

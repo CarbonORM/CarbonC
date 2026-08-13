@@ -6,6 +6,7 @@ const carbon = require('./');
 const schema = {
   TABLES: {
     actor: {
+      PRIMARY_SHORT: ['actor_id'],
       COLUMNS: {
         'actor.actor_id': 'actor_id',
         'actor.first_name': 'first_name',
@@ -46,7 +47,7 @@ assert.deepStrictEqual(JSON.parse(carbon.schemaMetadata(JSON.stringify(schema)))
         {name: 'actor_id', qualified: 'actor.actor_id'},
         {name: 'first_name', qualified: 'actor.first_name'},
       ],
-      primary: [],
+      primary: ['actor_id'],
     },
   ],
 });
@@ -54,6 +55,12 @@ assert.strictEqual(
   carbon.schema_metadata(JSON.stringify({})),
   '{"tables":[]}'
 );
+const modelSource = carbon.schemaModels(schema);
+assert(modelSource.includes('export interface Actor'));
+assert(modelSource.includes('actor_id: unknown;'));
+assert(modelSource.includes('export const ActorMeta = {'));
+assert(modelSource.includes('primary: ["actor_id"],'));
+assert.strictEqual(carbon.schema_models({}), '');
 
 const aliasResult = carbon.compile_query(JSON.stringify(query), JSON.stringify(schema), 'mysql');
 assert.deepStrictEqual(aliasResult, result);

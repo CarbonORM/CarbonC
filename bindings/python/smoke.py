@@ -1,12 +1,14 @@
 import json
 
 import carbon
+import carbon_codegen
 
 
 def main() -> None:
     schema = {
         "TABLES": {
             "actor": {
+                "PRIMARY_SHORT": ["actor_id"],
                 "COLUMNS": {
                     "actor.actor_id": "actor_id",
                     "actor.first_name": "first_name",
@@ -42,10 +44,15 @@ def main() -> None:
                     {"name": "actor_id", "qualified": "actor.actor_id"},
                     {"name": "first_name", "qualified": "actor.first_name"},
                 ],
-                "primary": [],
+                "primary": ["actor_id"],
             }
         ]
     }, metadata
+    models = carbon_codegen.schema_models(schema)
+    assert "class Actor:" in models, models
+    assert "__carbon_primary__ = ('actor_id',)" in models, models
+    assert "'actor_id': 'actor.actor_id'" in models, models
+    assert "actor_id: Any = None" in models, models
 
     rejected = carbon.compile_query(
         json.dumps({"FROM": "actor", "SELECT": ["actor.last_name"]}),

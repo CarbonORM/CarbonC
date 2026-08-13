@@ -10,6 +10,7 @@ setup(
     name="carbonc",
     version="0.1.0",
     description="Python bindings for the CarbonC portable CarbonORM kernel",
+    py_modules=["carbon_codegen"],
     ext_modules=[
         Extension(
             "carbon",

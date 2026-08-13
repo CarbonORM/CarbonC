@@ -7,6 +7,7 @@ console.log(carbon.version());
 const schema = {
   TABLES: {
     actor: {
+      PRIMARY_SHORT: ['actor_id'],
       COLUMNS: {
         'actor.actor_id': 'actor_id',
         'actor.first_name': 'first_name',
@@ -33,3 +34,4 @@ console.log(result.sql);
 console.log(result.params_json);
 console.log(result.allowlist_key);
 console.log(carbon.schemaMetadata(JSON.stringify(schema)));
+console.log(carbon.schemaModels(schema));

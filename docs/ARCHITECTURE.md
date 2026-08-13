@@ -24,10 +24,12 @@ Bindings own runtime integration:
 - native model classes and generated types
 - exception mapping
 
-The initial Python, PHP, Node, and Ruby bindings are intentionally thin: they
-call the C compiler, return SQL, params JSON, allowlist key, numeric status,
-stable status code, error fields, and normalized schema metadata, and leave DB
-execution and native type generation to the language package layer.
+The initial Python, PHP, Node, and Ruby bindings keep the native extensions
+thin: they call the C compiler, return SQL, params JSON, allowlist key, numeric
+status, stable status code, error fields, and normalized schema metadata. The
+package layer around those extensions owns source generators for Python
+dataclasses, TypeScript interfaces, PHP model classes, and Ruby Struct models.
+DB execution remains outside CarbonC.
 
 This keeps the C ABI stable and keeps each language package idiomatic.
 
@@ -64,6 +66,8 @@ The initial compiler supports:
 
 - schema metadata normalization into deterministic JSON for generated binding
   types
+- package-level source generators for Python dataclasses, TypeScript
+  interfaces, PHP model classes, and Ruby Struct models
 - `dialect`: `mysql`, `postgresql`, or `postgres`
 - `FROM` or legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
@@ -104,6 +108,9 @@ silently compiling weaker SQL.
 with ordered table names, ordered `columns` entries (`name` plus `qualified`),
 and `primary` short-column names. Bindings can parse that shape to generate
 language-native models without duplicating C6 schema interpretation.
+The first package generators intentionally emit source with `unknown`, `Any`, or
+untyped properties because CarbonC does not yet expose scalar DB types or
+nullability in the metadata contract.
 
 PostgreSQL write support covers simple insert/update/delete forms, multi-row
 `INSERT ... RETURNING *`, and schema-derived `ON CONFLICT` targets in this
@@ -132,7 +139,7 @@ syntax-only behavior so language bindings can adopt the validator incrementally.
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
-wrappers. The next implementation step is to turn normalized schema metadata
-into package-native type/model surfaces, add binding-friendly diagnostic paths,
-cover schema-aware write normalization edge cases, and improve package-level
-ergonomics.
+wrappers and package-level source generators. The next implementation step is
+to enrich schema metadata with scalar DB types and nullability, add
+binding-friendly diagnostic paths, cover schema-aware write normalization edge
+cases, and improve package-level ergonomics.

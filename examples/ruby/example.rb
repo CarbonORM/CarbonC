@@ -1,13 +1,14 @@
 # frozen_string_literal: true
 
 require 'json'
-require_relative '../../bindings/ruby/carbon'
+require_relative '../../bindings/ruby/carbon_codegen'
 
 puts CarbonC.version
 
 schema = {
   'TABLES' => {
     'actor' => {
+      'PRIMARY_SHORT' => ['actor_id'],
       'COLUMNS' => {
         'actor.actor_id' => 'actor_id',
         'actor.first_name' => 'first_name'
@@ -34,3 +35,4 @@ puts result.fetch('sql')
 puts result.fetch('params_json')
 puts result.fetch('allowlist_key')
 puts CarbonC.schema_metadata(JSON.generate(schema))
+puts CarbonC.schema_models(schema)
