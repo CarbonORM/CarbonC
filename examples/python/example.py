@@ -1,38 +1,16 @@
-import json
-
 import carbon
 import carbon_codegen
 
 
-schema = {
-    "TABLES": {
-        "actor": {
-            "PRIMARY_SHORT": ["actor_id"],
-            "COLUMNS": {
-                "actor.actor_id": "actor_id",
-                "actor.first_name": "first_name",
-            },
-            "TYPE_VALIDATION": {
-                "actor.actor_id": {
-                    "COLUMN_NAME": "actor_id",
-                    "MYSQL_TYPE": "smallint",
-                    "MAX_LENGTH": "",
-                    "AUTO_INCREMENT": True,
-                    "NOT_NULL": True,
-                    "SKIP_COLUMN_IN_POST": False,
-                },
-                "actor.first_name": {
-                    "COLUMN_NAME": "first_name",
-                    "MYSQL_TYPE": "varchar",
-                    "MAX_LENGTH": "45",
-                    "AUTO_INCREMENT": False,
-                    "NOT_NULL": True,
-                    "SKIP_COLUMN_IN_POST": False,
-                },
-            },
-        }
-    }
-}
+SCHEMA_DUMP = """
+CREATE TABLE `actor` (
+  `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
+  `first_name` varchar(45) NOT NULL,
+  PRIMARY KEY (`actor_id`)
+);
+"""
+
+schema = carbon.schema_from_dump(SCHEMA_DUMP)
 
 generated_models: dict[str, object] = {}
 exec(carbon_codegen.schema_models(schema), generated_models)
@@ -63,5 +41,5 @@ print(result["sql"])
 print(result["params"])
 print(result["allowlist_key"])
 print(result["diagnostics"])
-print(carbon.schema_metadata(json.dumps(schema)))
+print(carbon.schema_metadata(schema))
 print(carbon_codegen.schema_models(schema))

@@ -295,6 +295,114 @@ static void test_schema_metadata_type_validation(void) {
     carbon_buffer_free(&error);
 }
 
+static void test_schema_from_dump(void) {
+    const char dump[] =
+            "-- MySQL-style dump\n"
+            "CREATE TABLE `actor` (\n"
+            "  `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,\n"
+            "  `first_name` varchar(45) NOT NULL,\n"
+            "  /* column block comment, including a comma */\n"
+            "  `last_name` varchar(45) DEFAULT NULL,\n"
+            "  PRIMARY KEY (`actor_id`)\n"
+            ") ENGINE=InnoDB;\n"
+            "CREATE TABLE public.film_actor (\n"
+            "  actor_id int NOT NULL,\n"
+            "  film_id int NOT NULL,\n"
+            "  PRIMARY KEY (actor_id, film_id)\n"
+            ");\n";
+    carbon_buffer schema;
+    carbon_buffer metadata;
+    carbon_buffer error;
+
+    assert(carbon_schema_from_dump(dump, sizeof(dump) - 1, &schema, &error) == CARBON_STATUS_OK);
+    assert_buffer_equals(&schema,
+                         "{\"TABLES\":{"
+                         "\"actor\":{"
+                         "\"PRIMARY_SHORT\":[\"actor_id\"],"
+                         "\"COLUMNS\":{"
+                         "\"actor.actor_id\":\"actor_id\","
+                         "\"actor.first_name\":\"first_name\","
+                         "\"actor.last_name\":\"last_name\""
+                         "},"
+                         "\"TYPE_VALIDATION\":{"
+                         "\"actor.actor_id\":{\"COLUMN_NAME\":\"actor_id\","
+                         "\"MYSQL_TYPE\":\"smallint\",\"AUTO_INCREMENT\":true,"
+                         "\"NOT_NULL\":true,\"SKIP_COLUMN_IN_POST\":true},"
+                         "\"actor.first_name\":{\"COLUMN_NAME\":\"first_name\","
+                         "\"MYSQL_TYPE\":\"varchar\",\"MAX_LENGTH\":\"45\","
+                         "\"AUTO_INCREMENT\":false,\"NOT_NULL\":true,"
+                         "\"SKIP_COLUMN_IN_POST\":false},"
+                         "\"actor.last_name\":{\"COLUMN_NAME\":\"last_name\","
+                         "\"MYSQL_TYPE\":\"varchar\",\"MAX_LENGTH\":\"45\","
+                         "\"AUTO_INCREMENT\":false,\"NOT_NULL\":false,"
+                         "\"SKIP_COLUMN_IN_POST\":false}"
+                         "}"
+                         "},"
+                         "\"film_actor\":{"
+                         "\"PRIMARY_SHORT\":[\"actor_id\",\"film_id\"],"
+                         "\"COLUMNS\":{"
+                         "\"film_actor.actor_id\":\"actor_id\","
+                         "\"film_actor.film_id\":\"film_id\""
+                         "},"
+                         "\"TYPE_VALIDATION\":{"
+                         "\"film_actor.actor_id\":{\"COLUMN_NAME\":\"actor_id\","
+                         "\"MYSQL_TYPE\":\"int\",\"AUTO_INCREMENT\":false,"
+                         "\"NOT_NULL\":true,\"SKIP_COLUMN_IN_POST\":false},"
+                         "\"film_actor.film_id\":{\"COLUMN_NAME\":\"film_id\","
+                         "\"MYSQL_TYPE\":\"int\",\"AUTO_INCREMENT\":false,"
+                         "\"NOT_NULL\":true,\"SKIP_COLUMN_IN_POST\":false}"
+                         "}"
+                         "}"
+                         "}}");
+    assert_buffer_equals(&error, "");
+
+    assert(carbon_schema_metadata(schema.data, schema.length, &metadata, &error) == CARBON_STATUS_OK);
+    assert_buffer_equals(&metadata,
+                         "{\"tables\":["
+                         "{\"name\":\"actor\","
+                         "\"columns\":["
+                         "{\"name\":\"actor_id\",\"qualified\":\"actor.actor_id\","
+                         "\"db_type\":\"smallint\",\"nullable\":false,"
+                         "\"auto_increment\":true,\"skip_insert\":true},"
+                         "{\"name\":\"first_name\",\"qualified\":\"actor.first_name\","
+                         "\"db_type\":\"varchar\",\"max_length\":\"45\","
+                         "\"nullable\":false,\"auto_increment\":false,"
+                         "\"skip_insert\":false},"
+                         "{\"name\":\"last_name\",\"qualified\":\"actor.last_name\","
+                         "\"db_type\":\"varchar\",\"max_length\":\"45\","
+                         "\"nullable\":true,\"auto_increment\":false,"
+                         "\"skip_insert\":false}"
+                         "],\"primary\":[\"actor_id\"]},"
+                         "{\"name\":\"film_actor\","
+                         "\"columns\":["
+                         "{\"name\":\"actor_id\",\"qualified\":\"film_actor.actor_id\","
+                         "\"db_type\":\"int\",\"nullable\":false,"
+                         "\"auto_increment\":false,\"skip_insert\":false},"
+                         "{\"name\":\"film_id\",\"qualified\":\"film_actor.film_id\","
+                         "\"db_type\":\"int\",\"nullable\":false,"
+                         "\"auto_increment\":false,\"skip_insert\":false}"
+                         "],\"primary\":[\"actor_id\",\"film_id\"]}"
+                         "]}");
+    assert_buffer_equals(&error, "");
+    carbon_buffer_free(&metadata);
+    carbon_buffer_free(&schema);
+    carbon_buffer_free(&error);
+}
+
+static void test_schema_from_dump_rejects_conflicting_implicit_tables(void) {
+    const char dump[] =
+            "CREATE TABLE `crm`.`actor` (`id` int PRIMARY KEY);\n"
+            "CREATE TABLE `billing`.`actor` (`id` int PRIMARY KEY);\n";
+    carbon_buffer out;
+    carbon_buffer error;
+
+    assert(carbon_schema_from_dump(dump, sizeof(dump) - 1, &out, &error) == CARBON_STATUS_INVALID_QUERY);
+    assert(out.data == NULL);
+    assert_buffer_equals(&error, "schema dump contains unsupported or conflicting CREATE TABLE metadata");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+}
+
 static void test_multiple_where_uses_and(void) {
     carbon_context *context = carbon_context_new();
     const char query[] =
@@ -1483,6 +1591,8 @@ int main(void) {
     test_schema_metadata_normalizer();
     test_schema_metadata_rejects_invalid_columns();
     test_schema_metadata_type_validation();
+    test_schema_from_dump();
+    test_schema_from_dump_rejects_conflicting_implicit_tables();
     test_multiple_where_uses_and();
     test_match_against_rejects_bare_search_string();
     test_call_expression_rejects_invalid_function_name();

@@ -5,35 +5,15 @@ require_relative '../../bindings/ruby/carbon_codegen'
 
 puts CarbonC.version
 
-schema = {
-  'TABLES' => {
-    'actor' => {
-      'PRIMARY_SHORT' => ['actor_id'],
-      'COLUMNS' => {
-        'actor.actor_id' => 'actor_id',
-        'actor.first_name' => 'first_name'
-      },
-      'TYPE_VALIDATION' => {
-        'actor.actor_id' => {
-          'COLUMN_NAME' => 'actor_id',
-          'MYSQL_TYPE' => 'smallint',
-          'MAX_LENGTH' => '',
-          'AUTO_INCREMENT' => true,
-          'NOT_NULL' => true,
-          'SKIP_COLUMN_IN_POST' => false
-        },
-        'actor.first_name' => {
-          'COLUMN_NAME' => 'first_name',
-          'MYSQL_TYPE' => 'varchar',
-          'MAX_LENGTH' => '45',
-          'AUTO_INCREMENT' => false,
-          'NOT_NULL' => true,
-          'SKIP_COLUMN_IN_POST' => false
-        }
-      }
-    }
-  }
-}
+schema_dump = <<~SQL
+  CREATE TABLE `actor` (
+    `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
+    `first_name` varchar(45) NOT NULL,
+    PRIMARY KEY (`actor_id`)
+  );
+SQL
+
+schema = CarbonC.schema_from_dump(schema_dump)
 
 eval(CarbonC.schema_models(schema))
 
@@ -64,5 +44,5 @@ puts result.fetch('sql')
 puts JSON.generate(result.fetch('params'))
 puts result.fetch('allowlist_key')
 puts JSON.generate(result.fetch('diagnostics'))
-puts CarbonC.schema_metadata(JSON.generate(schema))
+puts CarbonC.schema_metadata(schema)
 puts CarbonC.schema_models(schema)

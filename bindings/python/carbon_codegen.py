@@ -106,18 +106,6 @@ class CarbonDialect:
 Dialect = CarbonDialect
 
 
-class CarbonExecutionTarget:
-    """Execution targets for package-level context routing."""
-
-    AUTO = "auto"
-    LOCAL = "local"
-    SERVER = "server"
-    REMOTE = SERVER
-
-
-ExecutionTarget = CarbonExecutionTarget
-
-
 _MISSING = object()
 
 
@@ -177,125 +165,6 @@ def _mapping_payload(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         raise TypeError(f"{name} must be a mapping")
     return dict(payload)
-
-
-def _normal_target(value: Any) -> str:
-    if value is None or value is _MISSING:
-        return CarbonExecutionTarget.AUTO
-    target = str(value).strip().lower().replace("_", "-")
-    if target in {"auto", ""}:
-        return CarbonExecutionTarget.AUTO
-    if target in {"local", "client"}:
-        return CarbonExecutionTarget.LOCAL
-    if target in {"server", "remote"}:
-        return CarbonExecutionTarget.SERVER
-    raise ValueError("target must be auto, local, client, server, or remote")
-
-
-def _truthy(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value is None or value is _MISSING:
-        return False
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
-    return bool(value)
-
-
-def _numeric(value: Any) -> float | None:
-    if value is None or value is _MISSING or isinstance(value, bool):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _is_mobile_context(context: Mapping[str, Any]) -> bool:
-    mobile = _first_present(context, "isMobile", "is_mobile", "mobile")
-    if mobile is not _MISSING:
-        return _truthy(mobile)
-    device = _first_present(context, "deviceClass", "device_class", "platform", "runtime")
-    return device is not _MISSING and str(device).strip().lower() in {"mobile", "phone", "tablet", "ios", "android"}
-
-
-def _query_limit(payload: Mapping[str, Any]) -> float | None:
-    pagination = _first_present(payload, C6C.PAGINATION, "pagination")
-    if isinstance(pagination, Mapping):
-        limit = _first_present(pagination, C6C.LIMIT, "limit")
-        parsed = _numeric(limit)
-        if parsed is not None:
-            return parsed
-    return _numeric(_first_present(payload, C6C.LIMIT, "limit"))
-
-
-def _copy_json_value(value: Any) -> Any:
-    return json.loads(json.dumps(value, separators=(",", ":")))
-
-
-def route_query(query: Any, context: Any = None, policy: Any = None) -> dict[str, str]:
-    """Choose whether a query payload should run locally or be sent to a server executor."""
-
-    payload = _mapping_payload(query, "query")
-    runtime_context = _mapping_payload(context, "context")
-    route_policy = _mapping_payload(policy, "policy")
-    requested_target = _normal_target(_first_present(route_policy, "target", "prefer", "executionTarget", "execution_target"))
-    if requested_target == CarbonExecutionTarget.SERVER:
-        return {"target": CarbonExecutionTarget.SERVER, "reason": "forced_server"}
-    if requested_target == CarbonExecutionTarget.LOCAL:
-        return {"target": CarbonExecutionTarget.LOCAL, "reason": "forced_local"}
-
-    can_run_local = _first_present(runtime_context, "canRunLocal", "can_run_local", "localAvailable", "local_available")
-    if can_run_local is not _MISSING and not _truthy(can_run_local):
-        return {"target": CarbonExecutionTarget.SERVER, "reason": "local_unavailable"}
-
-    offload_mobile = _first_present(route_policy, "serverOnMobile", "server_on_mobile", "remoteOnMobile", "remote_on_mobile")
-    if _truthy(offload_mobile) and _is_mobile_context(runtime_context):
-        return {"target": CarbonExecutionTarget.SERVER, "reason": "mobile_offload"}
-
-    limit = _query_limit(payload)
-    max_limit = _numeric(_first_present(route_policy, "maxLocalLimit", "max_local_limit", "maxClientLimit", "max_client_limit"))
-    if limit is not None and max_limit is not None and limit > max_limit:
-        return {"target": CarbonExecutionTarget.SERVER, "reason": "limit"}
-
-    estimated_rows = _numeric(_first_present(route_policy, "estimatedRows", "estimated_rows"))
-    if estimated_rows is None:
-        estimated_rows = _numeric(_first_present(runtime_context, "estimatedRows", "estimated_rows"))
-    max_rows = _numeric(_first_present(route_policy, "maxLocalRows", "max_local_rows", "maxClientRows", "max_client_rows"))
-    if estimated_rows is not None and max_rows is not None and estimated_rows > max_rows:
-        return {"target": CarbonExecutionTarget.SERVER, "reason": "estimated_rows"}
-
-    estimated_cost = _numeric(_first_present(route_policy, "estimatedCost", "estimated_cost"))
-    if estimated_cost is None:
-        estimated_cost = _numeric(_first_present(runtime_context, "estimatedCost", "estimated_cost"))
-    max_cost = _numeric(_first_present(route_policy, "maxLocalCost", "max_local_cost", "maxClientCost", "max_client_cost"))
-    if estimated_cost is not None and max_cost is not None and estimated_cost > max_cost:
-        return {"target": CarbonExecutionTarget.SERVER, "reason": "estimated_cost"}
-
-    return {"target": CarbonExecutionTarget.LOCAL, "reason": "local"}
-
-
-def query_execution_request(
-    query: Any,
-    schema: Any = None,
-    dialect: str = CarbonDialect.MYSQL,
-    context: Any = None,
-    policy: Any = None,
-) -> dict[str, Any]:
-    """Return a serializable execution envelope for a native query payload."""
-
-    payload = _mapping_payload(query, "query")
-    request: dict[str, Any] = {
-        "query": payload,
-        "dialect": dialect,
-        "route": route_query(payload, context=context, policy=policy),
-    }
-    if schema is not None:
-        request["schema"] = _copy_json_value(schema)
-    cache_results = _first_present(payload, "cacheResults", "cache_results")
-    if cache_results is not _MISSING:
-        request["cacheResults"] = cache_results
-    return request
 
 
 class Query:
@@ -590,21 +459,22 @@ def model_get_request(
     query: Any = None,
     schema: Any = None,
     dialect: str = CarbonDialect.MYSQL,
-    context: Any = None,
-    policy: Any = None,
 ) -> dict[str, Any]:
-    """Return a serializable model Get envelope with an explicit route decision."""
+    """Return a serializable model Get envelope for the application executor."""
 
     table = model_table(model)
-    request = query_execution_request(
-        model_get_payload(model, query),
-        schema=schema,
-        dialect=dialect,
-        context=context,
-        policy=policy,
-    )
-    request["method"] = "Get"
-    request["model"] = table
+    payload = model_get_payload(model, query)
+    request: dict[str, Any] = {
+        "query": payload,
+        "dialect": dialect,
+        "method": "Get",
+        "model": table,
+    }
+    if schema is not None:
+        request["schema"] = Query._copy_payload_value(schema)
+    cache_results = _first_present(payload, "cacheResults", "cache_results")
+    if cache_results is not _MISSING:
+        request["cacheResults"] = cache_results
     return request
 
 
@@ -988,9 +858,7 @@ __all__ = [
     "C6",
     "C6C",
     "CarbonDialect",
-    "CarbonExecutionTarget",
     "Dialect",
-    "ExecutionTarget",
     "Query",
     "adapt_compile_result",
     "and_",
@@ -1040,8 +908,6 @@ __all__ = [
     "or_",
     "param",
     "query",
-    "query_execution_request",
-    "route_query",
     "schema_dataclasses",
     "schema_models",
     "st_contains",

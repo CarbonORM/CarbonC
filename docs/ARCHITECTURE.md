@@ -8,6 +8,7 @@ across supported languages.
 
 CarbonC owns pure transformations:
 
+- SQL dump schema extraction
 - schema metadata normalization
 - query payload validation
 - SQL compilation
@@ -24,7 +25,6 @@ Bindings own runtime integration:
 - native payload serialization helpers
 - language-native C6 token constants
 - language-native dialect constants
-- context-based local/server execution envelopes
 - query-builder facades
 - native model classes and generated types
 - exception mapping
@@ -37,12 +37,12 @@ serialization helpers, typed result adapters that decode params/diagnostics JSON
 optional query-builder facades, CarbonNode-compatible `C6C` token constants, C
 `CARBON_C6_*` macros, `CarbonDialect` / `Dialect` constants, C
 `CARBON_DIALECT_*` macros, language-normalized literal predicate helpers such as
-`eqLit` / `eq_lit` / `carbon_eq_lit`, context-based local/server execution
-envelopes, and typed source generators for Python dataclasses, TypeScript
-interfaces, PHP model classes, and Ruby Struct models. Generated model sources
-expose table, field-name, and qualified-column constants plus routeable model
-`Get` helpers so query authors do not hand-type grammar strings, schema
-identifiers, or manually attach the model table. DB execution remains outside
+`eqLit` / `eq_lit` / `carbon_eq_lit`, and typed source generators for Python
+dataclasses, TypeScript interfaces, PHP model classes, and Ruby Struct models.
+Generated model sources expose table, field-name, and qualified-column constants
+plus model `Get` helpers so query authors do not hand-type grammar
+strings, schema identifiers, or manually attach the model table. DB execution,
+HTTP transport, mobile offload, and executor routing policy remain outside
 CarbonC.
 
 The preferred package-level runtime contract is a complete native query payload
@@ -52,10 +52,9 @@ construction.
 
 Model `Get` helpers are package-level convenience wrappers around that same
 payload shape. They inject the generated model table when the caller omitted
-`FROM`, preserve request metadata such as `cacheResults`, and return a
-serializable execution request with a deterministic route decision. The route
-decision is advisory metadata for the application executor; CarbonC still does
-not own connection pools, HTTP transport, or database execution.
+`FROM` and return a serializable request envelope for the application executor.
+CarbonC still does not own connection pools, HTTP transport, mobile offload
+rules, or database execution.
 
 This keeps the C ABI stable and keeps each language package idiomatic.
 
@@ -68,11 +67,10 @@ native binding object
   -> SQL + params + allowlist key + status/status_code + diagnostics JSON
   -> native driver executes prepared statement
 
+SQL dump -> CarbonC schema extractor -> schema JSON
 schema JSON -> CarbonC schema metadata normalizer -> native type generator
 
-native model Get payload + runtime context
-  -> package route policy
-  -> local executor or server executor chosen by application code
+native model Get payload -> application executor
 ```
 
 The first implementation uses JSON because every target language can produce
@@ -96,6 +94,8 @@ The initial compiler supports:
 
 - schema metadata normalization into deterministic JSON for generated binding
   types
+- SQL dump schema extraction into the same C6 `TABLES` schema shape consumed by
+  metadata normalization, compiler validation, and every binding generator
 - schema metadata enrichment from CarbonNode-style `TYPE_VALIDATION` entries
   keyed by qualified column name
 - package-level typed source generators for Python dataclasses, TypeScript
@@ -103,8 +103,8 @@ The initial compiler supports:
   table and column constants
 - package-level compile helpers for native Python dicts, PHP arrays, JavaScript
   objects, and Ruby hashes
-- package-level model `Get` payload helpers and context-based execution request
-  envelopes that choose `local` or `server` without executing DB calls
+- package-level model `Get` payload helpers that preserve generated-constant
+  query payloads without executing DB calls
 - package-level C6 token constants exposed idiomatically as `C6C` / `C6`
 - package-level literal predicate helpers exposed idiomatically as `eqLit`,
   `eq_lit`, `carbon_eq_lit`, and equivalents for `IN`, `NOT_IN`, and `BETWEEN`
@@ -167,6 +167,14 @@ table, and `__base__` precedence before emitting MySQL syntax.
 
 Unsupported query shapes return `CARBON_STATUS_UNSUPPORTED_QUERY` rather than
 silently compiling weaker SQL.
+
+`carbon_schema_from_dump()` extracts `CREATE TABLE` statements from SQL dump
+text into C6 `TABLES` schema JSON. In this first slice it supports ordered
+columns, DB type/max-length extraction, nullability, generated identity flags,
+and inline or table-level primary keys. Schema-qualified duplicate table names
+that collapse to the same implicit short name are rejected so callers can split
+generation by namespace or pass explicit overrides instead of silently producing
+conflicting model classes.
 
 `carbon_schema_metadata()` returns a stable `{"tables":[...]}` JSON document
 with ordered table names, ordered `columns` entries (`name` plus `qualified`),

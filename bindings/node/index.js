@@ -106,13 +106,6 @@ const CarbonDialect = Object.freeze({
   POSTGRES: 'postgres',
 });
 const Dialect = CarbonDialect;
-const CarbonExecutionTarget = Object.freeze({
-  AUTO: 'auto',
-  LOCAL: 'local',
-  SERVER: 'server',
-  REMOTE: 'server',
-});
-const ExecutionTarget = CarbonExecutionTarget;
 
 function schemaJson(schema) {
   if (schema === undefined || schema === null) {
@@ -203,132 +196,6 @@ function mappingPayload(value, name) {
     throw new TypeError(`${name} must be an object`);
   }
   return {...payload};
-}
-
-function normalTarget(value) {
-  if (value === undefined || value === null) {
-    return CarbonExecutionTarget.AUTO;
-  }
-  const target = String(value).trim().toLowerCase().replace(/_/g, '-');
-  if (target === '' || target === 'auto') {
-    return CarbonExecutionTarget.AUTO;
-  }
-  if (target === 'local' || target === 'client') {
-    return CarbonExecutionTarget.LOCAL;
-  }
-  if (target === 'server' || target === 'remote') {
-    return CarbonExecutionTarget.SERVER;
-  }
-  throw new TypeError('target must be auto, local, client, server, or remote');
-}
-
-function truthy(value) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (value === undefined || value === null) {
-    return false;
-  }
-  if (typeof value === 'string') {
-    return ['1', 'true', 'yes', 'y', 'on'].includes(value.trim().toLowerCase());
-  }
-  return Boolean(value);
-}
-
-function numeric(value) {
-  if (value === undefined || value === null || typeof value === 'boolean') {
-    return undefined;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function isMobileContext(context) {
-  const mobile = firstPresent(context, ['isMobile', 'is_mobile', 'mobile']);
-  if (mobile !== undefined) {
-    return truthy(mobile);
-  }
-  const device = firstPresent(context, ['deviceClass', 'device_class', 'platform', 'runtime']);
-  return device !== undefined && ['mobile', 'phone', 'tablet', 'ios', 'android'].includes(String(device).trim().toLowerCase());
-}
-
-function queryLimit(payload) {
-  const pagination = firstPresent(payload, [C6C.PAGINATION, 'pagination']);
-  if (pagination !== null && !Array.isArray(pagination) && typeof pagination === 'object') {
-    const limit = numeric(firstPresent(pagination, [C6C.LIMIT, 'limit']));
-    if (limit !== undefined) {
-      return limit;
-    }
-  }
-  return numeric(firstPresent(payload, [C6C.LIMIT, 'limit']));
-}
-
-function routeQuery(query, context, policy) {
-  const payload = mappingPayload(query, 'query');
-  const runtimeContext = mappingPayload(context, 'context');
-  const routePolicy = mappingPayload(policy, 'policy');
-  const requestedTarget = normalTarget(firstPresent(routePolicy, ['target', 'prefer', 'executionTarget', 'execution_target']));
-  if (requestedTarget === CarbonExecutionTarget.SERVER) {
-    return {target: CarbonExecutionTarget.SERVER, reason: 'forced_server'};
-  }
-  if (requestedTarget === CarbonExecutionTarget.LOCAL) {
-    return {target: CarbonExecutionTarget.LOCAL, reason: 'forced_local'};
-  }
-
-  const canRunLocal = firstPresent(runtimeContext, ['canRunLocal', 'can_run_local', 'localAvailable', 'local_available']);
-  if (canRunLocal !== undefined && !truthy(canRunLocal)) {
-    return {target: CarbonExecutionTarget.SERVER, reason: 'local_unavailable'};
-  }
-
-  const offloadMobile = firstPresent(routePolicy, ['serverOnMobile', 'server_on_mobile', 'remoteOnMobile', 'remote_on_mobile']);
-  if (truthy(offloadMobile) && isMobileContext(runtimeContext)) {
-    return {target: CarbonExecutionTarget.SERVER, reason: 'mobile_offload'};
-  }
-
-  const limit = queryLimit(payload);
-  const maxLimit = numeric(firstPresent(routePolicy, ['maxLocalLimit', 'max_local_limit', 'maxClientLimit', 'max_client_limit']));
-  if (limit !== undefined && maxLimit !== undefined && limit > maxLimit) {
-    return {target: CarbonExecutionTarget.SERVER, reason: 'limit'};
-  }
-
-  let estimatedRows = numeric(firstPresent(routePolicy, ['estimatedRows', 'estimated_rows']));
-  if (estimatedRows === undefined) {
-    estimatedRows = numeric(firstPresent(runtimeContext, ['estimatedRows', 'estimated_rows']));
-  }
-  const maxRows = numeric(firstPresent(routePolicy, ['maxLocalRows', 'max_local_rows', 'maxClientRows', 'max_client_rows']));
-  if (estimatedRows !== undefined && maxRows !== undefined && estimatedRows > maxRows) {
-    return {target: CarbonExecutionTarget.SERVER, reason: 'estimated_rows'};
-  }
-
-  let estimatedCost = numeric(firstPresent(routePolicy, ['estimatedCost', 'estimated_cost']));
-  if (estimatedCost === undefined) {
-    estimatedCost = numeric(firstPresent(runtimeContext, ['estimatedCost', 'estimated_cost']));
-  }
-  const maxCost = numeric(firstPresent(routePolicy, ['maxLocalCost', 'max_local_cost', 'maxClientCost', 'max_client_cost']));
-  if (estimatedCost !== undefined && maxCost !== undefined && estimatedCost > maxCost) {
-    return {target: CarbonExecutionTarget.SERVER, reason: 'estimated_cost'};
-  }
-
-  return {target: CarbonExecutionTarget.LOCAL, reason: 'local'};
-}
-
-function queryExecutionRequest(query, options = {}) {
-  const requestOptions = options || {};
-  const payload = mappingPayload(query, 'query');
-  const dialect = requestOptions.dialect || CarbonDialect.MYSQL;
-  const request = {
-    query: payload,
-    dialect,
-    route: routeQuery(payload, requestOptions.context, requestOptions.policy),
-  };
-  if (Object.prototype.hasOwnProperty.call(requestOptions, 'schema')) {
-    request.schema = copyPayloadValue(requestOptions.schema);
-  }
-  const cacheResults = firstPresent(payload, ['cacheResults', 'cache_results']);
-  if (cacheResults !== undefined) {
-    request.cacheResults = cacheResults;
-  }
-  return request;
 }
 
 function subselect(query) {
@@ -561,9 +428,20 @@ function modelGetPayload(model, queryValue) {
 function modelGetRequest(model, queryValue, options = {}) {
   const requestOptions = options || {};
   const table = modelTable(model);
-  const request = queryExecutionRequest(modelGetPayload(model, queryValue), requestOptions);
-  request.method = 'Get';
-  request.model = table;
+  const payload = modelGetPayload(model, queryValue);
+  const request = {
+    query: payload,
+    dialect: requestOptions.dialect || CarbonDialect.MYSQL,
+    method: 'Get',
+    model: table,
+  };
+  if (Object.prototype.hasOwnProperty.call(requestOptions, 'schema')) {
+    request.schema = copyPayloadValue(requestOptions.schema);
+  }
+  const cacheResults = firstPresent(payload, ['cacheResults', 'cache_results']);
+  if (cacheResults !== undefined) {
+    request.cacheResults = cacheResults;
+  }
   return request;
 }
 
@@ -1035,18 +913,12 @@ native.C6C = C6C;
 native.C6 = C6;
 native.CarbonDialect = CarbonDialect;
 native.Dialect = Dialect;
-native.CarbonExecutionTarget = CarbonExecutionTarget;
-native.ExecutionTarget = ExecutionTarget;
 native.compileQueryValue = compileQueryValue;
 native.compile_query_value = compileQueryValue;
 native.adaptCompileResult = adaptCompileResult;
 native.adapt_compile_result = adaptCompileResult;
 native.compileQueryResult = compileQueryResult;
 native.compile_query_result = compileQueryResult;
-native.routeQuery = routeQuery;
-native.route_query = routeQuery;
-native.queryExecutionRequest = queryExecutionRequest;
-native.query_execution_request = queryExecutionRequest;
 native.CarbonQuery = CarbonQuery;
 native.query = query;
 native.fromTable = fromTable;

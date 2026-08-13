@@ -32,6 +32,30 @@ schema = {
     }
   }
 }
+schema_dump = <<~SQL
+  CREATE TABLE `actor` (
+    `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
+    `first_name` varchar(45) NOT NULL,
+    PRIMARY KEY (`actor_id`)
+  );
+SQL
+dump_schema = CarbonC.schema_from_dump(schema_dump)
+dump_metadata = JSON.parse(CarbonC.schema_metadata(dump_schema))
+raise 'unexpected dump table name' unless dump_metadata.fetch('tables')[0].fetch('name') == 'actor'
+raise 'unexpected dump primary' unless dump_metadata.fetch('tables')[0].fetch('primary') == ['actor_id']
+unless dump_metadata.fetch('tables')[0].fetch('columns')[0].fetch('auto_increment') == true
+  raise 'expected dump auto increment'
+end
+raise 'expected generated Actor model from dump schema' unless CarbonC.schema_models(dump_schema).include?('Actor = Struct.new')
+begin
+  CarbonC.schema_from_dump(
+    'CREATE TABLE `crm`.`actor` (`id` int PRIMARY KEY);' \
+    'CREATE TABLE `billing`.`actor` (`id` int PRIMARY KEY);'
+  )
+  raise 'expected conflicting dump tables to fail'
+rescue ArgumentError => e
+  raise "unexpected dump conflict error: #{e.message}" unless e.message.include?('conflicting CREATE TABLE')
+end
 
 query = {
   'FROM' => 'actor',
@@ -541,24 +565,15 @@ expected_get_payload = {
   'FROM' => 'actor'
 }
 raise "unexpected model get payload: #{get_payload.inspect}" unless get_payload == expected_get_payload
-mobile_route = CarbonC.route_query(
-  get_payload,
-  context: {'deviceClass' => 'mobile'},
-  policy: {'serverOnMobile' => true}
-)
-raise "unexpected mobile route: #{mobile_route.inspect}" unless mobile_route == {'target' => 'server', 'reason' => 'mobile_offload'}
 get_request = CarbonModels::Actor.Get(
   get_payload,
   schema: schema,
-  dialect: CarbonC::Dialect::MYSQL,
-  context: {'canRunLocal' => false}
+  dialect: CarbonC::Dialect::MYSQL
 )
 raise "unexpected model get method: #{get_request.inspect}" unless get_request.fetch('method') == 'Get'
 raise "unexpected model get model: #{get_request.inspect}" unless get_request.fetch('model') == 'actor'
 raise "unexpected model get cache flag: #{get_request.inspect}" unless get_request.fetch('cacheResults') == false
-unless get_request.fetch('route') == {'target' => 'server', 'reason' => 'local_unavailable'}
-  raise "unexpected model get route: #{get_request.fetch('route').inspect}"
-end
+raise "unexpected model get route: #{get_request.inspect}" if get_request.key?('route')
 get_result = CarbonC.compile_query_result(
   get_request.fetch('query'),
   get_request.fetch('schema'),

@@ -165,6 +165,24 @@ carbon_status carbon_schema_metadata(
         carbon_buffer *error);
 
 /*
+ * Extracts C6 TABLES schema metadata from SQL dump text. This is the shared
+ * schema-ingestion boundary for generated binding types: language packages
+ * should call this instead of carrying their own CREATE TABLE parsers.
+ *
+ * The v0.1 extractor supports CREATE TABLE statements with quoted or unquoted
+ * identifiers, ordered columns, simple DB type/max-length extraction, NOT NULL,
+ * AUTO_INCREMENT / identity-style generated columns, and inline or table-level
+ * PRIMARY KEY declarations. If multiple CREATE TABLE statements resolve to the
+ * same short table name, extraction fails so callers can choose an explicit
+ * namespace/schema override instead of silently generating conflicting classes.
+ */
+carbon_status carbon_schema_from_dump(
+        const char *sql,
+        size_t sql_length,
+        carbon_buffer *out,
+        carbon_buffer *error);
+
+/*
  * Normalizes generated SQL into the deterministic allowlist key used by
  * CarbonORM, including LIMIT, IN bind-list, parenthesized bind-group, and
  * multi-row VALUES cardinality normalization. The output buffers are

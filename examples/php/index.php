@@ -10,35 +10,15 @@ require_once __DIR__ . '/../../bindings/php/carbon_codegen.php';
 echo carbon_version();
 echo PHP_EOL;
 
-$schema = [
-    'TABLES' => [
-        'actor' => [
-            'PRIMARY_SHORT' => ['actor_id'],
-            'COLUMNS' => [
-                'actor.actor_id' => 'actor_id',
-                'actor.first_name' => 'first_name',
-            ],
-            'TYPE_VALIDATION' => [
-                'actor.actor_id' => [
-                    'COLUMN_NAME' => 'actor_id',
-                    'MYSQL_TYPE' => 'smallint',
-                    'MAX_LENGTH' => '',
-                    'AUTO_INCREMENT' => true,
-                    'NOT_NULL' => true,
-                    'SKIP_COLUMN_IN_POST' => false,
-                ],
-                'actor.first_name' => [
-                    'COLUMN_NAME' => 'first_name',
-                    'MYSQL_TYPE' => 'varchar',
-                    'MAX_LENGTH' => '45',
-                    'AUTO_INCREMENT' => false,
-                    'NOT_NULL' => true,
-                    'SKIP_COLUMN_IN_POST' => false,
-                ],
-            ],
-        ],
-    ],
-];
+$schemaDump = <<<'SQL'
+CREATE TABLE `actor` (
+  `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
+  `first_name` varchar(45) NOT NULL,
+  PRIMARY KEY (`actor_id`)
+);
+SQL;
+
+$schema = carbon_schema_from_dump($schemaDump);
 
 $modelSource = carbon_schema_models($schema);
 $globalModelsEval = preg_replace('/^<\\?php\\s*/', '', $modelSource);
@@ -71,5 +51,5 @@ echo $result['sql'] . PHP_EOL;
 echo json_encode($result['params']) . PHP_EOL;
 echo $result['allowlist_key'] . PHP_EOL;
 echo json_encode($result['diagnostics']) . PHP_EOL;
-echo carbon_schema_metadata(json_encode($schema)) . PHP_EOL;
+echo carbon_schema_metadata($schema) . PHP_EOL;
 echo carbon_schema_models($schema, 'CarbonORM\\Generated') . PHP_EOL;

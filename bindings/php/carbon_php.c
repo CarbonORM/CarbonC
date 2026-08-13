@@ -37,6 +37,10 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_carbon_schema_metadata, 0, 0, IS
         ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, schema_json, IS_STRING, 0, "\"{}\"")
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_carbon_schema_from_dump, 0, 1, IS_STRING, 0)
+        ZEND_ARG_TYPE_INFO(0, sql, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
 PHP_FUNCTION(carbon_version) {
         const char *version = carbon_version();
         RETURN_STRING(version);
@@ -185,6 +189,30 @@ PHP_FUNCTION(carbon_schema_metadata) {
         carbon_buffer_free(&error);
 }
 
+PHP_FUNCTION(carbon_schema_from_dump) {
+        char *sql;
+        size_t sql_length;
+        carbon_buffer out;
+        carbon_buffer error;
+        carbon_status status;
+
+        ZEND_PARSE_PARAMETERS_START(1, 1)
+                Z_PARAM_STRING(sql, sql_length)
+        ZEND_PARSE_PARAMETERS_END();
+
+        status = carbon_schema_from_dump(sql, sql_length, &out, &error);
+        if (status != CARBON_STATUS_OK) {
+                zend_value_error("%s", error.data == NULL ? carbon_status_message(status) : error.data);
+                carbon_buffer_free(&out);
+                carbon_buffer_free(&error);
+                RETURN_THROWS();
+        }
+
+        RETVAL_STRINGL(out.data == NULL ? "" : out.data, out.length);
+        carbon_buffer_free(&out);
+        carbon_buffer_free(&error);
+}
+
 const zend_function_entry carbon_functions[] = {
         PHP_FE(carbon_version, arginfo_carbon_version)
         PHP_FE(carbon_hello_world, arginfo_carbon_hello_world)
@@ -193,6 +221,7 @@ const zend_function_entry carbon_functions[] = {
         PHP_FE(carbon_compile_query, arginfo_carbon_compile_query)
         PHP_FE(carbon_normalize_allowlist_sql, arginfo_carbon_normalize_allowlist_sql)
         PHP_FE(carbon_schema_metadata, arginfo_carbon_schema_metadata)
+        PHP_FE(carbon_schema_from_dump, arginfo_carbon_schema_from_dump)
         PHP_FE_END
 };
 

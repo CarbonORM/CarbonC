@@ -55,6 +55,28 @@ $schema = [
         ],
     ],
 ];
+$schemaDump = <<<'SQL'
+CREATE TABLE `actor` (
+  `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
+  `first_name` varchar(45) NOT NULL,
+  PRIMARY KEY (`actor_id`)
+);
+SQL;
+$dumpSchema = carbon_schema_from_dump($schemaDump);
+$dumpMetadata = json_decode(carbon_schema_metadata($dumpSchema), true);
+carbon_assert($dumpMetadata['tables'][0]['name'] === 'actor', 'unexpected dump table name');
+carbon_assert($dumpMetadata['tables'][0]['primary'] === ['actor_id'], 'unexpected dump primary');
+carbon_assert($dumpMetadata['tables'][0]['columns'][0]['auto_increment'] === true, 'expected dump auto increment');
+carbon_assert(strpos(carbon_schema_models($dumpSchema), 'final class Actor') !== false, 'expected generated Actor class from dump schema');
+try {
+    carbon_schema_from_dump(
+        'CREATE TABLE `crm`.`actor` (`id` int PRIMARY KEY);' .
+        'CREATE TABLE `billing`.`actor` (`id` int PRIMARY KEY);'
+    );
+    carbon_assert(false, 'expected conflicting dump tables to fail');
+} catch (ValueError $error) {
+    carbon_assert(strpos($error->getMessage(), 'conflicting CREATE TABLE') !== false, 'unexpected dump conflict error');
+}
 
 $query = [
     'FROM' => 'actor',
@@ -571,23 +593,17 @@ carbon_assert(
     ],
     'unexpected model get payload: ' . json_encode($getPayload)
 );
-carbon_assert(
-    carbon_route_query($getPayload, ['deviceClass' => 'mobile'], ['serverOnMobile' => true])
-        === ['target' => 'server', 'reason' => 'mobile_offload'],
-    'unexpected mobile route'
-);
 $getRequest = Actor::Get(
     $getPayload,
     $schema,
-    CarbonDialect::MYSQL,
-    ['canRunLocal' => false]
+    CarbonDialect::MYSQL
 );
 carbon_assert($getRequest['method'] === 'Get', 'unexpected model get request method');
 carbon_assert($getRequest['model'] === 'actor', 'unexpected model get request model');
 carbon_assert($getRequest['cacheResults'] === false, 'unexpected model get cache flag');
 carbon_assert(
-    $getRequest['route'] === ['target' => 'server', 'reason' => 'local_unavailable'],
-    'unexpected model get route: ' . json_encode($getRequest['route'])
+    !array_key_exists('route', $getRequest),
+    'unexpected model get route: ' . json_encode($getRequest)
 );
 $getResult = carbon_compile_query_result($getRequest['query'], $getRequest['schema'], $getRequest['dialect']);
 carbon_assert(

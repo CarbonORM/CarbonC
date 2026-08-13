@@ -34,6 +34,27 @@ def main() -> None:
             }
         }
     }
+    schema_dump = """
+CREATE TABLE `actor` (
+  `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
+  `first_name` varchar(45) NOT NULL,
+  PRIMARY KEY (`actor_id`)
+);
+"""
+    dump_schema = carbon.schema_from_dump(schema_dump)
+    dump_metadata = json.loads(carbon.schema_metadata(dump_schema))
+    assert dump_metadata["tables"][0]["name"] == "actor"
+    assert dump_metadata["tables"][0]["primary"] == ["actor_id"]
+    assert dump_metadata["tables"][0]["columns"][0]["auto_increment"] is True
+    assert "class Actor" in carbon_codegen.schema_models(dump_schema)
+    try:
+        carbon.schema_from_dump(
+            "CREATE TABLE `crm`.`actor` (`id` int PRIMARY KEY);"
+            "CREATE TABLE `billing`.`actor` (`id` int PRIMARY KEY);"
+        )
+        raise AssertionError("expected conflicting dump tables to fail")
+    except ValueError as error:
+        assert "conflicting CREATE TABLE" in str(error), error
     query = {
         "FROM": "actor",
         "SELECT": ["actor.actor_id", "actor.first_name"],
@@ -548,21 +569,15 @@ def main() -> None:
         "cacheResults": False,
         "FROM": "actor",
     }, get_payload
-    assert carbon_codegen.route_query(
-        get_payload,
-        context={"deviceClass": "mobile"},
-        policy={"serverOnMobile": True},
-    ) == {"target": "server", "reason": "mobile_offload"}
     get_request = actor_model.Get(
         get_payload,
         schema=schema,
         dialect=carbon_codegen.CarbonDialect.MYSQL,
-        context={"canRunLocal": False},
     )
     assert get_request["method"] == "Get", get_request
     assert get_request["model"] == "actor", get_request
     assert get_request["cacheResults"] is False, get_request
-    assert get_request["route"] == {"target": "server", "reason": "local_unavailable"}, get_request
+    assert "route" not in get_request, get_request
     get_result = carbon_codegen.compile_query_result(
         get_request["query"],
         schema=schema,

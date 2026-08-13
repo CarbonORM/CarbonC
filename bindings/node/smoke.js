@@ -32,6 +32,26 @@ const schema = {
     },
   },
 };
+const schemaDump = `
+CREATE TABLE \`actor\` (
+  \`actor_id\` smallint unsigned NOT NULL AUTO_INCREMENT,
+  \`first_name\` varchar(45) NOT NULL,
+  PRIMARY KEY (\`actor_id\`)
+);
+`;
+const dumpSchema = carbon.schemaFromDump(schemaDump);
+const dumpMetadata = JSON.parse(carbon.schemaMetadata(dumpSchema));
+assert.strictEqual(dumpMetadata.tables[0].name, 'actor');
+assert.deepStrictEqual(dumpMetadata.tables[0].primary, ['actor_id']);
+assert.strictEqual(dumpMetadata.tables[0].columns[0].auto_increment, true);
+assert(carbon.schemaModels(dumpSchema).includes('export interface Actor'));
+assert.throws(
+  () => carbon.schemaFromDump(
+    'CREATE TABLE `crm`.`actor` (`id` int PRIMARY KEY);'
+    + 'CREATE TABLE `billing`.`actor` (`id` int PRIMARY KEY);'
+  ),
+  /conflicting CREATE TABLE/
+);
 
 const query = {
   FROM: 'actor',
@@ -507,19 +527,14 @@ assert.deepStrictEqual(getPayload, {
   cacheResults: false,
   FROM: 'actor',
 });
-assert.deepStrictEqual(
-  carbon.routeQuery(getPayload, {deviceClass: 'mobile'}, {serverOnMobile: true}),
-  {target: 'server', reason: 'mobile_offload'}
-);
 const getRequest = Actor.Get(getPayload, {
   schema,
   dialect: carbon.CarbonDialect.MYSQL,
-  context: {canRunLocal: false},
 });
 assert.strictEqual(getRequest.method, 'Get');
 assert.strictEqual(getRequest.model, 'actor');
 assert.strictEqual(getRequest.cacheResults, false);
-assert.deepStrictEqual(getRequest.route, {target: 'server', reason: 'local_unavailable'});
+assert.ok(!Object.prototype.hasOwnProperty.call(getRequest, 'route'));
 const getResult = carbon.compileQueryResult(getRequest.query, getRequest.schema, getRequest.dialect);
 assert.strictEqual(getResult.sql, 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) = ? LIMIT 500');
 const inLitResult = carbon.compileQueryResult({

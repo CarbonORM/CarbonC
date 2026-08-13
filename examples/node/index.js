@@ -4,37 +4,16 @@ const carbon = require('../../bindings/node');
 
 console.log(carbon.version());
 
-const schema = {
-  TABLES: {
-    actor: {
-      PRIMARY_SHORT: ['actor_id'],
-      COLUMNS: {
-        'actor.actor_id': 'actor_id',
-        'actor.first_name': 'first_name',
-      },
-      TYPE_VALIDATION: {
-        'actor.actor_id': {
-          COLUMN_NAME: 'actor_id',
-          MYSQL_TYPE: 'smallint',
-          MAX_LENGTH: '',
-          AUTO_INCREMENT: true,
-          NOT_NULL: true,
-          SKIP_COLUMN_IN_POST: false,
-        },
-        'actor.first_name': {
-          COLUMN_NAME: 'first_name',
-          MYSQL_TYPE: 'varchar',
-          MAX_LENGTH: '45',
-          AUTO_INCREMENT: false,
-          NOT_NULL: true,
-          SKIP_COLUMN_IN_POST: false,
-        },
-      },
-    },
-  },
-};
+const schemaDump = `
+CREATE TABLE \`actor\` (
+  \`actor_id\` smallint unsigned NOT NULL AUTO_INCREMENT,
+  \`first_name\` varchar(45) NOT NULL,
+  PRIMARY KEY (\`actor_id\`)
+);
+`;
 
-const metadata = JSON.parse(carbon.schemaMetadata(JSON.stringify(schema)));
+const schema = carbon.schemaFromDump(schemaDump);
+const metadata = JSON.parse(carbon.schemaMetadata(schema));
 const actorMetadata = metadata.tables[0];
 const Actor = carbon.modelApi({
   table: actorMetadata.name,

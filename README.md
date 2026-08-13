@@ -47,12 +47,11 @@ literal predicate helpers such as `eqLit()` / `eq_lit()` / `carbon_eq_lit()`,
 plus `CarbonDialect` / `Dialect` dialect constants so query authors do not
 hand-type grammar strings or schema identifiers.
 
-Language packages also expose a small execution-envelope layer for applications
-that need the same model method payload to run in different contexts. The
-helpers keep the query object intact, add the generated model `FROM` table when
-needed, and return a deterministic route decision such as
-`{target: "server", reason: "mobile_offload"}` for the caller's own local or
-server executor:
+Language packages also expose model request helpers for applications that need
+the same model method payload to run through different executors. The helpers
+keep the query object intact and add the generated model `FROM` table when
+needed; database transport, device policy, and offload decisions remain outside
+CarbonC:
 
 ```js
 const Actor = carbon.modelApi(ActorMeta);
@@ -66,8 +65,6 @@ const request = Actor.Get({
 }, {
   schema,
   dialect: carbon.CarbonDialect.MYSQL,
-  context: {deviceClass: 'mobile'},
-  policy: {serverOnMobile: true},
 });
 ```
 
@@ -90,6 +87,8 @@ Supported in this slice:
 
 - schema metadata normalization into deterministic JSON for generated binding
   types
+- SQL dump schema extraction into the same C6 `TABLES` schema shape used by
+  every binding generator
 - schema metadata enrichment from CarbonNode-style `TYPE_VALIDATION` entries,
   including DB type, max length, nullability, auto-increment, and insert-skip
   flags
@@ -107,7 +106,8 @@ Supported in this slice:
 - package-level native payload compile helpers that serialize idiomatic
   dict/array/object/hash inputs into the stable C JSON boundary
 - package-level model `Get` payload helpers and execution request envelopes
-  with context-based local/server route decisions
+  that preserve complete generated-constant query objects without owning
+  database execution policy
 - package-level typed result adapters that add decoded native `params` and
   `diagnostics` values without removing raw JSON fields
 - package-level SELECT query-builder facades that emit the same canonical
@@ -220,6 +220,7 @@ Primary entrypoints:
 - `carbon_compile_query()`
 - `carbon_compile_result_diagnostics_json()`
 - `carbon_schema_metadata()`
+- `carbon_schema_from_dump()`
 - `carbon_compile_result_free()`
 - `carbon_normalize_allowlist_sql()`
 
@@ -248,10 +249,17 @@ binding-friendly `source` and JSON-style `path`:
 }
 ```
 
+`carbon_schema_from_dump()` extracts ordered table/column/primary-key metadata
+from SQL dump text into the C6 `TABLES` schema shape. That extracted schema can
+be passed directly to `carbon_schema_metadata()`, compilers, and language model
+generators. Duplicate schema-qualified table names that collapse to the same
+implicit short table name are rejected so applications can split generation by
+namespace or pass an explicit override.
+
 `carbon_schema_metadata()` returns a canonical JSON shape that package-level
 generators can turn into native models or types. When the input schema includes
-CarbonNode-style `TYPE_VALIDATION` metadata keyed by qualified column name,
-column entries include optional type details:
+CarbonNode-style `TYPE_VALIDATION` metadata keyed by qualified column name, or
+was extracted from a dump, column entries include optional type details:
 
 ```json
 {
@@ -303,33 +311,16 @@ over the normalized schema metadata, and an optional `Query` facade for
 incremental construction:
 
 ```python
-import json
 import carbon
 import carbon_codegen
 
-schema = {
-    "TABLES": {
-        "actor": {
-            "PRIMARY_SHORT": ["actor_id"],
-            "COLUMNS": {
-                "actor.actor_id": "actor_id",
-                "actor.first_name": "first_name",
-            },
-            "TYPE_VALIDATION": {
-                "actor.actor_id": {
-                    "COLUMN_NAME": "actor_id",
-                    "MYSQL_TYPE": "smallint",
-                    "NOT_NULL": True,
-                },
-                "actor.first_name": {
-                    "COLUMN_NAME": "first_name",
-                    "MYSQL_TYPE": "varchar",
-                    "NOT_NULL": True,
-                },
-            },
-        }
-    }
-}
+schema = carbon.schema_from_dump("""
+CREATE TABLE `actor` (
+  `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
+  `first_name` varchar(45) NOT NULL,
+  PRIMARY KEY (`actor_id`)
+);
+""")
 generated: dict[str, object] = {}
 exec(carbon_codegen.schema_models(schema), generated)
 Actor = generated["Actor"]
@@ -358,8 +349,6 @@ get_request = Actor.Get(
     },
     schema=schema,
     dialect=carbon_codegen.CarbonDialect.MYSQL,
-    context={"deviceClass": "mobile"},
-    policy={"serverOnMobile": True},
 )
 field_column = carbon_codegen.model_column(Actor, Actor.FIELD_ACTOR_ID)
 write_payload = {
@@ -374,7 +363,7 @@ write_result = carbon_codegen.compile_query_result(
     schema=schema,
     dialect=carbon_codegen.CarbonDialect.MYSQL,
 )
-metadata_json = carbon.schema_metadata(json.dumps(schema))
+metadata_json = carbon.schema_metadata(schema)
 dataclass_source = carbon_codegen.schema_models(schema)
 ```
 
@@ -401,17 +390,16 @@ metadata into Python annotations such as
 includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field constants such as
 `Actor.FIELD_ACTOR_ID`, direct column constants such as `Actor.ACTOR_ID`, and
 retains `__carbon_db_types__` / `__carbon_nullable__` metadata. Generated
-classes also expose `Get()` / `GetPayload()` delegates for routeable model
-requests. Runtime helpers
+classes also expose `Get()` / `GetPayload()` delegates for model request
+payloads. Runtime helpers
 such as `model_query()`, `model_select()`, and `model_column()` consume that
 generated metadata to build schema-backed `Query` payloads. Model write helpers
 such as `model_insert()`, `model_replace()`, `model_update()`,
 `model_upsert()`, and `model_do_nothing()` accept values keyed by generated
-field constants and map them to qualified write columns. Runtime routing helpers
-`model_get_payload()`, `route_query()`, `query_execution_request()`, and
-`model_get_request()` keep the same native query object usable in front-end,
-back-end, or server-offloaded contexts; they return route metadata only and do
-not execute database calls.
+field constants and map them to qualified write columns. Model request helpers
+`model_get_payload()` and `model_get_request()` keep the same native query
+object shape while returning a plain executor envelope; they do not execute
+database calls.
 
 Build and smoke-test it from the repository root:
 
@@ -433,29 +421,13 @@ PHP model class source over `carbon_schema_metadata()`, and an optional
 ```php
 require_once __DIR__ . "/bindings/php/carbon_codegen.php";
 
-$schema = [
-    "TABLES" => [
-        "actor" => [
-            "PRIMARY_SHORT" => ["actor_id"],
-            "COLUMNS" => [
-                "actor.actor_id" => "actor_id",
-                "actor.first_name" => "first_name",
-            ],
-            "TYPE_VALIDATION" => [
-                "actor.actor_id" => [
-                    "COLUMN_NAME" => "actor_id",
-                    "MYSQL_TYPE" => "smallint",
-                    "NOT_NULL" => true,
-                ],
-                "actor.first_name" => [
-                    "COLUMN_NAME" => "first_name",
-                    "MYSQL_TYPE" => "varchar",
-                    "NOT_NULL" => true,
-                ],
-            ],
-        ],
-    ],
-];
+$schema = carbon_schema_from_dump(<<<'SQL'
+CREATE TABLE `actor` (
+  `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
+  `first_name` varchar(45) NOT NULL,
+  PRIMARY KEY (`actor_id`)
+);
+SQL);
 $modelSource = carbon_schema_models($schema);
 eval(preg_replace('/^<\\?php\\s*/', '', $modelSource));
 
@@ -478,9 +450,7 @@ $getRequest = Actor::Get(
         "cacheResults" => false,
     ],
     $schema,
-    CarbonDialect::MYSQL,
-    ["deviceClass" => "mobile"],
-    ["serverOnMobile" => true]
+    CarbonDialect::MYSQL
 );
 $fieldColumn = carbon_model_column(Actor::class, Actor::FIELD_ACTOR_ID);
 $writePayload = [
@@ -490,7 +460,7 @@ $writePayload = [
     ]),
 ];
 $writeResult = carbon_compile_query_result($writePayload, $schema, CarbonDialect::MYSQL);
-$metadataJson = carbon_schema_metadata(json_encode($schema));
+$metadataJson = carbon_schema_metadata($schema);
 $namespacedModelSource = carbon_schema_models($schema, "CarbonORM\\Generated");
 ```
 
@@ -518,18 +488,17 @@ class source keeps properties untyped for runtime compatibility, adds PHPDoc typ
 annotations, and includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field
 constants such as `Actor::FIELD_ACTOR_ID`, direct column constants such as
 `Actor::ACTOR_ID`, `DB_TYPES`, and `NULLABLE`. Generated classes also expose
-static `Get()` / `GetPayload()` delegates for routeable model requests. Runtime
+static `Get()` / `GetPayload()` delegates for model request payloads. Runtime
 helpers such as
 `carbon_model_query()`, `carbon_model_select()`, and `carbon_model_column()`
 consume generated class constants or metadata arrays to build schema-backed
 `CarbonQuery` payloads. Model write helpers such as `carbon_model_insert()`,
 `carbon_model_replace()`, `carbon_model_update()`, `carbon_model_upsert()`, and
 `carbon_model_do_nothing()` accept values keyed by generated field constants and
-map them to qualified write columns. Runtime routing helpers
-`carbon_model_get_payload()`, `carbon_route_query()`,
-`carbon_query_execution_request()`, and `carbon_model_get_request()` keep the
-same native query object usable in front-end, back-end, or server-offloaded
-contexts; they return route metadata only and do not execute database calls.
+map them to qualified write columns. Model request helpers
+`carbon_model_get_payload()` and `carbon_model_get_request()` keep the same
+native query object shape while returning a plain executor envelope; they do not
+execute database calls.
 
 Build and smoke-test it from the repository root:
 
@@ -544,13 +513,11 @@ The PHP surface exposes `carbon_version()`, `carbon_hello_world()`,
 `carbon_compile_query_value()`, `carbon_compile_query_result()`,
 `carbon_adapt_compile_result()`, `carbon_query()`, `carbon_force_index()`,
 `carbon_use_index()`, `carbon_ignore_index()`, `C6C`, `C6`, `CarbonDialect`,
-`CarbonExecutionTarget`, `carbon_route_query()`,
-`carbon_query_execution_request()`, `carbon_model_get_payload()`,
-`carbon_model_get_request()`,
+`carbon_model_get_payload()`, `carbon_model_get_request()`,
 `carbon_model_query()`, `carbon_model_select()`, `carbon_model_column()`,
 `carbon_model_insert()`, `carbon_model_replace()`, `carbon_model_update()`,
 `carbon_model_upsert()`, `carbon_model_do_nothing()`,
-`carbon_schema_metadata()`,
+`carbon_schema_from_dump()`, `carbon_schema_metadata()`,
 and `carbon_normalize_allowlist_sql()`.
 
 ## Node Binding
@@ -565,30 +532,14 @@ result adapters, a package-level TypeScript source generator, and an optional
 ```js
 const carbon = require('./bindings/node');
 
-const schema = {
-  TABLES: {
-    actor: {
-      PRIMARY_SHORT: ['actor_id'],
-      COLUMNS: {
-        'actor.actor_id': 'actor_id',
-        'actor.first_name': 'first_name',
-      },
-      TYPE_VALIDATION: {
-        'actor.actor_id': {
-          COLUMN_NAME: 'actor_id',
-          MYSQL_TYPE: 'smallint',
-          NOT_NULL: true,
-        },
-        'actor.first_name': {
-          COLUMN_NAME: 'first_name',
-          MYSQL_TYPE: 'varchar',
-          NOT_NULL: true,
-        },
-      },
-    },
-  },
-};
-const metadata = JSON.parse(carbon.schemaMetadata(JSON.stringify(schema)));
+const schema = carbon.schemaFromDump(`
+CREATE TABLE \`actor\` (
+  \`actor_id\` smallint unsigned NOT NULL AUTO_INCREMENT,
+  \`first_name\` varchar(45) NOT NULL,
+  PRIMARY KEY (\`actor_id\`)
+);
+`);
+const metadata = JSON.parse(carbon.schemaMetadata(schema));
 const typeSource = carbon.schemaModels(schema);
 // The generated TypeScript module exports the same ActorTable/ActorColumns shape,
 // plus an Actor object with Get/GetPayload delegates.
@@ -626,8 +577,6 @@ const getRequest = Actor.Get({
 }, {
   schema,
   dialect: carbon.CarbonDialect.MYSQL,
-  context: {deviceClass: 'mobile'},
-  policy: {serverOnMobile: true},
 });
 const fieldColumn = carbon.modelColumn(ActorMeta, ActorFields.actor_id);
 const writePayload = {
@@ -670,10 +619,9 @@ delegates. Runtime helpers such as `modelApi()`, `modelQuery()`, `modelSelect()`
 `CarbonQuery` payloads. Model write helpers such as `modelInsert()`,
 `modelReplace()`, `modelUpdate()`, `modelUpsert()`, and `modelDoNothing()`
 accept values keyed by generated field constants and map them to qualified write
-columns. Runtime routing helpers `modelGetPayload()`, `routeQuery()`,
-`queryExecutionRequest()`, and `modelGetRequest()` keep the same native query
-object usable in front-end, back-end, or server-offloaded contexts; they return
-route metadata only and do not execute database calls.
+columns. Model request helpers `modelGetPayload()` and `modelGetRequest()` keep
+the same native query object shape while returning a plain executor envelope;
+they do not execute database calls.
 
 Build and smoke-test it from the repository root:
 
@@ -686,15 +634,16 @@ node examples/node/index.js
 The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `statusCode()`, `compileQuery()`, `compileQueryValue()`,
 `compileQueryResult()`, `adaptCompileResult()`, `C6C`, `C6`, `CarbonDialect`,
-`Dialect`, `CarbonExecutionTarget`, `ExecutionTarget`, `CarbonQuery`, `query()`,
+`Dialect`, `CarbonQuery`, `query()`,
 `fromTable()`, `subselect()`, `derivedTarget()`, `op()`, `lit()`, `eqLit()`,
 `inLit()`, `notInLit()`, `betweenLit()`, `param()`, `call()`, `alias()`,
 `distinct()`, `between()`, `inList()`, `existsSpec()`,
 `exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
 `forceIndex()`, `useIndex()`, `ignoreIndex()`, `modelQuery()`, `modelSelect()`,
-`modelColumn()`, `modelApi()`, `modelGetPayload()`, `modelGetRequest()`, `routeQuery()`,
-`queryExecutionRequest()`, `modelInsert()`, `modelReplace()`, `modelUpdate()`,
-`modelUpsert()`, `modelDoNothing()`, `schemaMetadata()`, `schemaModels()`, and
+`modelColumn()`, `modelApi()`, `modelGetPayload()`, `modelGetRequest()`,
+`modelInsert()`, `modelReplace()`, `modelUpdate()`,
+`modelUpsert()`, `modelDoNothing()`, `schemaFromDump()`, `schemaMetadata()`,
+`schemaModels()`, and
 `normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
 
 ## Ruby Binding
@@ -708,32 +657,15 @@ result adapters, Ruby Struct model source over `CarbonC.schema_metadata`, and
 an optional `CarbonC::Query` facade for incremental construction:
 
 ```ruby
-require 'json'
 require_relative './bindings/ruby/carbon_codegen'
 
-schema = {
-  'TABLES' => {
-    'actor' => {
-      'PRIMARY_SHORT' => ['actor_id'],
-      'COLUMNS' => {
-        'actor.actor_id' => 'actor_id',
-        'actor.first_name' => 'first_name'
-      },
-      'TYPE_VALIDATION' => {
-        'actor.actor_id' => {
-          'COLUMN_NAME' => 'actor_id',
-          'MYSQL_TYPE' => 'smallint',
-          'NOT_NULL' => true
-        },
-        'actor.first_name' => {
-          'COLUMN_NAME' => 'first_name',
-          'MYSQL_TYPE' => 'varchar',
-          'NOT_NULL' => true
-        }
-      }
-    }
-  }
-}
+schema = CarbonC.schema_from_dump(<<~SQL)
+  CREATE TABLE `actor` (
+    `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
+    `first_name` varchar(45) NOT NULL,
+    PRIMARY KEY (`actor_id`)
+  );
+SQL
 eval(CarbonC.schema_models(schema))
 
 query = {
@@ -755,9 +687,7 @@ get_request = CarbonModels::Actor.Get(
     'cacheResults' => false
   },
   schema: schema,
-  dialect: CarbonC::Dialect::MYSQL,
-  context: {'deviceClass' => 'mobile'},
-  policy: {'serverOnMobile' => true}
+  dialect: CarbonC::Dialect::MYSQL
 )
 field_column = CarbonC.model_column(CarbonModels::Actor, CarbonModels::Actor::FIELD_ACTOR_ID)
 write_payload = {
@@ -768,7 +698,7 @@ write_payload = {
   )
 }
 write_result = CarbonC.compile_query_result(write_payload, schema, CarbonC::Dialect::MYSQL)
-metadata_json = CarbonC.schema_metadata(JSON.generate(schema))
+metadata_json = CarbonC.schema_metadata(schema)
 model_source = CarbonC.schema_models(schema)
 ```
 
@@ -795,17 +725,15 @@ Struct source includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field constants
 such as `CarbonModels::Actor::FIELD_ACTOR_ID`, direct column constants such as
 `CarbonModels::Actor::ACTOR_ID`, plus `TYPES` and `NULLABLE` metadata constants
 for runtime consumers. Generated Struct classes also expose `Get` / `GetPayload`
-delegates for routeable model requests. Runtime helpers such as `CarbonC.model_query`,
+delegates for model request payloads. Runtime helpers such as `CarbonC.model_query`,
 `CarbonC.model_select`, and `CarbonC.model_column` consume generated constants
 or metadata hashes to build schema-backed `CarbonC::Query` payloads. Model write
 helpers such as `CarbonC.model_insert`, `CarbonC.model_replace`,
 `CarbonC.model_update`, `CarbonC.model_upsert`, and `CarbonC.model_do_nothing`
 accept values keyed by generated field constants and map them to qualified write
-columns. Runtime routing helpers `CarbonC.model_get_payload`,
-`CarbonC.route_query`, `CarbonC.query_execution_request`, and
-`CarbonC.model_get_request` keep the same native query object usable in
-front-end, back-end, or server-offloaded contexts; they return route metadata
-only and do not execute database calls.
+columns. Model request helpers `CarbonC.model_get_payload` and
+`CarbonC.model_get_request` keep the same native query object shape while
+returning a plain executor envelope; they do not execute database calls.
 
 Build and smoke-test it from the repository root:
 
@@ -819,8 +747,7 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.status_code`, `CarbonC.status_message`, `CarbonC.compile_query`,
 `CarbonC.compile_query_value`, `CarbonC.compile_query_result`,
 `CarbonC.adapt_compile_result`, `CarbonC::C6C`, `CarbonC::C6`,
-`CarbonC::Dialect`, `CarbonC::ExecutionTarget`,
-`CarbonC.query`, `CarbonC.from_table`,
+`CarbonC::Dialect`, `CarbonC.query`, `CarbonC.from_table`,
 `CarbonC.subselect`, `CarbonC.derived_target`, `CarbonC.op`, `CarbonC.lit`,
 `CarbonC.eq_lit`, `CarbonC.in_lit`, `CarbonC.not_in_lit`,
 `CarbonC.between_lit`,
@@ -831,10 +758,9 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.force_index`, `CarbonC.use_index`, `CarbonC.ignore_index`,
 `CarbonC.model_query`, `CarbonC.model_select`, `CarbonC.model_column`,
 `CarbonC.model_get_payload`, `CarbonC.model_get_request`,
-`CarbonC.route_query`, `CarbonC.query_execution_request`,
 `CarbonC.model_insert`, `CarbonC.model_replace`, `CarbonC.model_update`,
 `CarbonC.model_upsert`, `CarbonC.model_do_nothing`,
-`CarbonC.schema_metadata`, and
+`CarbonC.schema_from_dump`, `CarbonC.schema_metadata`, and
 `CarbonC.normalize_allowlist_sql`.
 
 ## Next Milestones
