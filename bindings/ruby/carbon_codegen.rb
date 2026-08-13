@@ -86,6 +86,13 @@ module CarbonC
     POSTGRES = 'postgres'
   end
 
+  module ExecutionTarget
+    AUTO = 'auto'
+    LOCAL = 'local'
+    SERVER = 'server'
+    REMOTE = SERVER
+  end
+
   class Query
     def initialize(table = nil)
       @payload = {}
@@ -514,6 +521,119 @@ module CarbonC
       model_insert(model, values).do_nothing
     end
 
+    def model_get_payload(model, query_payload = nil)
+      table = model_table(model)
+      payload = carbon_codegen_mapping_payload(query_payload, 'query')
+      from_value = carbon_codegen_first_present(payload, C6C::FROM, 'from', 'table')
+      unless from_value.nil? || from_value.to_s == table
+        raise ArgumentError, "query FROM/table #{from_value.inspect} does not match model table #{table.inspect}"
+      end
+
+      payload[C6C::FROM] = table
+      payload
+    end
+
+    def model_get_request(
+      model,
+      query_payload = nil,
+      schema: nil,
+      dialect: Dialect::MYSQL,
+      context: nil,
+      policy: nil
+    )
+      table = model_table(model)
+      request = query_execution_request(
+        model_get_payload(model, query_payload),
+        schema: schema,
+        dialect: dialect,
+        context: context,
+        policy: policy
+      )
+      request['method'] = 'Get'
+      request['model'] = table
+      request
+    end
+
+    def route_query(query_payload, context: nil, policy: nil)
+      payload = carbon_codegen_mapping_payload(query_payload, 'query')
+      runtime_context = carbon_codegen_mapping_payload(context, 'context')
+      route_policy = carbon_codegen_mapping_payload(policy, 'policy')
+      requested_target = carbon_codegen_normal_target(
+        carbon_codegen_first_present(route_policy, 'target', 'prefer', 'executionTarget', 'execution_target')
+      )
+      return {'target' => ExecutionTarget::SERVER, 'reason' => 'forced_server'} if requested_target == ExecutionTarget::SERVER
+      return {'target' => ExecutionTarget::LOCAL, 'reason' => 'forced_local'} if requested_target == ExecutionTarget::LOCAL
+
+      can_run_local = carbon_codegen_first_present(
+        runtime_context,
+        'canRunLocal',
+        'can_run_local',
+        'localAvailable',
+        'local_available'
+      )
+      unless can_run_local.nil? || carbon_codegen_truthy(can_run_local)
+        return {'target' => ExecutionTarget::SERVER, 'reason' => 'local_unavailable'}
+      end
+
+      offload_mobile = carbon_codegen_first_present(
+        route_policy,
+        'serverOnMobile',
+        'server_on_mobile',
+        'remoteOnMobile',
+        'remote_on_mobile'
+      )
+      if carbon_codegen_truthy(offload_mobile) && carbon_codegen_mobile_context?(runtime_context)
+        return {'target' => ExecutionTarget::SERVER, 'reason' => 'mobile_offload'}
+      end
+
+      limit = carbon_codegen_query_limit(payload)
+      max_limit = carbon_codegen_numeric(
+        carbon_codegen_first_present(route_policy, 'maxLocalLimit', 'max_local_limit', 'maxClientLimit', 'max_client_limit')
+      )
+      if !limit.nil? && !max_limit.nil? && limit > max_limit
+        return {'target' => ExecutionTarget::SERVER, 'reason' => 'limit'}
+      end
+
+      estimated_rows = carbon_codegen_numeric(carbon_codegen_first_present(route_policy, 'estimatedRows', 'estimated_rows'))
+      estimated_rows = carbon_codegen_numeric(carbon_codegen_first_present(runtime_context, 'estimatedRows', 'estimated_rows')) if estimated_rows.nil?
+      max_rows = carbon_codegen_numeric(
+        carbon_codegen_first_present(route_policy, 'maxLocalRows', 'max_local_rows', 'maxClientRows', 'max_client_rows')
+      )
+      if !estimated_rows.nil? && !max_rows.nil? && estimated_rows > max_rows
+        return {'target' => ExecutionTarget::SERVER, 'reason' => 'estimated_rows'}
+      end
+
+      estimated_cost = carbon_codegen_numeric(carbon_codegen_first_present(route_policy, 'estimatedCost', 'estimated_cost'))
+      estimated_cost = carbon_codegen_numeric(carbon_codegen_first_present(runtime_context, 'estimatedCost', 'estimated_cost')) if estimated_cost.nil?
+      max_cost = carbon_codegen_numeric(
+        carbon_codegen_first_present(route_policy, 'maxLocalCost', 'max_local_cost', 'maxClientCost', 'max_client_cost')
+      )
+      if !estimated_cost.nil? && !max_cost.nil? && estimated_cost > max_cost
+        return {'target' => ExecutionTarget::SERVER, 'reason' => 'estimated_cost'}
+      end
+
+      {'target' => ExecutionTarget::LOCAL, 'reason' => 'local'}
+    end
+
+    def query_execution_request(
+      query_payload,
+      schema: nil,
+      dialect: Dialect::MYSQL,
+      context: nil,
+      policy: nil
+    )
+      payload = carbon_codegen_mapping_payload(query_payload, 'query')
+      request = {
+        'query' => payload,
+        'dialect' => dialect,
+        'route' => route_query(payload, context: context, policy: policy)
+      }
+      request['schema'] = carbon_codegen_query_payload(schema) unless schema.nil?
+      cache_results = carbon_codegen_first_present(payload, 'cacheResults', 'cache_results')
+      request['cacheResults'] = cache_results unless cache_results.nil?
+      request
+    end
+
     def compile_query_value(query, schema = nil, dialect = Dialect::MYSQL)
       compile_query(
         carbon_codegen_payload_json(query),
@@ -639,6 +759,66 @@ module CarbonC
       else
         query
       end
+    end
+
+    def carbon_codegen_mapping_payload(value, name)
+      return {} if value.nil?
+
+      payload = carbon_codegen_query_payload(value)
+      raise TypeError, "#{name} must be a Hash" unless payload.is_a?(Hash)
+
+      payload.dup
+    end
+
+    def carbon_codegen_first_present(mapping, *keys)
+      keys.each do |key|
+        return mapping[key] if mapping.key?(key)
+      end
+      nil
+    end
+
+    def carbon_codegen_normal_target(value)
+      return ExecutionTarget::AUTO if value.nil?
+
+      target = value.to_s.strip.downcase.tr('_', '-')
+      return ExecutionTarget::AUTO if target.empty? || target == 'auto'
+      return ExecutionTarget::LOCAL if %w[local client].include?(target)
+      return ExecutionTarget::SERVER if %w[server remote].include?(target)
+
+      raise ArgumentError, 'target must be auto, local, client, server, or remote'
+    end
+
+    def carbon_codegen_truthy(value)
+      return value if value == true || value == false
+      return false if value.nil?
+      return %w[1 true yes y on].include?(value.strip.downcase) if value.is_a?(String)
+
+      !!value
+    end
+
+    def carbon_codegen_numeric(value)
+      return nil if value.nil? || value == true || value == false
+
+      Float(value)
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    def carbon_codegen_mobile_context?(context)
+      mobile = carbon_codegen_first_present(context, 'isMobile', 'is_mobile', 'mobile')
+      return carbon_codegen_truthy(mobile) unless mobile.nil?
+
+      device = carbon_codegen_first_present(context, 'deviceClass', 'device_class', 'platform', 'runtime')
+      !device.nil? && %w[mobile phone tablet ios android].include?(device.to_s.strip.downcase)
+    end
+
+    def carbon_codegen_query_limit(payload)
+      pagination = carbon_codegen_first_present(payload, C6C::PAGINATION, 'pagination')
+      if pagination.is_a?(Hash)
+        limit = carbon_codegen_numeric(carbon_codegen_first_present(pagination, C6C::LIMIT, 'limit'))
+        return limit unless limit.nil?
+      end
+      carbon_codegen_numeric(carbon_codegen_first_present(payload, C6C::LIMIT, 'limit'))
     end
 
     def carbon_codegen_subselect_operand(query)

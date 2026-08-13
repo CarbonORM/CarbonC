@@ -88,6 +88,15 @@ if (!function_exists('carbon_schema_models')) {
             public const POSTGRES = 'postgres';
         }
     }
+    if (!class_exists('CarbonExecutionTarget', false)) {
+        final class CarbonExecutionTarget
+        {
+            public const AUTO = 'auto';
+            public const LOCAL = 'local';
+            public const SERVER = 'server';
+            public const REMOTE = self::SERVER;
+        }
+    }
 
     function carbon_codegen_schema_json($schema): string
     {
@@ -147,6 +156,173 @@ if (!function_exists('carbon_schema_models')) {
     function carbon_compile_query_result($query, $schema = null, string $dialect = CarbonDialect::MYSQL): array
     {
         return carbon_adapt_compile_result(carbon_compile_query_value($query, $schema, $dialect));
+    }
+
+    function carbon_codegen_first_present(array $mapping, array $keys)
+    {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $mapping)) {
+                return $mapping[$key];
+            }
+        }
+        return null;
+    }
+
+    function carbon_codegen_has_any(array $mapping, array $keys): bool
+    {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $mapping)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function carbon_codegen_mapping_payload($value, string $name): array
+    {
+        if ($value === null) {
+            return [];
+        }
+        $payload = carbon_codegen_query_payload($value);
+        if (!is_array($payload)) {
+            throw new InvalidArgumentException($name . ' must be an array');
+        }
+        return $payload;
+    }
+
+    function carbon_codegen_normal_target($value): string
+    {
+        if ($value === null) {
+            return CarbonExecutionTarget::AUTO;
+        }
+        $target = str_replace('_', '-', strtolower(trim((string) $value)));
+        if ($target === '' || $target === 'auto') {
+            return CarbonExecutionTarget::AUTO;
+        }
+        if ($target === 'local' || $target === 'client') {
+            return CarbonExecutionTarget::LOCAL;
+        }
+        if ($target === 'server' || $target === 'remote') {
+            return CarbonExecutionTarget::SERVER;
+        }
+        throw new InvalidArgumentException('target must be auto, local, client, server, or remote');
+    }
+
+    function carbon_codegen_truthy($value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if ($value === null) {
+            return false;
+        }
+        if (is_string($value)) {
+            return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'y', 'on'], true);
+        }
+        return (bool) $value;
+    }
+
+    function carbon_codegen_numeric($value): ?float
+    {
+        if ($value === null || is_bool($value) || !is_numeric($value)) {
+            return null;
+        }
+        return (float) $value;
+    }
+
+    function carbon_codegen_is_mobile_context(array $context): bool
+    {
+        if (carbon_codegen_has_any($context, ['isMobile', 'is_mobile', 'mobile'])) {
+            return carbon_codegen_truthy(carbon_codegen_first_present($context, ['isMobile', 'is_mobile', 'mobile']));
+        }
+        $device = carbon_codegen_first_present($context, ['deviceClass', 'device_class', 'platform', 'runtime']);
+        return is_string($device) && in_array(strtolower(trim($device)), ['mobile', 'phone', 'tablet', 'ios', 'android'], true);
+    }
+
+    function carbon_codegen_query_limit(array $payload): ?float
+    {
+        $pagination = carbon_codegen_first_present($payload, [C6C::PAGINATION, 'pagination']);
+        if (is_array($pagination)) {
+            $limit = carbon_codegen_numeric(carbon_codegen_first_present($pagination, [C6C::LIMIT, 'limit']));
+            if ($limit !== null) {
+                return $limit;
+            }
+        }
+        return carbon_codegen_numeric(carbon_codegen_first_present($payload, [C6C::LIMIT, 'limit']));
+    }
+
+    function carbon_route_query($query, ?array $context = null, ?array $policy = null): array
+    {
+        $payload = carbon_codegen_mapping_payload($query, 'query');
+        $runtimeContext = $context ?? [];
+        $routePolicy = $policy ?? [];
+        $requestedTarget = carbon_codegen_normal_target(
+            carbon_codegen_first_present($routePolicy, ['target', 'prefer', 'executionTarget', 'execution_target'])
+        );
+        if ($requestedTarget === CarbonExecutionTarget::SERVER) {
+            return ['target' => CarbonExecutionTarget::SERVER, 'reason' => 'forced_server'];
+        }
+        if ($requestedTarget === CarbonExecutionTarget::LOCAL) {
+            return ['target' => CarbonExecutionTarget::LOCAL, 'reason' => 'forced_local'];
+        }
+
+        if (carbon_codegen_has_any($runtimeContext, ['canRunLocal', 'can_run_local', 'localAvailable', 'local_available'])
+            && !carbon_codegen_truthy(carbon_codegen_first_present($runtimeContext, ['canRunLocal', 'can_run_local', 'localAvailable', 'local_available']))) {
+            return ['target' => CarbonExecutionTarget::SERVER, 'reason' => 'local_unavailable'];
+        }
+
+        $offloadMobile = carbon_codegen_first_present($routePolicy, ['serverOnMobile', 'server_on_mobile', 'remoteOnMobile', 'remote_on_mobile']);
+        if (carbon_codegen_truthy($offloadMobile) && carbon_codegen_is_mobile_context($runtimeContext)) {
+            return ['target' => CarbonExecutionTarget::SERVER, 'reason' => 'mobile_offload'];
+        }
+
+        $limit = carbon_codegen_query_limit($payload);
+        $maxLimit = carbon_codegen_numeric(carbon_codegen_first_present($routePolicy, ['maxLocalLimit', 'max_local_limit', 'maxClientLimit', 'max_client_limit']));
+        if ($limit !== null && $maxLimit !== null && $limit > $maxLimit) {
+            return ['target' => CarbonExecutionTarget::SERVER, 'reason' => 'limit'];
+        }
+
+        $estimatedRows = carbon_codegen_numeric(carbon_codegen_first_present($routePolicy, ['estimatedRows', 'estimated_rows']));
+        if ($estimatedRows === null) {
+            $estimatedRows = carbon_codegen_numeric(carbon_codegen_first_present($runtimeContext, ['estimatedRows', 'estimated_rows']));
+        }
+        $maxRows = carbon_codegen_numeric(carbon_codegen_first_present($routePolicy, ['maxLocalRows', 'max_local_rows', 'maxClientRows', 'max_client_rows']));
+        if ($estimatedRows !== null && $maxRows !== null && $estimatedRows > $maxRows) {
+            return ['target' => CarbonExecutionTarget::SERVER, 'reason' => 'estimated_rows'];
+        }
+
+        $estimatedCost = carbon_codegen_numeric(carbon_codegen_first_present($routePolicy, ['estimatedCost', 'estimated_cost']));
+        if ($estimatedCost === null) {
+            $estimatedCost = carbon_codegen_numeric(carbon_codegen_first_present($runtimeContext, ['estimatedCost', 'estimated_cost']));
+        }
+        $maxCost = carbon_codegen_numeric(carbon_codegen_first_present($routePolicy, ['maxLocalCost', 'max_local_cost', 'maxClientCost', 'max_client_cost']));
+        if ($estimatedCost !== null && $maxCost !== null && $estimatedCost > $maxCost) {
+            return ['target' => CarbonExecutionTarget::SERVER, 'reason' => 'estimated_cost'];
+        }
+
+        return ['target' => CarbonExecutionTarget::LOCAL, 'reason' => 'local'];
+    }
+
+    function carbon_query_execution_request(
+        $query,
+        $schema = null,
+        string $dialect = CarbonDialect::MYSQL,
+        ?array $context = null,
+        ?array $policy = null
+    ): array {
+        $payload = carbon_codegen_mapping_payload($query, 'query');
+        $request = [
+            'query' => $payload,
+            'dialect' => $dialect,
+            'route' => carbon_route_query($payload, $context, $policy),
+        ];
+        if ($schema !== null) {
+            $request['schema'] = $schema;
+        }
+        if (carbon_codegen_has_any($payload, ['cacheResults', 'cache_results'])) {
+            $request['cacheResults'] = carbon_codegen_first_present($payload, ['cacheResults', 'cache_results']);
+        }
+        return $request;
     }
 
     function carbon_codegen_query_payload($query)
@@ -427,6 +603,41 @@ if (!function_exists('carbon_schema_models')) {
     function carbon_model_do_nothing($model, array $values): CarbonQuery
     {
         return carbon_model_insert($model, $values)->doNothing();
+    }
+
+    function carbon_model_get_payload($model, $query = null): array
+    {
+        $table = carbon_model_table($model);
+        $payload = carbon_codegen_mapping_payload($query, 'query');
+        if (carbon_codegen_has_any($payload, [C6C::FROM, 'from', 'table'])) {
+            $from = carbon_codegen_first_present($payload, [C6C::FROM, 'from', 'table']);
+            if ((string) $from !== $table) {
+                throw new InvalidArgumentException('query FROM/table does not match model table');
+            }
+        }
+        $payload[C6C::FROM] = $table;
+        return $payload;
+    }
+
+    function carbon_model_get_request(
+        $model,
+        $query = null,
+        $schema = null,
+        string $dialect = CarbonDialect::MYSQL,
+        ?array $context = null,
+        ?array $policy = null
+    ): array {
+        $table = carbon_model_table($model);
+        $request = carbon_query_execution_request(
+            carbon_model_get_payload($model, $query),
+            $schema,
+            $dialect,
+            $context,
+            $policy
+        );
+        $request['method'] = 'Get';
+        $request['model'] = $table;
+        return $request;
     }
 
     function carbon_codegen_subselect_operand($query)

@@ -479,6 +479,36 @@ assert.deepStrictEqual(modelBuilt.params, [0]);
 assert.deepStrictEqual(carbon.modelValues(actorMeta, {[actorMeta.fields.first_name]: 'ALICE'}), {
   'actor.first_name': 'ALICE',
 });
+const getPayload = carbon.modelGetPayload(actorMeta, {
+  [carbon.C6C.SELECT]: [actorMeta.columns.actor_id],
+  [carbon.C6C.WHERE]: {
+    [actorMeta.columns.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
+  },
+  [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 500},
+  cacheResults: false,
+});
+assert.deepStrictEqual(getPayload, {
+  SELECT: ['actor.actor_id'],
+  WHERE: {'actor.actor_id': ['>', 10]},
+  PAGINATION: {LIMIT: 500},
+  cacheResults: false,
+  FROM: 'actor',
+});
+assert.deepStrictEqual(
+  carbon.routeQuery(getPayload, {deviceClass: 'mobile'}, {serverOnMobile: true}),
+  {target: 'server', reason: 'mobile_offload'}
+);
+const getRequest = carbon.modelGetRequest(actorMeta, getPayload, {
+  schema,
+  dialect: carbon.CarbonDialect.MYSQL,
+  context: {canRunLocal: false},
+});
+assert.strictEqual(getRequest.method, 'Get');
+assert.strictEqual(getRequest.model, 'actor');
+assert.strictEqual(getRequest.cacheResults, false);
+assert.deepStrictEqual(getRequest.route, {target: 'server', reason: 'local_unavailable'});
+const getResult = carbon.compileQueryResult(getRequest.query, getRequest.schema, getRequest.dialect);
+assert.strictEqual(getResult.sql, 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 500');
 const modelInserted = carbon.modelInsert(actorMeta, {[actorMeta.fields.first_name]: 'ALICE'})
   .compile(schema, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(modelInserted.sql, 'INSERT INTO `actor` (`first_name`) VALUES (?)');

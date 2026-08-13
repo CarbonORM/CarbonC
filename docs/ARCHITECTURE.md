@@ -24,6 +24,7 @@ Bindings own runtime integration:
 - native payload serialization helpers
 - language-native C6 token constants
 - language-native dialect constants
+- context-based local/server execution envelopes
 - query-builder facades
 - native model classes and generated types
 - exception mapping
@@ -35,16 +36,23 @@ package layer around those extensions owns native dict/array/object/hash
 serialization helpers, typed result adapters that decode params/diagnostics JSON,
 optional query-builder facades, CarbonNode-compatible `C6C` token constants, C
 `CARBON_C6_*` macros, `CarbonDialect` / `Dialect` constants, C
-`CARBON_DIALECT_*` macros, and typed source generators for Python dataclasses,
-TypeScript interfaces, PHP model classes, and Ruby Struct models. Generated
-model sources expose table, field-name, and qualified-column constants so query
-authors do not hand-type schema identifiers. DB execution remains outside
-CarbonC.
+`CARBON_DIALECT_*` macros, context-based local/server execution envelopes, and
+typed source generators for Python dataclasses, TypeScript interfaces, PHP model
+classes, and Ruby Struct models. Generated model sources expose table,
+field-name, and qualified-column constants so query authors do not hand-type
+schema identifiers. DB execution remains outside CarbonC.
 
 The preferred package-level runtime contract is a complete native query payload
 object/array/hash keyed by generated constants. Fluent builders are secondary
 helpers that emit the same payload shape for callers that want incremental
 construction.
+
+Model `Get` helpers are package-level convenience wrappers around that same
+payload shape. They inject the generated model table when the caller omitted
+`FROM`, preserve request metadata such as `cacheResults`, and return a
+serializable execution request with a deterministic route decision. The route
+decision is advisory metadata for the application executor; CarbonC still does
+not own connection pools, HTTP transport, or database execution.
 
 This keeps the C ABI stable and keeps each language package idiomatic.
 
@@ -58,6 +66,10 @@ native binding object
   -> native driver executes prepared statement
 
 schema JSON -> CarbonC schema metadata normalizer -> native type generator
+
+native model Get payload + runtime context
+  -> package route policy
+  -> local executor or server executor chosen by application code
 ```
 
 The first implementation uses JSON because every target language can produce
@@ -88,6 +100,8 @@ The initial compiler supports:
   table and column constants
 - package-level compile helpers for native Python dicts, PHP arrays, JavaScript
   objects, and Ruby hashes
+- package-level model `Get` payload helpers and context-based execution request
+  envelopes that choose `local` or `server` without executing DB calls
 - package-level C6 token constants exposed idiomatically as `C6C` / `C6`
 - package-level dialect constants exposed idiomatically as `CarbonDialect` /
   `Dialect`

@@ -518,6 +518,50 @@ model_values = CarbonC.model_values(
   CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'
 )
 raise "unexpected model values payload: #{model_values.inspect}" unless model_values == {'actor.first_name' => 'ALICE'}
+get_payload = CarbonC.model_get_payload(
+  CarbonModels::Actor,
+  CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
+  CarbonC::C6C::WHERE => {
+    CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+  },
+  CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 500},
+  'cacheResults' => false
+)
+expected_get_payload = {
+  'SELECT' => ['actor.actor_id'],
+  'WHERE' => {'actor.actor_id' => ['>', 10]},
+  'PAGINATION' => {'LIMIT' => 500},
+  'cacheResults' => false,
+  'FROM' => 'actor'
+}
+raise "unexpected model get payload: #{get_payload.inspect}" unless get_payload == expected_get_payload
+mobile_route = CarbonC.route_query(
+  get_payload,
+  context: {'deviceClass' => 'mobile'},
+  policy: {'serverOnMobile' => true}
+)
+raise "unexpected mobile route: #{mobile_route.inspect}" unless mobile_route == {'target' => 'server', 'reason' => 'mobile_offload'}
+get_request = CarbonC.model_get_request(
+  CarbonModels::Actor,
+  get_payload,
+  schema: schema,
+  dialect: CarbonC::Dialect::MYSQL,
+  context: {'canRunLocal' => false}
+)
+raise "unexpected model get method: #{get_request.inspect}" unless get_request.fetch('method') == 'Get'
+raise "unexpected model get model: #{get_request.inspect}" unless get_request.fetch('model') == 'actor'
+raise "unexpected model get cache flag: #{get_request.inspect}" unless get_request.fetch('cacheResults') == false
+unless get_request.fetch('route') == {'target' => 'server', 'reason' => 'local_unavailable'}
+  raise "unexpected model get route: #{get_request.fetch('route').inspect}"
+end
+get_result = CarbonC.compile_query_result(
+  get_request.fetch('query'),
+  get_request.fetch('schema'),
+  get_request.fetch('dialect')
+)
+unless get_result.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 500'
+  raise "unexpected model get sql: #{get_result.fetch('sql')}"
+end
 model_inserted = CarbonC.model_insert(
   CarbonModels::Actor,
   CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'

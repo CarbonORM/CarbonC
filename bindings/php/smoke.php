@@ -545,6 +545,48 @@ carbon_assert(
     carbon_model_values(Actor::class, [Actor::FIELD_FIRST_NAME => 'ALICE']) === ['actor.first_name' => 'ALICE'],
     'unexpected model values payload'
 );
+$getPayload = carbon_model_get_payload(Actor::class, [
+    C6C::SELECT => [Actor::ACTOR_ID],
+    C6C::WHERE => [
+        Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
+    ],
+    C6C::PAGINATION => [C6C::LIMIT => 500],
+    'cacheResults' => false,
+]);
+carbon_assert(
+    $getPayload === [
+        'SELECT' => ['actor.actor_id'],
+        'WHERE' => ['actor.actor_id' => ['>', 10]],
+        'PAGINATION' => ['LIMIT' => 500],
+        'cacheResults' => false,
+        'FROM' => 'actor',
+    ],
+    'unexpected model get payload: ' . json_encode($getPayload)
+);
+carbon_assert(
+    carbon_route_query($getPayload, ['deviceClass' => 'mobile'], ['serverOnMobile' => true])
+        === ['target' => 'server', 'reason' => 'mobile_offload'],
+    'unexpected mobile route'
+);
+$getRequest = carbon_model_get_request(
+    Actor::class,
+    $getPayload,
+    $schema,
+    CarbonDialect::MYSQL,
+    ['canRunLocal' => false]
+);
+carbon_assert($getRequest['method'] === 'Get', 'unexpected model get request method');
+carbon_assert($getRequest['model'] === 'actor', 'unexpected model get request model');
+carbon_assert($getRequest['cacheResults'] === false, 'unexpected model get cache flag');
+carbon_assert(
+    $getRequest['route'] === ['target' => 'server', 'reason' => 'local_unavailable'],
+    'unexpected model get route: ' . json_encode($getRequest['route'])
+);
+$getResult = carbon_compile_query_result($getRequest['query'], $getRequest['schema'], $getRequest['dialect']);
+carbon_assert(
+    $getResult['sql'] === 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 500',
+    'unexpected model get sql: ' . $getResult['sql']
+);
 $modelInserted = carbon_model_insert(Actor::class, [Actor::FIELD_FIRST_NAME => 'ALICE'])
     ->compile($schema, CarbonDialect::MYSQL);
 carbon_assert(

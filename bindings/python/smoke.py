@@ -524,6 +524,46 @@ def main() -> None:
     assert carbon_codegen.model_values(actor_model, {actor_model.FIELD_FIRST_NAME: "ALICE"}) == {
         "actor.first_name": "ALICE",
     }
+    get_payload = carbon_codegen.model_get_payload(
+        actor_model,
+        {
+            carbon_codegen.C6C.SELECT: [actor_model.ACTOR_ID],
+            carbon_codegen.C6C.WHERE: {
+                actor_model.ACTOR_ID: carbon_codegen.op(carbon_codegen.C6C.GREATER_THAN, 10),
+            },
+            carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 500},
+            "cacheResults": False,
+        },
+    )
+    assert get_payload == {
+        "SELECT": ["actor.actor_id"],
+        "WHERE": {"actor.actor_id": [">", 10]},
+        "PAGINATION": {"LIMIT": 500},
+        "cacheResults": False,
+        "FROM": "actor",
+    }, get_payload
+    assert carbon_codegen.route_query(
+        get_payload,
+        context={"deviceClass": "mobile"},
+        policy={"serverOnMobile": True},
+    ) == {"target": "server", "reason": "mobile_offload"}
+    get_request = carbon_codegen.model_get_request(
+        actor_model,
+        get_payload,
+        schema=schema,
+        dialect=carbon_codegen.CarbonDialect.MYSQL,
+        context={"canRunLocal": False},
+    )
+    assert get_request["method"] == "Get", get_request
+    assert get_request["model"] == "actor", get_request
+    assert get_request["cacheResults"] is False, get_request
+    assert get_request["route"] == {"target": "server", "reason": "local_unavailable"}, get_request
+    get_result = carbon_codegen.compile_query_result(
+        get_request["query"],
+        schema=schema,
+        dialect=get_request["dialect"],
+    )
+    assert get_result["sql"] == "SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 500", get_result
     model_inserted = carbon_codegen.model_insert(actor_model, {actor_model.FIELD_FIRST_NAME: "ALICE"}).compile(
         schema=schema,
         dialect=carbon_codegen.CarbonDialect.MYSQL,
