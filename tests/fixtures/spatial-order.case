@@ -5,4 +5,4 @@ SELECT property_units.unit_id FROM `property_units` ORDER BY ST_DISTANCE_SPHERE(
 -- params
 [10,20]
 -- allowlist
-SELECT property_units.unit_id FROM `property_units` ORDER BY ST_DISTANCE_SPHERE(property_units.location, ST_SRID(ST_POINT(?, ?), 4326)) ASC LIMIT ?
+SELECT property_units.unit_id FROM `property_units` ORDER BY ST_DISTANCE_SPHERE(property_units.location, ST_SRID(ST_POINT(? ×2), 4326)) ASC LIMIT ?

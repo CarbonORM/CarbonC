@@ -5,4 +5,4 @@ REPLACE INTO `actor` (`first_name`, `last_name`) VALUES (?, ?) ON DUPLICATE KEY 
 -- params
 ["BOB","SMITH"]
 -- allowlist
-REPLACE INTO `actor` (`first_name`, `last_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`), `last_name` = VALUES(`last_name`)
+REPLACE INTO `actor` (`first_name`, `last_name`) VALUES (? ×2) ×* ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`), `last_name` = VALUES(`last_name`)

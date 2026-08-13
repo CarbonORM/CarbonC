@@ -66,19 +66,24 @@ Supported in this slice:
   `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `LIT`, and `PARAM`
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
-- explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads
+- explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads,
+  including array-valued multi-row `INSERT`/MySQL `REPLACE` rows
+- CarbonNode-compatible `dataInsertMultipleRows` insert payloads
 - MySQL upsert update lists through `UPDATE: ["column_name"]`
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL `?` placeholders and PostgreSQL `$1`-style placeholders
 - CarbonNode-style allowlist normalization for whitespace, `LIMIT` forms
-  including `LIMIT ... OFFSET ...`, and `IN` bind-list cardinality
+  including `LIMIT ... OFFSET ...`, parenthesized bind groups,
+  multi-row `VALUES` cardinality, and `IN` bind-list cardinality
 - schema-aware table, unqualified-reference, dotted-reference, join-alias, and
   write-column validation when `schema_json` includes a `TABLES` object
 
 Write support is intentionally explicit: this slice accepts operation keys such
 as `INSERT`, `REPLACE`, `UPDATE`, and `DELETE`, not CarbonNode's loose root-level
-POST rows. Single-row insert/upsert payloads are covered now. PostgreSQL writes
-currently cover simple insert/update/delete forms; joined writes, multi-row POST
+POST rows. Single-row and multi-row insert/upsert payloads are covered now,
+including `dataInsertMultipleRows`; later rows bind `null` for missing first-row
+columns to match CarbonNode's batch insert behavior. PostgreSQL writes currently
+cover simple insert/update/delete forms; joined writes, loose root-level POST
 normalization, and schema-derived conflict targets are later work.
 
 Schema validation is opt-in for this slice. Passing `{}` keeps syntax-only
@@ -253,8 +258,8 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 ## Next Milestones
 
-1. Expand fixture coverage for derived joins, multi-row writes, PostgreSQL
-   conflict targets, and schema-aware write normalization.
+1. Expand fixture coverage for derived joins, PostgreSQL conflict targets, loose
+   POST-row normalization, and schema-aware write normalization.
 2. Expand schema validation to generated type metadata and binding-friendly
    diagnostic paths.
 3. Add package-level ergonomics for each binding without moving DB execution

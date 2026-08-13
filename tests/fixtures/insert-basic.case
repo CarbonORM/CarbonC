@@ -5,4 +5,4 @@ INSERT INTO `actor` (`first_name`, `last_name`) VALUES (?, ?)
 -- params
 ["ALICE","SMITH"]
 -- allowlist
-INSERT INTO `actor` (`first_name`, `last_name`) VALUES (?, ?)
+INSERT INTO `actor` (`first_name`, `last_name`) VALUES (? ×2) ×*

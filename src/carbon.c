@@ -52,6 +52,12 @@ typedef struct carbon_object_entry {
     carbon_json_span value;
 } carbon_object_entry;
 
+typedef struct carbon_write_columns {
+    char **keys;
+    char **short_columns;
+    size_t count;
+} carbon_write_columns;
+
 static size_t carbon_strlen(const char *value) {
     return value == NULL ? 0 : strlen(value);
 }
@@ -2656,50 +2662,213 @@ static carbon_status carbon_append_write_value(
     return CARBON_STATUS_INVALID_QUERY;
 }
 
-static carbon_status carbon_append_write_columns(
+static void carbon_write_columns_free(carbon_write_columns *columns) {
+    size_t index;
+
+    if (columns == NULL) {
+        return;
+    }
+    for (index = 0; index < columns->count; ++index) {
+        free(columns->keys[index]);
+        free(columns->short_columns[index]);
+    }
+    free(columns->keys);
+    free(columns->short_columns);
+    columns->keys = NULL;
+    columns->short_columns = NULL;
+    columns->count = 0;
+}
+
+static int carbon_write_columns_find_short(
+        const carbon_write_columns *columns,
+        const char *short_column) {
+    size_t index;
+
+    if (columns == NULL || short_column == NULL) {
+        return 0;
+    }
+    for (index = 0; index < columns->count; ++index) {
+        if (strcmp(columns->short_columns[index], short_column) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static carbon_status carbon_write_columns_add(
+        carbon_write_columns *columns,
+        char *key,
+        char *short_column) {
+    char **next_keys;
+    char **next_short_columns;
+
+    if (columns == NULL || key == NULL || short_column == NULL) {
+        free(key);
+        free(short_column);
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    if (carbon_write_columns_find_short(columns, short_column)) {
+        free(key);
+        free(short_column);
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    next_keys = (char **) realloc(columns->keys, (columns->count + 1) * sizeof(char *));
+    if (next_keys == NULL) {
+        free(key);
+        free(short_column);
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    columns->keys = next_keys;
+
+    next_short_columns = (char **) realloc(
+            columns->short_columns,
+            (columns->count + 1) * sizeof(char *));
+    if (next_short_columns == NULL) {
+        free(key);
+        free(short_column);
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    columns->short_columns = next_short_columns;
+    columns->keys[columns->count] = key;
+    columns->short_columns[columns->count] = short_column;
+    ++columns->count;
+    return CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_collect_write_columns(
         carbon_compile_state *state,
         const char *table,
         carbon_json_span rows,
-        carbon_string_builder *sql,
-        int append_values) {
+        carbon_write_columns *columns) {
     const char *cursor = NULL;
     carbon_object_entry entry;
     int next;
-    int wrote = 0;
 
     while ((next = carbon_object_next(rows, &cursor, &entry)) == 1) {
-        char *column = carbon_span_string_copy(entry.key);
-        char *short_column = column == NULL ? NULL : carbon_trim_write_column(state, table, column);
+        char *key = carbon_span_string_copy(entry.key);
+        char *short_column = key == NULL ? NULL : carbon_trim_write_column(state, table, key);
         carbon_status status;
 
-        free(column);
         if (short_column == NULL) {
+            free(key);
             return CARBON_STATUS_INVALID_QUERY;
         }
-
-        if (wrote && !carbon_builder_append(sql, ", ")) {
-            free(short_column);
-            return CARBON_STATUS_OUT_OF_MEMORY;
+        status = carbon_write_columns_add(columns, key, short_column);
+        if (status != CARBON_STATUS_OK) {
+            return status;
         }
-        if (append_values) {
-            status = carbon_append_write_value(state, entry.value, sql);
-            if (status != CARBON_STATUS_OK) {
-                free(short_column);
-                return status;
-            }
-        } else if (!carbon_append_quoted_table(sql, state->dialect, short_column)) {
-            free(short_column);
-            return CARBON_STATUS_OUT_OF_MEMORY;
-        }
-
-        free(short_column);
-        wrote = 1;
     }
 
-    if (next < 0 || !wrote) {
+    if (next < 0 || columns->count == 0) {
         return CARBON_STATUS_INVALID_QUERY;
     }
     return CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_append_write_column_list(
+        carbon_compile_state *state,
+        const carbon_write_columns *columns,
+        carbon_string_builder *sql) {
+    size_t index;
+
+    if (columns == NULL || columns->count == 0) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    for (index = 0; index < columns->count; ++index) {
+        if (index > 0 && !carbon_builder_append(sql, ", ")) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        if (!carbon_append_quoted_table(sql, state->dialect, columns->short_columns[index])) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+    }
+    return CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_append_write_row_values(
+        carbon_compile_state *state,
+        carbon_json_span row,
+        const carbon_write_columns *columns,
+        carbon_string_builder *sql) {
+    size_t index;
+
+    if (columns == NULL || columns->count == 0 || !carbon_span_starts_with(row, '{')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    for (index = 0; index < columns->count; ++index) {
+        carbon_json_span value;
+        carbon_status status;
+        int found;
+
+        if (index > 0 && !carbon_builder_append(sql, ", ")) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        found = carbon_object_get_property(row, columns->keys[index], &value);
+        if (found < 0) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        if (found == 0) {
+            value.start = "null";
+            value.end = value.start + 4;
+        }
+        status = carbon_append_write_value(state, value, sql);
+        if (status != CARBON_STATUS_OK) {
+            return status;
+        }
+    }
+    return CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_append_write_values(
+        carbon_compile_state *state,
+        carbon_json_span rows,
+        const carbon_write_columns *columns,
+        carbon_string_builder *sql) {
+    if (carbon_span_starts_with(rows, '{')) {
+        carbon_status status;
+
+        if (!carbon_builder_append_char(sql, '(')) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        status = carbon_append_write_row_values(state, rows, columns, sql);
+        if (status != CARBON_STATUS_OK) {
+            return status;
+        }
+        return carbon_builder_append_char(sql, ')') ? CARBON_STATUS_OK : CARBON_STATUS_OUT_OF_MEMORY;
+    }
+
+    if (carbon_span_starts_with(rows, '[')) {
+        const char *cursor = NULL;
+        carbon_json_span row;
+        int next;
+        int wrote = 0;
+
+        while ((next = carbon_array_next(rows, &cursor, &row)) == 1) {
+            carbon_status status;
+
+            if (!carbon_span_starts_with(row, '{')) {
+                return CARBON_STATUS_INVALID_QUERY;
+            }
+            if (wrote && !carbon_builder_append(sql, ", ")) {
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+            if (!carbon_builder_append_char(sql, '(')) {
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+            status = carbon_append_write_row_values(state, row, columns, sql);
+            if (status != CARBON_STATUS_OK) {
+                return status;
+            }
+            if (!carbon_builder_append_char(sql, ')')) {
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+            wrote = 1;
+        }
+        return next < 0 || !wrote ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OK;
+    }
+
+    return CARBON_STATUS_INVALID_QUERY;
 }
 
 static carbon_status carbon_append_mysql_upsert_update(
@@ -2751,15 +2920,20 @@ static carbon_status carbon_compile_insert_statement(
     static const char *const insert_names[] = {"INSERT", "insert"};
     static const char *const replace_names[] = {"REPLACE", "replace"};
     static const char *const update_names[] = {"UPDATE", "update"};
+    static const char *const multi_row_names[] = {"dataInsertMultipleRows"};
     carbon_json_span insert_rows;
+    carbon_json_span first_insert_row;
     carbon_json_span update_columns;
     char *table = NULL;
+    carbon_write_columns columns = {0};
     carbon_query_scope scope;
     const carbon_query_scope *previous_scope = state->scope;
     const char *verb = "INSERT";
     int found_replace;
     int found_insert;
+    int found_multi_row;
     int found_update;
+    int using_multi_row_key = 0;
     carbon_status status;
 
     status = carbon_copy_query_table(state, query, &table, error_message);
@@ -2789,15 +2963,41 @@ static carbon_status carbon_compile_insert_statement(
             goto cleanup;
         }
         if (found_insert == 0) {
-            status = CARBON_STATUS_INVALID_QUERY;
-            goto cleanup;
+            found_multi_row = carbon_object_get_any(query, multi_row_names, 1, &insert_rows);
+            if (found_multi_row < 0) {
+                status = CARBON_STATUS_INVALID_JSON;
+                goto cleanup;
+            }
+            if (found_multi_row == 0) {
+                status = CARBON_STATUS_INVALID_QUERY;
+                goto cleanup;
+            }
+            using_multi_row_key = 1;
         }
     }
 
-    if (!carbon_span_starts_with(insert_rows, '{')) {
+    if (using_multi_row_key && !carbon_span_starts_with(insert_rows, '[')) {
         status = CARBON_STATUS_INVALID_QUERY;
         goto cleanup;
     }
+
+    if (carbon_span_starts_with(insert_rows, '{')) {
+        first_insert_row = insert_rows;
+    } else if (carbon_span_starts_with(insert_rows, '[')) {
+        if (carbon_array_get(insert_rows, 0, &first_insert_row) != 1
+            || !carbon_span_starts_with(first_insert_row, '{')) {
+            status = CARBON_STATUS_INVALID_QUERY;
+            goto cleanup;
+        }
+    } else {
+        status = CARBON_STATUS_INVALID_QUERY;
+        goto cleanup;
+    }
+    status = carbon_collect_write_columns(state, table, first_insert_row, &columns);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+
     if (!carbon_builder_append(sql, verb)
         || !carbon_builder_append(sql, " INTO ")
         || !carbon_append_quoted_table(sql, state->dialect, table)
@@ -2805,20 +3005,16 @@ static carbon_status carbon_compile_insert_statement(
         status = CARBON_STATUS_OUT_OF_MEMORY;
         goto cleanup;
     }
-    status = carbon_append_write_columns(state, table, insert_rows, sql, 0);
+    status = carbon_append_write_column_list(state, &columns, sql);
     if (status != CARBON_STATUS_OK) {
         goto cleanup;
     }
-    if (!carbon_builder_append(sql, ") VALUES (")) {
+    if (!carbon_builder_append(sql, ") VALUES ")) {
         status = CARBON_STATUS_OUT_OF_MEMORY;
         goto cleanup;
     }
-    status = carbon_append_write_columns(state, table, insert_rows, sql, 1);
+    status = carbon_append_write_values(state, insert_rows, &columns, sql);
     if (status != CARBON_STATUS_OK) {
-        goto cleanup;
-    }
-    if (!carbon_builder_append_char(sql, ')')) {
-        status = CARBON_STATUS_OUT_OF_MEMORY;
         goto cleanup;
     }
 
@@ -2848,6 +3044,7 @@ static carbon_status carbon_compile_insert_statement(
 
 cleanup:
     state->scope = previous_scope;
+    carbon_write_columns_free(&columns);
     free(table);
     return status;
 }
@@ -3081,16 +3278,18 @@ static carbon_status carbon_compile_statement(
     static const char *const replace_names[] = {"REPLACE", "replace"};
     static const char *const update_names[] = {"UPDATE", "update"};
     static const char *const delete_names[] = {"DELETE", "delete"};
+    static const char *const multi_row_names[] = {"dataInsertMultipleRows"};
     carbon_json_span unused;
     int has_insert = carbon_object_get_any(query, insert_names, 2, &unused);
     int has_replace = carbon_object_get_any(query, replace_names, 2, &unused);
     int has_update = carbon_object_get_any(query, update_names, 2, &unused);
     int has_delete = carbon_object_get_any(query, delete_names, 2, &unused);
+    int has_multi_row = carbon_object_get_any(query, multi_row_names, 1, &unused);
 
-    if (has_insert < 0 || has_replace < 0 || has_update < 0 || has_delete < 0) {
+    if (has_insert < 0 || has_replace < 0 || has_update < 0 || has_delete < 0 || has_multi_row < 0) {
         return CARBON_STATUS_INVALID_JSON;
     }
-    if (has_insert > 0 || has_replace > 0) {
+    if (has_insert > 0 || has_replace > 0 || has_multi_row > 0) {
         return carbon_compile_insert_statement(state, query, sql, error_message);
     }
     if (has_update > 0) {
@@ -3340,32 +3539,247 @@ static int carbon_append_limit_normalized(carbon_string_builder *builder, const 
     return 1;
 }
 
-static int carbon_append_in_bind_normalized(carbon_string_builder *builder, const char *sql) {
+static int carbon_parse_raw_bind_group(const char *cursor, const char *end, const char **next, int *bind_count) {
+    int count = 0;
+
+    if (cursor >= end || *cursor != '(') {
+        return 0;
+    }
+    ++cursor;
+    cursor = carbon_skip_ws(cursor, end);
+    if (cursor >= end || *cursor != '?') {
+        return 0;
+    }
+
+    while (cursor < end && *cursor == '?') {
+        ++count;
+        ++cursor;
+        cursor = carbon_skip_ws(cursor, end);
+        if (cursor < end && *cursor == ',') {
+            ++cursor;
+            cursor = carbon_skip_ws(cursor, end);
+            continue;
+        }
+        break;
+    }
+
+    if (cursor >= end || *cursor != ')' || count == 0) {
+        return 0;
+    }
+    if (next != NULL) {
+        *next = cursor + 1;
+    }
+    if (bind_count != NULL) {
+        *bind_count = count;
+    }
+    return 1;
+}
+
+static int carbon_parse_multiply_marker(const char **cursor, const char *end) {
+    const char *probe = *cursor;
+
+    if (probe + 2 <= end
+        && (unsigned char) probe[0] == 0xC3
+        && (unsigned char) probe[1] == 0x97) {
+        *cursor = probe + 2;
+        return 1;
+    }
+    return 0;
+}
+
+static int carbon_parse_collapsed_bind_group(const char *cursor, const char *end, const char **next) {
+    const char *probe = cursor;
+    int has_digits = 0;
+
+    if (probe >= end || *probe != '(') {
+        return 0;
+    }
+    ++probe;
+    probe = carbon_skip_ws(probe, end);
+    if (probe >= end || *probe != '?') {
+        return 0;
+    }
+    ++probe;
+    probe = carbon_skip_ws(probe, end);
+    if (!carbon_parse_multiply_marker(&probe, end)) {
+        return 0;
+    }
+    while (probe < end && isdigit((unsigned char) *probe)) {
+        has_digits = 1;
+        ++probe;
+    }
+    probe = carbon_skip_ws(probe, end);
+    if (!has_digits || probe >= end || *probe != ')') {
+        return 0;
+    }
+    if (next != NULL) {
+        *next = probe + 1;
+    }
+    return 1;
+}
+
+static const char *carbon_skip_bind_row_multiplier(const char *cursor, const char *end) {
+    const char *probe = carbon_skip_ws(cursor, end);
+
+    if (carbon_parse_multiply_marker(&probe, end)) {
+        if (probe < end && *probe == '*') {
+            return probe + 1;
+        }
+        while (probe < end && isdigit((unsigned char) *probe)) {
+            ++probe;
+        }
+        return probe;
+    }
+    return cursor;
+}
+
+static int carbon_append_bind_group_collapsed(carbon_string_builder *builder, const char *sql) {
     const char *cursor = sql;
+    const char *end = sql + strlen(sql);
 
-    while (*cursor != '\0') {
-        if (carbon_ci_starts_with(cursor, "IN (")) {
-            const char *probe = cursor + 4;
-            int binds = 0;
+    while (cursor < end) {
+        const char *next;
+        int bind_count;
 
-            probe = carbon_skip_ws(probe, probe + strlen(probe));
-            while (*probe == '?') {
-                ++binds;
-                ++probe;
-                probe = carbon_skip_ws(probe, probe + strlen(probe));
-                if (*probe == ',') {
-                    ++probe;
-                    probe = carbon_skip_ws(probe, probe + strlen(probe));
-                    continue;
+        if (carbon_parse_raw_bind_group(cursor, end, &next, &bind_count)) {
+            if (!carbon_builder_append_format(builder, "(? \xC3\x97%d)", bind_count)) {
+                return 0;
+            }
+            cursor = next;
+            continue;
+        }
+
+        if (!carbon_builder_append_char(builder, *cursor)) {
+            return 0;
+        }
+        ++cursor;
+    }
+    return 1;
+}
+
+static int carbon_append_repeated_bind_rows_normalized(carbon_string_builder *builder, const char *sql) {
+    const char *cursor = sql;
+    const char *end = sql + strlen(sql);
+
+    while (cursor < end) {
+        const char *row_end;
+
+        if (carbon_parse_collapsed_bind_group(cursor, end, &row_end)) {
+            const char *probe = row_end;
+            size_t row_length = (size_t) (row_end - cursor);
+            int repeated = 0;
+
+            while (probe < end) {
+                const char *comma = carbon_skip_ws(probe, end);
+                const char *next_row_start;
+                const char *next_row_end;
+
+                if (comma >= end || *comma != ',') {
+                    break;
                 }
-                break;
+                next_row_start = carbon_skip_ws(comma + 1, end);
+                if (!carbon_parse_collapsed_bind_group(next_row_start, end, &next_row_end)
+                    || (size_t) (next_row_end - next_row_start) != row_length
+                    || strncmp(cursor, next_row_start, row_length) != 0) {
+                    break;
+                }
+                repeated = 1;
+                probe = next_row_end;
             }
 
-            if (binds > 1 && *probe == ')') {
+            if (!carbon_builder_append_len(builder, cursor, row_length)) {
+                return 0;
+            }
+            if (repeated) {
+                if (!carbon_builder_append(builder, " \xC3\x97*")) {
+                    return 0;
+                }
+                cursor = probe;
+            } else {
+                cursor = row_end;
+            }
+            continue;
+        }
+
+        if (!carbon_builder_append_char(builder, *cursor)) {
+            return 0;
+        }
+        ++cursor;
+    }
+    return 1;
+}
+
+static int carbon_append_values_bind_rows_normalized(carbon_string_builder *builder, const char *sql) {
+    const char *cursor = sql;
+    const char *end = sql + strlen(sql);
+
+    while (cursor < end) {
+        size_t keyword_length = 0;
+
+        if (carbon_ci_starts_with(cursor, "VALUES")
+            && cursor + 6 < end
+            && isspace((unsigned char) cursor[6])
+            && (cursor == sql || !isalnum((unsigned char) cursor[-1]))) {
+            keyword_length = 6;
+        } else if (carbon_ci_starts_with(cursor, "VALUE")
+                   && cursor + 5 < end
+                   && isspace((unsigned char) cursor[5])
+                   && (cursor == sql || !isalnum((unsigned char) cursor[-1]))) {
+            keyword_length = 5;
+        }
+
+        if (keyword_length > 0) {
+            const char *row_start = carbon_skip_ws(cursor + keyword_length, end);
+            const char *row_end;
+
+            if (carbon_parse_collapsed_bind_group(row_start, end, &row_end)) {
+                const char *after_row = carbon_skip_bind_row_multiplier(row_end, end);
+                const char *after_row_ws = carbon_skip_ws(after_row, end);
+
+                if (after_row == row_end && after_row_ws < end && *after_row_ws == ',') {
+                    if (!carbon_builder_append_char(builder, *cursor)) {
+                        return 0;
+                    }
+                    ++cursor;
+                    continue;
+                }
+
+                if (!carbon_builder_append_len(builder, cursor, keyword_length)
+                    || !carbon_builder_append_char(builder, ' ')
+                    || !carbon_builder_append_len(builder, row_start, (size_t) (row_end - row_start))
+                    || !carbon_builder_append(builder, " \xC3\x97*")) {
+                    return 0;
+                }
+                cursor = after_row;
+                continue;
+            }
+        }
+
+        if (!carbon_builder_append_char(builder, *cursor)) {
+            return 0;
+        }
+        ++cursor;
+    }
+    return 1;
+}
+
+static int carbon_append_in_bind_normalized(carbon_string_builder *builder, const char *sql) {
+    const char *cursor = sql;
+    const char *end = sql + strlen(sql);
+
+    while (cursor < end) {
+        if (carbon_ci_starts_with(cursor, "IN")
+            && cursor + 2 < end
+            && isspace((unsigned char) cursor[2])
+            && (cursor == sql || !isalnum((unsigned char) cursor[-1]))) {
+            const char *row_start = carbon_skip_ws(cursor + 2, end);
+            const char *row_end;
+
+            if (carbon_parse_collapsed_bind_group(row_start, end, &row_end)) {
                 if (!carbon_builder_append(builder, "IN (? \xC3\x97*)")) {
                     return 0;
                 }
-                cursor = probe + 1;
+                cursor = row_end;
                 continue;
             }
         }
@@ -3384,7 +3798,10 @@ carbon_status carbon_normalize_allowlist_sql(
         carbon_buffer *error) {
     carbon_string_builder collapsed = {0};
     carbon_string_builder limit_normalized = {0};
-    carbon_string_builder bind_normalized = {0};
+    carbon_string_builder bind_groups_collapsed = {0};
+    carbon_string_builder repeated_rows_normalized = {0};
+    carbon_string_builder values_normalized = {0};
+    carbon_string_builder in_normalized = {0};
 
     if (out == NULL || sql == NULL) {
         if (error != NULL) {
@@ -3401,11 +3818,25 @@ carbon_status carbon_normalize_allowlist_sql(
 
     if (!carbon_append_collapsed_space(&collapsed, sql)
         || !carbon_append_limit_normalized(&limit_normalized, collapsed.data == NULL ? "" : collapsed.data)
-        || !carbon_append_in_bind_normalized(&bind_normalized, limit_normalized.data == NULL ? "" : limit_normalized.data)
-        || !carbon_buffer_take_builder(out, &bind_normalized)) {
+        || !carbon_append_bind_group_collapsed(
+                &bind_groups_collapsed,
+                limit_normalized.data == NULL ? "" : limit_normalized.data)
+        || !carbon_append_repeated_bind_rows_normalized(
+                &repeated_rows_normalized,
+                bind_groups_collapsed.data == NULL ? "" : bind_groups_collapsed.data)
+        || !carbon_append_values_bind_rows_normalized(
+                &values_normalized,
+                repeated_rows_normalized.data == NULL ? "" : repeated_rows_normalized.data)
+        || !carbon_append_in_bind_normalized(
+                &in_normalized,
+                values_normalized.data == NULL ? "" : values_normalized.data)
+        || !carbon_buffer_take_builder(out, &in_normalized)) {
         carbon_builder_free(&collapsed);
         carbon_builder_free(&limit_normalized);
-        carbon_builder_free(&bind_normalized);
+        carbon_builder_free(&bind_groups_collapsed);
+        carbon_builder_free(&repeated_rows_normalized);
+        carbon_builder_free(&values_normalized);
+        carbon_builder_free(&in_normalized);
         if (error != NULL) {
             carbon_buffer_set(error, carbon_status_message(CARBON_STATUS_OUT_OF_MEMORY));
         }
@@ -3414,6 +3845,9 @@ carbon_status carbon_normalize_allowlist_sql(
 
     carbon_builder_free(&collapsed);
     carbon_builder_free(&limit_normalized);
+    carbon_builder_free(&bind_groups_collapsed);
+    carbon_builder_free(&repeated_rows_normalized);
+    carbon_builder_free(&values_normalized);
     if (error != NULL) {
         carbon_buffer_set(error, "");
     }

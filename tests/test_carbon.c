@@ -125,6 +125,21 @@ static void test_allowlist_normalizer(void) {
 
     carbon_buffer_free(&out);
     carbon_buffer_free(&error);
+
+    assert(carbon_normalize_allowlist_sql(
+                   "INSERT INTO `valuation_report_comparables` (`report_id`, `unit_id`, `subject_unit_id`) "
+                   "VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?) "
+                   "ON DUPLICATE KEY UPDATE `subject_unit_id` = VALUES(`subject_unit_id`)",
+                   &out,
+                   &error) == CARBON_STATUS_OK);
+    assert_buffer_equals(&out,
+                         "INSERT INTO `valuation_report_comparables` (`report_id`, `unit_id`, `subject_unit_id`) "
+                         "VALUES (? \xC3\x97" "3) \xC3\x97* "
+                         "ON DUPLICATE KEY UPDATE `subject_unit_id` = VALUES(`subject_unit_id`)");
+    assert_buffer_equals(&error, "");
+
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
 }
 
 static void test_multiple_where_uses_and(void) {
@@ -176,6 +191,70 @@ static void test_postgresql_insert_write_returning(void) {
     assert_buffer_equals(&result.params_json, "[7,\"ALICE\"]");
     assert_buffer_equals(&result.allowlist_key,
                          "INSERT INTO \"actor\" (\"actor_id\", \"first_name\") VALUES ($1, $2) RETURNING *");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
+static void test_postgresql_multi_row_insert_write_returning(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] =
+            "{\"dialect\":\"postgresql\","
+            "\"FROM\":\"actor\","
+            "\"INSERT\":["
+            "{\"actor.first_name\":\"ALICE\",\"actor.last_name\":\"ONE\"},"
+            "{\"actor.first_name\":\"BOB\",\"actor.last_name\":\"TWO\"}"
+            "]}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "INSERT INTO \"actor\" (\"first_name\", \"last_name\") VALUES ($1, $2), ($3, $4) RETURNING *");
+    assert_buffer_equals(&result.params_json, "[\"ALICE\",\"ONE\",\"BOB\",\"TWO\"]");
+    assert_buffer_equals(&result.allowlist_key,
+                         "INSERT INTO \"actor\" (\"first_name\", \"last_name\") VALUES ($1, $2), ($3, $4) RETURNING *");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
+static void test_data_insert_multiple_rows_upsert_defaults_missing_values(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] =
+            "{\"FROM\":\"actor\","
+            "\"dataInsertMultipleRows\":["
+            "{\"actor.first_name\":\"ALICE\",\"actor.last_name\":\"ONE\"},"
+            "{\"actor.first_name\":\"BOB\"}"
+            "],"
+            "\"UPDATE\":[\"first_name\",\"last_name\"]}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "INSERT INTO `actor` (`first_name`, `last_name`) VALUES (?, ?), (?, ?) "
+                         "ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`), `last_name` = VALUES(`last_name`)");
+    assert_buffer_equals(&result.params_json, "[\"ALICE\",\"ONE\",\"BOB\",null]");
+    assert_buffer_equals(&result.allowlist_key,
+                         "INSERT INTO `actor` (`first_name`, `last_name`) VALUES (? \xC3\x97" "2) \xC3\x97* "
+                         "ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`), `last_name` = VALUES(`last_name`)");
 
     carbon_compile_result_free(&result);
     carbon_context_free(context);
@@ -604,6 +683,7 @@ static void test_golden_fixtures(void) {
     run_fixture("exists-correlated");
     run_fixture("not-exists-correlated");
     run_fixture("insert-basic");
+    run_fixture("insert-multi-row");
     run_fixture("replace-upsert");
     run_fixture("update-where");
     run_fixture("delete-where");
@@ -617,6 +697,8 @@ int main(void) {
     test_allowlist_normalizer();
     test_multiple_where_uses_and();
     test_postgresql_insert_write_returning();
+    test_postgresql_multi_row_insert_write_returning();
+    test_data_insert_multiple_rows_upsert_defaults_missing_values();
     test_delete_false_rejected();
     test_postgresql_write_join_rejected();
     test_schema_validates_c6_table_columns_and_aliases();

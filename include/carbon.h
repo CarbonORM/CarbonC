@@ -73,8 +73,9 @@ carbon_status carbon_compile_query(
 
 /*
  * Normalizes generated SQL into the deterministic allowlist key used by
- * CarbonORM. The output buffers are initialized by this function and must be
- * released by the caller.
+ * CarbonORM, including LIMIT, IN bind-list, parenthesized bind-group, and
+ * multi-row VALUES cardinality normalization. The output buffers are
+ * initialized by this function and must be released by the caller.
  */
 carbon_status carbon_normalize_allowlist_sql(
         const char *sql,

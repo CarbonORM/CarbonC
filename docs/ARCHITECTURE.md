@@ -70,19 +70,23 @@ The initial compiler supports:
   `PARAM`
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
-- explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads
+- explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads,
+  including array-valued multi-row `INSERT`/MySQL `REPLACE` rows
+- CarbonNode-compatible `dataInsertMultipleRows` insert payloads
 - MySQL upsert update lists through `UPDATE: ["column_name"]`
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL and PostgreSQL placeholder styles
+- allowlist normalization for parenthesized bind groups, multi-row `VALUES`
+  cardinality, `IN` bind-list cardinality, and `LIMIT` forms
 - opt-in schema validation from `schema_json.TABLES`, `schema_json.tables`, or
   `schema_json.C6.TABLES`
 
 Unsupported query shapes return `CARBON_STATUS_UNSUPPORTED_QUERY` rather than
 silently compiling weaker SQL.
 
-PostgreSQL write support covers simple insert/update/delete forms in this
-slice. Joined writes and schema-derived conflict targets remain outside the
-v0.1 compiler boundary.
+PostgreSQL write support covers simple insert/update/delete forms and multi-row
+`INSERT ... RETURNING *` in this slice. Joined writes and schema-derived
+conflict targets remain outside the v0.1 compiler boundary.
 
 When `TABLES` metadata is present, the compiler validates `FROM` tables, joined
 tables, unqualified current-table references, dotted column references,
@@ -95,5 +99,5 @@ behavior so language bindings can adopt the validator incrementally.
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers. The next implementation step is to expand those fixtures to derived
-joins, multi-row writes, PostgreSQL conflict targets, generated type metadata,
-binding-friendly diagnostic paths, and package-level ergonomics.
+joins, PostgreSQL conflict targets, generated type metadata, binding-friendly
+diagnostic paths, loose POST-row normalization, and package-level ergonomics.
