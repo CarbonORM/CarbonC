@@ -153,6 +153,14 @@ def main() -> None:
         ["LIT", "UNKNOWN"],
         "actor.last_name",
     ]
+    custom_selected = (
+        carbon_codegen.query("actor")
+        .select([carbon_codegen.as_(carbon_codegen.custom_call("COALESCE", carbon_codegen.lit("UNKNOWN"), "actor.first_name"), "display_name")])
+        .limit(1)
+        .compile(dialect="mysql")
+    )
+    assert custom_selected["sql"] == "SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1", custom_selected
+    assert custom_selected["params"] == ["UNKNOWN"], custom_selected
     assert carbon_codegen.lit("2023-01-01") == ["LIT", "2023-01-01"]
     assert carbon_codegen.exists_spec("property_units.parcel_id", sales_query) == [
         "property_units.parcel_id",

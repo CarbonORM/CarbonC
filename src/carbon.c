@@ -803,6 +803,129 @@ static int carbon_ascii_case_equals(const char *left, const char *right) {
     return *left == '\0' && *right == '\0';
 }
 
+static int carbon_function_known(const char *token) {
+    static const char *const functions[] = {
+            "ADDDATE",
+            "ADDTIME",
+            "CONCAT",
+            "CONVERT_TZ",
+            "COUNT",
+            "COUNT_ALL",
+            "CURRENT_DATE",
+            "CURRENT_TIMESTAMP",
+            "DAY",
+            "DAY_HOUR",
+            "DAY_MICROSECOND",
+            "DAY_MINUTE",
+            "DAY_SECOND",
+            "DAYNAME",
+            "DAYOFMONTH",
+            "DAYOFWEEK",
+            "DAYOFYEAR",
+            "DATE",
+            "DATE_ADD",
+            "DATEDIFF",
+            "DATE_SUB",
+            "DATE_FORMAT",
+            "EXTRACT",
+            "FROM_DAYS",
+            "FROM_UNIXTIME",
+            "GET_FORMAT",
+            "GROUP_CONCAT",
+            "HEX",
+            "HOUR",
+            "HOUR_MICROSECOND",
+            "HOUR_MINUTE",
+            "HOUR_SECOND",
+            "INTERVAL",
+            "LOCALTIME",
+            "LOCALTIMESTAMP",
+            "MAKEDATE",
+            "MAKETIME",
+            "MAX",
+            "MBRCONTAINS",
+            "MICROSECOND",
+            "MIN",
+            "MINUTE",
+            "MINUTE_MICROSECOND",
+            "MINUTE_SECOND",
+            "MONTH",
+            "MONTHNAME",
+            "NOW",
+            "POINT",
+            "POLYGON",
+            "SECOND",
+            "SECOND_MICROSECOND",
+            "ST_AREA",
+            "ST_ASBINARY",
+            "ST_ASTEXT",
+            "ST_BUFFER",
+            "ST_CONTAINS",
+            "ST_CROSSES",
+            "ST_DIFFERENCE",
+            "ST_DIMENSION",
+            "ST_DISJOINT",
+            "ST_DISTANCE",
+            "ST_DISTANCE_SPHERE",
+            "ST_ENDPOINT",
+            "ST_ENVELOPE",
+            "ST_EQUALS",
+            "ST_GEOMFROMGEOJSON",
+            "ST_GEOMFROMTEXT",
+            "ST_GEOMFROMWKB",
+            "ST_INTERSECTS",
+            "ST_LENGTH",
+            "ST_MAKEENVELOPE",
+            "ST_OVERLAPS",
+            "ST_POINT",
+            "ST_SETSRID",
+            "ST_SRID",
+            "ST_STARTPOINT",
+            "ST_SYMDIFFERENCE",
+            "ST_TOUCHES",
+            "ST_UNION",
+            "ST_WITHIN",
+            "ST_X",
+            "ST_Y",
+            "STR_TO_DATE",
+            "SUBDATE",
+            "SUBTIME",
+            "SUM",
+            "SYSDATE",
+            "TIME",
+            "TIME_FORMAT",
+            "TIME_TO_SEC",
+            "TIMEDIFF",
+            "TIMESTAMP",
+            "TIMESTAMPADD",
+            "TIMESTAMPDIFF",
+            "TO_DAYS",
+            "TO_SECONDS",
+            "TRANSACTION_TIMESTAMP",
+            "UNHEX",
+            "UNIX_TIMESTAMP",
+            "UTC_DATE",
+            "UTC_TIME",
+            "UTC_TIMESTAMP",
+            "WEEKDAY",
+            "WEEKOFYEAR",
+            "YEARWEEK"
+    };
+    size_t index;
+
+    if (token == NULL) {
+        return 0;
+    }
+
+    for (index = 0; index < sizeof(functions) / sizeof(functions[0]); ++index) {
+        if (strcmp(token, functions[index]) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static int carbon_parse_join_target(const char *raw, char **table, char **alias) {
     static const char derived_prefix[] = "__c6DerivedTable__";
     const char *cursor;
@@ -2121,7 +2244,34 @@ static carbon_status carbon_append_expression(
             goto cleanup;
         }
 
-        if (!carbon_identifier_valid(token) || strcmp(token, "*") == 0) {
+        if (length >= 3) {
+            carbon_json_span maybe_as_span;
+            if (carbon_array_get(value, length - 2, &maybe_as_span) != 1) {
+                status = CARBON_STATUS_INVALID_QUERY;
+                goto cleanup;
+            }
+            maybe_as_span = carbon_trim_span(maybe_as_span);
+            if (carbon_span_starts_with(maybe_as_span, '"')) {
+                char *maybe_as = carbon_span_string_copy(maybe_as_span);
+                char *maybe_as_token = maybe_as == NULL ? NULL : carbon_upper_copy(maybe_as);
+                if (maybe_as == NULL || maybe_as_token == NULL) {
+                    free(maybe_as);
+                    free(maybe_as_token);
+                    status = CARBON_STATUS_INVALID_QUERY;
+                    goto cleanup;
+                }
+                if (strcmp(maybe_as_token, "AS") == 0) {
+                    free(maybe_as);
+                    free(maybe_as_token);
+                    status = CARBON_STATUS_INVALID_QUERY;
+                    goto cleanup;
+                }
+                free(maybe_as);
+                free(maybe_as_token);
+            }
+        }
+
+        if (!carbon_identifier_alias_valid(token) || !carbon_function_known(token)) {
             status = CARBON_STATUS_INVALID_QUERY;
             goto cleanup;
         }

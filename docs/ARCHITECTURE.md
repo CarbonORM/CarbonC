@@ -83,8 +83,8 @@ The initial compiler supports:
   writes, subselects, limit/page, and order controls
 - `dialect`: `mysql`, `postgresql`, or `postgres`
 - `FROM` or legacy `table`
-- `SELECT` references, `AS`, `DISTINCT`, known-function tuples, and canonical
-  `CALL` custom-function tuples
+- `SELECT` references, wrapper-form `AS` / `DISTINCT`, direct tuples for
+  CarbonNode known functions, and canonical `CALL` custom-function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
   `RIGHT_OUTER` table aliases and stringified derived targets
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`,
@@ -111,6 +111,11 @@ The initial compiler supports:
   `schema_json.C6.TABLES`
 - schema-declared write column ordering for `INSERT`, `UPDATE`, and upsert
   update lists
+
+Direct expression tuples are intentionally restricted to CarbonNode's known
+SQL function list. Custom/unknown functions go through `CALL`, while legacy
+positional aliases such as `[function, arg, "AS", alias]` are rejected in
+favor of `["AS", expression, alias]`.
 
 Derived JOIN targets stay ABI-neutral: bindings pass a JSON string key whose
 decoded value is an object containing `SUBSELECT` and `AS`, and the associated

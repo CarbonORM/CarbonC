@@ -73,8 +73,8 @@ Supported in this slice:
   payloads as the native helper layer for table/from, select, where, join,
   group/having, limit/page, and order controls
 - `FROM` / legacy `table`
-- `SELECT` references, `AS`, `DISTINCT`, known-function tuples, and canonical
-  `CALL` custom-function tuples
+- `SELECT` references, wrapper-form `AS` / `DISTINCT`, direct tuples for
+  CarbonNode known functions, and canonical `CALL` custom-function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
   `RIGHT_OUTER` table aliases and stringified derived targets
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
@@ -102,6 +102,11 @@ Supported in this slice:
   write-column validation when `schema_json` includes a `TABLES` object
 - schema-declared write column ordering for `INSERT`, `UPDATE`, and upsert
   update lists
+
+Direct expression tuples are limited to CarbonNode's known SQL function list.
+Unknown/custom SQL functions must use `["CALL", "FUNCTION_NAME", ...args]`,
+and legacy positional alias forms such as `["COUNT", "id", "AS", "cnt"]`
+are rejected in favor of `["AS", expression, "cnt"]`.
 
 Derived JOIN targets use the same JSON-only ABI as other compiler inputs: the
 JOIN target key is a stringified object with `SUBSELECT` and `AS`, while the

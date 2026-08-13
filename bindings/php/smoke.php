@@ -167,6 +167,18 @@ carbon_assert(
     ],
     'unexpected custom call helper payload'
 );
+$customSelected = carbon_query('actor')
+    ->select([carbon_alias(carbon_custom_call('COALESCE', carbon_lit('UNKNOWN'), 'actor.first_name'), 'display_name')])
+    ->limit(1)
+    ->compile(null, 'mysql');
+carbon_assert(
+    $customSelected['sql'] === 'SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1',
+    'unexpected custom call select sql: ' . $customSelected['sql']
+);
+carbon_assert(
+    $customSelected['params'] === ['UNKNOWN'],
+    'unexpected custom call select params: ' . json_encode($customSelected['params'])
+);
 carbon_assert(carbon_lit('2023-01-01') === ['LIT', '2023-01-01'], 'unexpected literal helper payload');
 carbon_assert(
     carbon_exists_spec('property_units.parcel_id', $salesQuery) === [

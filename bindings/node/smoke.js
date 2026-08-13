@@ -146,6 +146,12 @@ assert.deepStrictEqual(carbon.customCall('COALESCE', carbon.lit('UNKNOWN'), 'act
   ['LIT', 'UNKNOWN'],
   'actor.last_name',
 ]);
+const customSelected = carbon.query('actor')
+  .select([carbon.alias(carbon.customCall('COALESCE', carbon.lit('UNKNOWN'), 'actor.first_name'), 'display_name')])
+  .limit(1)
+  .compile(undefined, 'mysql');
+assert.strictEqual(customSelected.sql, 'SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1');
+assert.deepStrictEqual(customSelected.params, ['UNKNOWN']);
 assert.deepStrictEqual(carbon.lit('2023-01-01'), ['LIT', '2023-01-01']);
 assert.deepStrictEqual(carbon.existsSpec('property_units.parcel_id', salesQuery), [
   'property_units.parcel_id',

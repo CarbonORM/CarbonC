@@ -335,6 +335,63 @@ static void test_call_expression_rejects_invalid_function_name(void) {
     carbon_context_free(context);
 }
 
+static void test_expression_rejects_legacy_positional_as(void) {
+    carbon_context *context = carbon_context_new();
+    const char function_query[] =
+            "{\"FROM\":\"actor\","
+            "\"SELECT\":[[\"COUNT\",\"actor.actor_id\",\"AS\",\"cnt\"]]}";
+    const char column_query[] =
+            "{\"FROM\":\"actor\","
+            "\"SELECT\":[[\"actor.first_name\",\"AS\",\"first_alias\"]]}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2
+    };
+    carbon_compile_result result;
+
+    assert(context != NULL);
+
+    carbon_compile_result_init(&result);
+    request.query_json = function_query;
+    request.query_json_length = sizeof(function_query) - 1;
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
+    assert(result.status == CARBON_STATUS_INVALID_QUERY);
+    carbon_compile_result_free(&result);
+
+    carbon_compile_result_init(&result);
+    request.query_json = column_query;
+    request.query_json_length = sizeof(column_query) - 1;
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
+    assert(result.status == CARBON_STATUS_INVALID_QUERY);
+    carbon_compile_result_free(&result);
+
+    carbon_context_free(context);
+}
+
+static void test_expression_rejects_unknown_function_without_call(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] =
+            "{\"FROM\":\"actor\","
+            "\"SELECT\":[[\"COALESCE\",[\"LIT\",\"UNKNOWN\"],\"actor.first_name\"]]}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
+    assert(result.status == CARBON_STATUS_INVALID_QUERY);
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
 static void test_postgresql_insert_write_returning(void) {
     carbon_context *context = carbon_context_new();
     const char query[] =
@@ -1299,6 +1356,7 @@ static void test_golden_fixtures(void) {
     run_fixture("where-in-between");
     run_fixture("where-boolean-groups");
     run_fixture("match-against");
+    run_fixture("call-custom-select");
     run_fixture("join-alias");
     run_fixture("derived-join");
     run_fixture("group-having");
@@ -1331,6 +1389,8 @@ int main(void) {
     test_multiple_where_uses_and();
     test_match_against_rejects_bare_search_string();
     test_call_expression_rejects_invalid_function_name();
+    test_expression_rejects_legacy_positional_as();
+    test_expression_rejects_unknown_function_without_call();
     test_postgresql_insert_write_returning();
     test_postgresql_multi_row_insert_write_returning();
     test_loose_root_post_insert_ignores_metadata();

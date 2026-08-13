@@ -158,6 +158,16 @@ expected_custom_call_payload = [
 unless CarbonC.custom_call('COALESCE', CarbonC.lit('UNKNOWN'), 'actor.last_name') == expected_custom_call_payload
   raise 'unexpected custom call helper payload'
 end
+custom_selected = CarbonC.query('actor')
+                         .select([CarbonC.alias_expression(CarbonC.custom_call('COALESCE', CarbonC.lit('UNKNOWN'), 'actor.first_name'), 'display_name')])
+                         .limit(1)
+                         .compile(nil, 'mysql')
+unless custom_selected.fetch('sql') == 'SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1'
+  raise "unexpected custom call select sql: #{custom_selected.fetch('sql')}"
+end
+unless custom_selected.fetch('params') == ['UNKNOWN']
+  raise "unexpected custom call select params: #{custom_selected.fetch('params').inspect}"
+end
 raise 'unexpected literal helper payload' unless CarbonC.lit('2023-01-01') == ['LIT', '2023-01-01']
 expected_exists_spec = [
   'property_units.parcel_id',
