@@ -279,16 +279,64 @@ static char *carbon_span_string_copy(carbon_json_span span) {
     const char *content_start;
     const char *content_end;
     const char *next;
+    const char *cursor;
+    char *copy;
+    size_t length = 0;
 
     span = carbon_trim_span(span);
     if (!carbon_parse_json_string_bounds(span.start, span.end, &content_start, &content_end, &next)) {
         return NULL;
     }
     next = carbon_skip_ws(next, span.end);
-    if (next != span.end || carbon_string_has_escape(content_start, content_end)) {
+    if (next != span.end) {
         return NULL;
     }
-    return carbon_strndup_local(content_start, (size_t) (content_end - content_start));
+    if (!carbon_string_has_escape(content_start, content_end)) {
+        return carbon_strndup_local(content_start, (size_t) (content_end - content_start));
+    }
+
+    copy = (char *) malloc((size_t) (content_end - content_start) + 1);
+    if (copy == NULL) {
+        return NULL;
+    }
+    for (cursor = content_start; cursor < content_end; ++cursor) {
+        if (*cursor != '\\') {
+            copy[length++] = *cursor;
+            continue;
+        }
+        ++cursor;
+        if (cursor >= content_end) {
+            free(copy);
+            return NULL;
+        }
+        switch (*cursor) {
+            case '"':
+            case '\\':
+            case '/':
+                copy[length++] = *cursor;
+                break;
+            case 'b':
+                copy[length++] = '\b';
+                break;
+            case 'f':
+                copy[length++] = '\f';
+                break;
+            case 'n':
+                copy[length++] = '\n';
+                break;
+            case 'r':
+                copy[length++] = '\r';
+                break;
+            case 't':
+                copy[length++] = '\t';
+                break;
+            default:
+                free(copy);
+                return NULL;
+        }
+    }
+    copy[length] = '\0';
+    return copy;
 }
 
 static int carbon_span_string_equals(carbon_json_span span, const char *value) {
@@ -674,6 +722,7 @@ static int carbon_ascii_case_equals(const char *left, const char *right) {
 }
 
 static int carbon_parse_join_target(const char *raw, char **table, char **alias) {
+    static const char derived_prefix[] = "__c6DerivedTable__";
     const char *cursor;
     const char *start;
     const char *end;
@@ -701,7 +750,10 @@ static int carbon_parse_join_target(const char *raw, char **table, char **alias)
     }
 
     first = carbon_strndup_local(start, (size_t) (end - start));
-    if (first == NULL || !carbon_identifier_valid(first) || strcmp(first, "*") == 0) {
+    if (first == NULL
+        || !carbon_identifier_valid(first)
+        || strcmp(first, "*") == 0
+        || strncmp(first, derived_prefix, sizeof(derived_prefix) - 1) == 0) {
         free(first);
         return 0;
     }
@@ -758,6 +810,45 @@ static int carbon_parse_join_target(const char *raw, char **table, char **alias)
 
     *table = first;
     *alias = second;
+    return 1;
+}
+
+static int carbon_join_target_is_derived(const char *raw) {
+    const char *cursor = raw;
+
+    if (cursor == NULL) {
+        return 0;
+    }
+    while (isspace((unsigned char) *cursor)) {
+        ++cursor;
+    }
+    return *cursor == '{';
+}
+
+static int carbon_copy_derived_join_alias(const char *raw, char **alias) {
+    static const char *const alias_names[] = {"AS", "as"};
+    carbon_json_span target;
+    carbon_json_span alias_span;
+    int found;
+
+    *alias = NULL;
+    if (!carbon_join_target_is_derived(raw)) {
+        return 0;
+    }
+
+    target.start = raw;
+    target.end = raw + strlen(raw);
+    target = carbon_trim_span(target);
+    found = carbon_object_get_any(target, alias_names, 2, &alias_span);
+    if (found <= 0) {
+        return -1;
+    }
+    *alias = carbon_span_string_copy(alias_span);
+    if (*alias == NULL || !carbon_identifier_alias_valid(*alias)) {
+        free(*alias);
+        *alias = NULL;
+        return -1;
+    }
     return 1;
 }
 
@@ -948,10 +1039,30 @@ static int carbon_schema_resolve_join_qualifier(
             char *raw_target = carbon_span_string_copy(target_entry.key);
             char *candidate_table = NULL;
             char *candidate_alias = NULL;
+            int derived_alias_status;
             int matched = 0;
 
-            if (raw_target == NULL
-                || !carbon_parse_join_target(raw_target, &candidate_table, &candidate_alias)) {
+            if (raw_target == NULL) {
+                free(raw_target);
+                return -1;
+            }
+
+            derived_alias_status = carbon_copy_derived_join_alias(raw_target, &candidate_alias);
+            if (derived_alias_status < 0) {
+                free(raw_target);
+                return -1;
+            }
+            if (derived_alias_status > 0) {
+                matched = strcmp(candidate_alias, qualifier) == 0;
+                free(raw_target);
+                free(candidate_alias);
+                if (matched) {
+                    return 2;
+                }
+                continue;
+            }
+
+            if (!carbon_parse_join_target(raw_target, &candidate_table, &candidate_alias)) {
                 free(raw_target);
                 return -1;
             }
@@ -1055,6 +1166,10 @@ static carbon_status carbon_schema_validate_reference_identifier(
     }
     if (found == 0) {
         return CARBON_STATUS_INVALID_QUERY;
+    }
+    if (found == 2) {
+        free(table);
+        return CARBON_STATUS_OK;
     }
 
     status = carbon_schema_validate_column(state, table, dot + 1);
@@ -2285,6 +2400,70 @@ static carbon_status carbon_append_select_list(
     return CARBON_STATUS_OK;
 }
 
+static carbon_status carbon_append_derived_join_target(
+        carbon_compile_state *state,
+        const char *raw_target,
+        carbon_string_builder *sql,
+        char **alias,
+        const char **error_message) {
+    static const char *const subselect_names[] = {"SUBSELECT", "subselect"};
+    static const char *const alias_names[] = {"AS", "as"};
+    carbon_json_span target;
+    carbon_json_span subselect;
+    carbon_json_span alias_span;
+    char *local_alias = NULL;
+    carbon_status status;
+    int found_subselect;
+    int found_alias;
+
+    *alias = NULL;
+    target.start = raw_target;
+    target.end = raw_target + strlen(raw_target);
+    target = carbon_trim_span(target);
+    if (!carbon_span_starts_with(target, '{')) {
+        if (error_message != NULL) {
+            *error_message = "derived JOIN target must be an object";
+        }
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    found_subselect = carbon_object_get_any(target, subselect_names, 2, &subselect);
+    found_alias = carbon_object_get_any(target, alias_names, 2, &alias_span);
+    if (found_subselect <= 0 || found_alias <= 0 || !carbon_span_starts_with(subselect, '{')) {
+        if (error_message != NULL) {
+            *error_message = "derived JOIN target requires SUBSELECT object and AS alias";
+        }
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    local_alias = carbon_span_string_copy(alias_span);
+    if (local_alias == NULL || !carbon_identifier_alias_valid(local_alias)) {
+        free(local_alias);
+        if (error_message != NULL) {
+            *error_message = "derived JOIN target has invalid AS alias";
+        }
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    if (!carbon_builder_append_char(sql, '(')) {
+        free(local_alias);
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    status = carbon_compile_select_statement(state, subselect, 1, sql, NULL, error_message);
+    if (status != CARBON_STATUS_OK) {
+        free(local_alias);
+        return status;
+    }
+    if (!carbon_builder_append(sql, ") AS ")
+        || !carbon_append_quoted_table(sql, state->dialect, local_alias)) {
+        free(local_alias);
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+
+    *alias = local_alias;
+    return CARBON_STATUS_OK;
+}
+
 static carbon_status carbon_append_join_clauses(
         carbon_compile_state *state,
         carbon_json_span query,
@@ -2325,39 +2504,62 @@ static carbon_status carbon_append_join_clauses(
             char *alias = NULL;
             carbon_string_builder on_clause = {0};
             carbon_status status = CARBON_STATUS_OK;
+            int is_derived;
 
-            if (raw_target == NULL || !carbon_parse_join_target(raw_target, &table, &alias)) {
+            if (raw_target == NULL) {
                 free(raw_target);
                 free(normalized_join_kind);
                 return CARBON_STATUS_INVALID_QUERY;
             }
-            free(raw_target);
-
-            status = carbon_schema_validate_table(state, table);
-            if (status != CARBON_STATUS_OK) {
-                free(table);
-                free(alias);
-                free(normalized_join_kind);
-                return status;
-            }
+            is_derived = carbon_join_target_is_derived(raw_target);
 
             if (!carbon_builder_append_char(sql, ' ')
                 || !carbon_builder_append(sql, normalized_join_kind)
-                || !carbon_builder_append(sql, " JOIN ")
-                || !carbon_append_quoted_table(sql, state->dialect, table)) {
-                free(table);
-                free(alias);
+                || !carbon_builder_append(sql, " JOIN ")) {
+                free(raw_target);
                 free(normalized_join_kind);
                 return CARBON_STATUS_OUT_OF_MEMORY;
             }
 
-            if (alias != NULL
-                && (!carbon_builder_append(sql, " AS ")
-                    || !carbon_append_quoted_table(sql, state->dialect, alias))) {
-                free(table);
-                free(alias);
-                free(normalized_join_kind);
-                return CARBON_STATUS_OUT_OF_MEMORY;
+            if (is_derived) {
+                status = carbon_append_derived_join_target(state, raw_target, sql, &alias, NULL);
+                free(raw_target);
+                if (status != CARBON_STATUS_OK) {
+                    free(alias);
+                    free(normalized_join_kind);
+                    return status;
+                }
+            } else {
+                if (!carbon_parse_join_target(raw_target, &table, &alias)) {
+                    free(raw_target);
+                    free(normalized_join_kind);
+                    return CARBON_STATUS_INVALID_QUERY;
+                }
+                free(raw_target);
+
+                status = carbon_schema_validate_table(state, table);
+                if (status != CARBON_STATUS_OK) {
+                    free(table);
+                    free(alias);
+                    free(normalized_join_kind);
+                    return status;
+                }
+
+                if (!carbon_append_quoted_table(sql, state->dialect, table)) {
+                    free(table);
+                    free(alias);
+                    free(normalized_join_kind);
+                    return CARBON_STATUS_OUT_OF_MEMORY;
+                }
+
+                if (alias != NULL
+                    && (!carbon_builder_append(sql, " AS ")
+                        || !carbon_append_quoted_table(sql, state->dialect, alias))) {
+                    free(table);
+                    free(alias);
+                    free(normalized_join_kind);
+                    return CARBON_STATUS_OUT_OF_MEMORY;
+                }
             }
 
             if (carbon_span_starts_with(target_entry.value, '{')) {
@@ -2459,7 +2661,20 @@ static carbon_status carbon_append_postgresql_join_sources(
             carbon_string_builder on_clause = {0};
             carbon_status status = CARBON_STATUS_OK;
 
-            if (raw_target == NULL || !carbon_parse_join_target(raw_target, &table, &alias)) {
+            if (raw_target == NULL) {
+                free(raw_target);
+                free(normalized_join_kind);
+                return CARBON_STATUS_INVALID_QUERY;
+            }
+            if (carbon_join_target_is_derived(raw_target)) {
+                if (error_message != NULL) {
+                    *error_message = "PostgreSQL joined writes do not support derived table joins yet";
+                }
+                free(raw_target);
+                free(normalized_join_kind);
+                return CARBON_STATUS_UNSUPPORTED_QUERY;
+            }
+            if (!carbon_parse_join_target(raw_target, &table, &alias)) {
                 free(raw_target);
                 free(normalized_join_kind);
                 return CARBON_STATUS_INVALID_QUERY;

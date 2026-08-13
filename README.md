@@ -61,7 +61,7 @@ Supported in this slice:
 - `FROM` / legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
-  `RIGHT_OUTER` table aliases
+  `RIGHT_OUTER` table aliases and stringified derived targets
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
   `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `LIT`, and `PARAM`
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
@@ -84,6 +84,10 @@ Supported in this slice:
 - schema-aware table, unqualified-reference, dotted-reference, join-alias, and
   write-column validation when `schema_json` includes a `TABLES` object
 
+Derived JOIN targets use the same JSON-only ABI as other compiler inputs: the
+JOIN target key is a stringified object with `SUBSELECT` and `AS`, while the
+JOIN target value remains the `ON` clause.
+
 Write support accepts explicit operation keys such as `INSERT`, `REPLACE`,
 `UPDATE`, and `DELETE`. It also accepts CarbonNode-style root-level POST rows
 like `{"FROM":"actor","first_name":"ALICE"}` when no read controls such as
@@ -96,7 +100,7 @@ match CarbonNode's batch insert behavior. PostgreSQL writes currently cover
 simple insert/update/delete forms and schema-derived conflict targets for
 `ON CONFLICT` upserts, plus `INNER` joined updates through `UPDATE ... FROM` and
 `INNER` joined deletes through `DELETE ... USING`. PostgreSQL non-`INNER` joined
-writes and derived joined writes are later work.
+writes and PostgreSQL derived joined writes are later work.
 
 Schema validation is opt-in for this slice. Passing `{}` keeps syntax-only
 identifier checks. Passing a `TABLES` object validates unqualified references
@@ -271,8 +275,7 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 ## Next Milestones
 
-1. Expand fixture coverage for derived joins and schema-aware write
-   normalization.
+1. Expand fixture coverage for schema-aware write normalization.
 2. Expand schema validation to generated type metadata and binding-friendly
    diagnostic paths.
 3. Add package-level ergonomics for each binding without moving DB execution

@@ -64,7 +64,7 @@ The initial compiler supports:
 - `FROM` or legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
-  `RIGHT_OUTER` table aliases
+  `RIGHT_OUTER` table aliases and stringified derived targets
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`,
   `NOT_IN`, `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `LIT`, and
   `PARAM`
@@ -87,6 +87,10 @@ The initial compiler supports:
 - opt-in schema validation from `schema_json.TABLES`, `schema_json.tables`, or
   `schema_json.C6.TABLES`
 
+Derived JOIN targets stay ABI-neutral: bindings pass a JSON string key whose
+decoded value is an object containing `SUBSELECT` and `AS`, and the associated
+JOIN value remains the `ON` clause.
+
 Unsupported query shapes return `CARBON_STATUS_UNSUPPORTED_QUERY` rather than
 silently compiling weaker SQL.
 
@@ -94,7 +98,7 @@ PostgreSQL write support covers simple insert/update/delete forms, multi-row
 `INSERT ... RETURNING *`, and schema-derived `ON CONFLICT` targets in this
 slice. PostgreSQL `INNER` joined updates compile to `UPDATE ... FROM`, and
 `INNER` joined deletes compile to `DELETE ... USING`; non-`INNER` joined writes
-and derived joined writes remain outside the v0.1 compiler boundary.
+and PostgreSQL derived joined writes remain outside the v0.1 compiler boundary.
 
 Root-level POST row normalization is intentionally narrow because the C ABI does
 not carry the HTTP method. A payload with `FROM`/`table`, no explicit write
@@ -106,13 +110,15 @@ When `TABLES` metadata is present, the compiler validates `FROM` tables, joined
 tables, unqualified current-table references, dotted column references,
 join-alias references, insert/update/upsert write columns against C6 `COLUMNS`
 data, and PostgreSQL upsert conflict targets from `PRIMARY_SHORT` or `PRIMARY`.
-Empty or absent schema metadata keeps the previous syntax-only behavior so
-language bindings can adopt the validator incrementally.
+Derived aliases are validated as JOIN-visible qualifiers while their projected
+columns stay owned by the nested `SUBSELECT`. Empty or absent schema metadata
+keeps the previous syntax-only behavior so language bindings can adopt the
+validator incrementally.
 
 ## Direction
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
-wrappers. The next implementation step is to expand those fixtures to derived
-joins, generated type metadata, binding-friendly diagnostic paths,
-schema-aware write normalization, and package-level ergonomics.
+wrappers. The next implementation step is to expand those fixtures to generated
+type metadata, binding-friendly diagnostic paths, schema-aware write
+normalization, and package-level ergonomics.

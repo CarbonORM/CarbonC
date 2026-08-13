@@ -480,6 +480,62 @@ static void test_postgresql_write_join_rejected(void) {
     carbon_context_free(context);
 }
 
+static void test_postgresql_derived_write_join_rejected(void) {
+    carbon_context *context = carbon_context_new();
+    const char derived_target[] =
+            "{\\\"SUBSELECT\\\":{"
+            "\\\"FROM\\\":\\\"film_actor\\\","
+            "\\\"SELECT\\\":[\\\"film_actor.actor_id\\\"],"
+            "\\\"WHERE\\\":{\\\"film_actor.film_id\\\":[\\\">\\\",10]},"
+            "\\\"LIMIT\\\":1"
+            "},\\\"AS\\\":\\\"fa_recent\\\"}";
+    char update_query[2048];
+    char delete_query[2048];
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2
+    };
+    carbon_compile_result result;
+    int written;
+
+    assert(context != NULL);
+
+    written = snprintf(update_query, sizeof(update_query),
+                       "{\"dialect\":\"postgresql\","
+                       "\"FROM\":\"actor\","
+                       "\"UPDATE\":{\"actor.first_name\":\"ALICE\"},"
+                       "\"JOIN\":{\"INNER\":{\"%s\":{\"fa_recent.actor_id\":[\"=\",\"actor.actor_id\"]}}}}",
+                       derived_target);
+    assert(written > 0 && (size_t) written < sizeof(update_query));
+
+    request.query_json = update_query;
+    request.query_json_length = strlen(update_query);
+    carbon_compile_result_init(&result);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_UNSUPPORTED_QUERY);
+    assert(result.status == CARBON_STATUS_UNSUPPORTED_QUERY);
+    assert_buffer_equals(&result.error, "PostgreSQL joined writes do not support derived table joins yet");
+    carbon_compile_result_free(&result);
+
+    written = snprintf(delete_query, sizeof(delete_query),
+                       "{\"dialect\":\"postgresql\","
+                       "\"FROM\":\"actor\","
+                       "\"DELETE\":true,"
+                       "\"JOIN\":{\"INNER\":{\"%s\":{\"fa_recent.actor_id\":[\"=\",\"actor.actor_id\"]}}}}",
+                       derived_target);
+    assert(written > 0 && (size_t) written < sizeof(delete_query));
+
+    request.query_json = delete_query;
+    request.query_json_length = strlen(delete_query);
+    carbon_compile_result_init(&result);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_UNSUPPORTED_QUERY);
+    assert(result.status == CARBON_STATUS_UNSUPPORTED_QUERY);
+    assert_buffer_equals(&result.error, "PostgreSQL joined writes do not support derived table joins yet");
+    carbon_compile_result_free(&result);
+
+    carbon_context_free(context);
+}
+
 static void test_postgresql_update_from_inner_join(void) {
     carbon_context *context = carbon_context_new();
     const char schema[] =
@@ -579,6 +635,60 @@ static void test_schema_validates_c6_table_columns_and_aliases(void) {
     assert_buffer_equals(&result.params_json, "[10]");
     assert_buffer_equals(&result.allowlist_key,
                          "SELECT actor.actor_id FROM `actor` INNER JOIN `film_actor` AS `fa` ON ((fa.actor_id) = actor.actor_id) WHERE (fa.film_id) > ? LIMIT ?");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
+static void test_schema_validates_derived_join_alias_references(void) {
+    carbon_context *context = carbon_context_new();
+    const char schema[] =
+            "{\"TABLES\":{"
+            "\"actor\":{\"COLUMNS\":{\"actor.actor_id\":\"actor_id\",\"actor.first_name\":\"first_name\"}},"
+            "\"film_actor\":{\"COLUMNS\":{\"film_actor.actor_id\":\"actor_id\",\"film_actor.film_id\":\"film_id\"}}"
+            "}}";
+    const char derived_target[] =
+            "{\\\"SUBSELECT\\\":{"
+            "\\\"FROM\\\":\\\"film_actor\\\","
+            "\\\"SELECT\\\":[\\\"film_actor.actor_id\\\"],"
+            "\\\"WHERE\\\":{\\\"film_actor.film_id\\\":[\\\">\\\",10]},"
+            "\\\"LIMIT\\\":1"
+            "},\\\"AS\\\":\\\"fa_recent\\\"}";
+    char query[2048];
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = schema,
+            .schema_json_length = sizeof(schema) - 1,
+            .query_json = query
+    };
+    carbon_compile_result result;
+    int written;
+
+    written = snprintf(query, sizeof(query),
+                       "{\"FROM\":\"actor\","
+                       "\"SELECT\":[\"actor.actor_id\",\"fa_recent.actor_id\"],"
+                       "\"JOIN\":{\"INNER\":{\"%s\":{\"fa_recent.actor_id\":[\"=\",\"actor.actor_id\"]}}},"
+                       "\"WHERE\":{\"actor.actor_id\":[\">\",100]}}",
+                       derived_target);
+    assert(written > 0 && (size_t) written < sizeof(query));
+    request.query_json_length = strlen(query);
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "SELECT actor.actor_id, fa_recent.actor_id FROM `actor` "
+                         "INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` "
+                         "WHERE (film_actor.film_id) > ? LIMIT 1) AS `fa_recent` "
+                         "ON ((fa_recent.actor_id) = actor.actor_id) "
+                         "WHERE (actor.actor_id) > ? LIMIT 100");
+    assert_buffer_equals(&result.params_json, "[10,100]");
+    assert_buffer_equals(&result.allowlist_key,
+                         "SELECT actor.actor_id, fa_recent.actor_id FROM `actor` "
+                         "INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` "
+                         "WHERE (film_actor.film_id) > ? LIMIT ?) AS `fa_recent` "
+                         "ON ((fa_recent.actor_id) = actor.actor_id) "
+                         "WHERE (actor.actor_id) > ? LIMIT ?");
 
     carbon_compile_result_free(&result);
     carbon_context_free(context);
@@ -920,6 +1030,7 @@ static void test_golden_fixtures(void) {
     run_fixture("spatial-order");
     run_fixture("where-in-between");
     run_fixture("join-alias");
+    run_fixture("derived-join");
     run_fixture("group-having");
     run_fixture("scalar-subselect");
     run_fixture("exists-correlated");
@@ -952,9 +1063,11 @@ int main(void) {
     test_data_insert_multiple_rows_upsert_defaults_missing_values();
     test_delete_false_rejected();
     test_postgresql_write_join_rejected();
+    test_postgresql_derived_write_join_rejected();
     test_postgresql_update_from_inner_join();
     test_postgresql_delete_using_inner_join();
     test_schema_validates_c6_table_columns_and_aliases();
+    test_schema_validates_derived_join_alias_references();
     test_schema_rejects_unknown_table();
     test_schema_rejects_unknown_select_column();
     test_schema_validates_unqualified_base_table_columns();

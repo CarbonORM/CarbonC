@@ -65,10 +65,11 @@ void carbon_compile_result_free(carbon_compile_result *result);
  * write columns are validated against that schema. PostgreSQL upsert conflict
  * targets are derived from PRIMARY_SHORT or PRIMARY schema metadata, and
  * PostgreSQL INNER joined updates/deletes compile through UPDATE ... FROM and
- * DELETE ... USING. Root-level POST row payloads compile as inserts when no
- * read controls are present. The result is initialized by this function. If a
- * caller reuses a prior result object, it must call carbon_compile_result_free()
- * first.
+ * DELETE ... USING. Stringified derived JOIN targets compile to subselect
+ * aliases for normal JOIN SQL. Root-level POST row payloads compile as inserts
+ * when no read controls are present. The result is initialized by this
+ * function. If a caller reuses a prior result object, it must call
+ * carbon_compile_result_free() first.
  */
 carbon_status carbon_compile_query(
         carbon_context *context,
