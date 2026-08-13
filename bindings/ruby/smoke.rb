@@ -65,6 +65,23 @@ expected_diagnostics = {
 raise "unexpected success diagnostics: #{diagnostics.inspect}" unless diagnostics == expected_diagnostics
 ergonomic = CarbonC.compile_query_value(query, schema, 'mysql')
 raise "unexpected ergonomic compile result: #{ergonomic.inspect}" unless ergonomic == result
+top_ordered = CarbonC.compile_query_value(
+  {
+    'FROM' => 'actor',
+    'SELECT' => ['actor.actor_id', 'actor.first_name'],
+    'WHERE' => {'actor.actor_id' => ['>', 10]},
+    'ORDER' => [['actor.first_name', 'ASC']],
+    'PAGINATION' => {'LIMIT' => 25}
+  },
+  schema,
+  'mysql'
+)
+unless top_ordered.fetch('sql') == 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 25'
+  raise "unexpected top-level order sql: #{top_ordered.fetch('sql')}"
+end
+unless top_ordered.fetch('allowlist_key') == 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT ?'
+  raise "unexpected top-level order allowlist: #{top_ordered.fetch('allowlist_key')}"
+end
 adapted = CarbonC.adapt_compile_result(result)
 expected_adapted = result.merge(
   'params' => [10],

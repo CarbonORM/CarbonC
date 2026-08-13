@@ -65,6 +65,25 @@ assert.deepStrictEqual(JSON.parse(result.diagnostics_json), {
 });
 assert.deepStrictEqual(carbon.compileQueryValue(query, schema, 'mysql'), result);
 assert.deepStrictEqual(carbon.compile_query_value(query, schema, 'mysql'), result);
+const topOrdered = carbon.compileQueryValue(
+  {
+    FROM: 'actor',
+    SELECT: ['actor.actor_id', 'actor.first_name'],
+    WHERE: {'actor.actor_id': ['>', 10]},
+    ORDER: [['actor.first_name', 'ASC']],
+    PAGINATION: {LIMIT: 25},
+  },
+  schema,
+  'mysql'
+);
+assert.strictEqual(
+  topOrdered.sql,
+  'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 25'
+);
+assert.strictEqual(
+  topOrdered.allowlist_key,
+  'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT ?'
+);
 const adapted = carbon.adaptCompileResult(result);
 assert.deepStrictEqual(adapted, {
   ...result,

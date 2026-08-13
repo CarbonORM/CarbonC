@@ -103,7 +103,7 @@ The initial compiler supports:
   metadata, including `UPDATE: []` / `DO NOTHING`
 - PostgreSQL `UPDATE ... FROM` for `INNER` joined table aliases
 - PostgreSQL `DELETE ... USING` for `INNER` joined table aliases
-- `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
+- `PAGINATION.ORDER`, compatible top-level `ORDER`, `LIMIT`, and `PAGE`
 - MySQL and PostgreSQL placeholder styles
 - allowlist normalization for parenthesized bind groups, multi-row `VALUES`
   cardinality, `IN` bind-list cardinality, and `LIMIT` forms
@@ -116,6 +116,11 @@ Direct expression tuples are intentionally restricted to CarbonNode's known
 SQL function list. Custom/unknown functions go through `CALL`, while legacy
 positional aliases such as `[function, arg, "AS", alias]` are rejected in
 favor of `["AS", expression, alias]`.
+
+Top-level `ORDER` is accepted for CarbonNode compatibility and normalized into
+the same compiler path as `PAGINATION.ORDER` when no pagination order is
+declared. Legacy object-map `ORDER` payloads and duplicate top-level plus
+pagination order declarations are invalid.
 
 Derived JOIN targets stay ABI-neutral: bindings pass a JSON string key whose
 decoded value is an object containing `SUBSELECT` and `AS`, and the associated

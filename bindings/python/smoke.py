@@ -63,6 +63,25 @@ def main() -> None:
     assert ergonomic == result, ergonomic
     ergonomic_alias = carbon_codegen.compile_query(query, schema=schema, dialect="mysql")
     assert ergonomic_alias == result, ergonomic_alias
+    top_ordered = carbon_codegen.compile_query_value(
+        {
+            "FROM": "actor",
+            "SELECT": ["actor.actor_id", "actor.first_name"],
+            "WHERE": {"actor.actor_id": [">", 10]},
+            "ORDER": [["actor.first_name", "ASC"]],
+            "PAGINATION": {"LIMIT": 25},
+        },
+        schema=schema,
+        dialect="mysql",
+    )
+    assert top_ordered["sql"] == (
+        "SELECT actor.actor_id, actor.first_name FROM `actor` "
+        "WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 25"
+    ), top_ordered
+    assert top_ordered["allowlist_key"] == (
+        "SELECT actor.actor_id, actor.first_name FROM `actor` "
+        "WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT ?"
+    ), top_ordered
     adapted = carbon_codegen.adapt_compile_result(result)
     assert adapted == {
         **result,

@@ -77,6 +77,25 @@ carbon_assert(
 );
 $ergonomic = carbon_compile_query_value($query, $schema, 'mysql');
 carbon_assert($ergonomic === $result, 'unexpected ergonomic compile result: ' . json_encode($ergonomic));
+$topOrdered = carbon_compile_query_value(
+    [
+        'FROM' => 'actor',
+        'SELECT' => ['actor.actor_id', 'actor.first_name'],
+        'WHERE' => ['actor.actor_id' => ['>', 10]],
+        'ORDER' => [['actor.first_name', 'ASC']],
+        'PAGINATION' => ['LIMIT' => 25],
+    ],
+    $schema,
+    'mysql'
+);
+carbon_assert(
+    $topOrdered['sql'] === 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 25',
+    'unexpected top-level order sql: ' . $topOrdered['sql']
+);
+carbon_assert(
+    $topOrdered['allowlist_key'] === 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT ?',
+    'unexpected top-level order allowlist: ' . $topOrdered['allowlist_key']
+);
 $adapted = carbon_adapt_compile_result($result);
 $expectedAdapted = $result;
 $expectedAdapted['params'] = [10];

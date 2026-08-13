@@ -3305,6 +3305,107 @@ static carbon_status carbon_append_having(
     return CARBON_STATUS_OK;
 }
 
+static carbon_status carbon_append_order_clause(
+        carbon_compile_state *state,
+        carbon_json_span order,
+        carbon_string_builder *sql) {
+    const char *cursor = NULL;
+    carbon_json_span term;
+    int next;
+    int wrote_order = 0;
+
+    if (!carbon_span_starts_with(order, '[')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    if (!carbon_builder_append(sql, " ORDER BY ")) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+
+    while ((next = carbon_array_next(order, &cursor, &term)) == 1) {
+        carbon_json_span expression = term;
+        carbon_json_span direction_span;
+        char *direction = NULL;
+        size_t count;
+
+        if (wrote_order && !carbon_builder_append(sql, ", ")) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+
+        if (carbon_span_starts_with(term, '[')
+            && carbon_array_count(term, &count)
+            && count == 2
+            && carbon_array_get(term, 1, &direction_span) == 1) {
+            direction = carbon_span_string_copy(direction_span);
+            if (direction != NULL) {
+                char *upper = carbon_upper_copy(direction);
+                if (upper != NULL && (strcmp(upper, "ASC") == 0 || strcmp(upper, "DESC") == 0)) {
+                    carbon_array_get(term, 0, &expression);
+                    free(direction);
+                    direction = upper;
+                } else {
+                    free(upper);
+                }
+            }
+        }
+
+        {
+            carbon_status status = carbon_append_expression(state, expression, sql);
+            if (status != CARBON_STATUS_OK) {
+                free(direction);
+                return status;
+            }
+        }
+        if (!carbon_builder_append_char(sql, ' ')
+            || !carbon_builder_append(sql, direction == NULL ? "ASC" : direction)) {
+            free(direction);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        free(direction);
+        wrote_order = 1;
+    }
+    if (next < 0 || !wrote_order) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    return CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_append_limit_clause(
+        carbon_compile_state *state,
+        carbon_json_span limit_span,
+        carbon_json_span page_span,
+        int has_page,
+        carbon_string_builder *sql) {
+    long limit;
+    long page = 1;
+    carbon_json_span trimmed = carbon_trim_span(limit_span);
+
+    limit = strtol(trimmed.start, NULL, 10);
+    if (has_page) {
+        carbon_json_span page_trimmed = carbon_trim_span(page_span);
+        page = strtol(page_trimmed.start, NULL, 10);
+        if (page < 1) {
+            page = 1;
+        }
+    }
+    if (state->dialect == CARBON_DIALECT_POSTGRESQL) {
+        if (!carbon_builder_append_format(sql, " LIMIT %ld", limit)) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        if (page > 1 && !carbon_builder_append_format(sql, " OFFSET %ld", (page - 1) * limit)) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+    } else {
+        if (page > 1) {
+            if (!carbon_builder_append_format(sql, " LIMIT %ld, %ld", (page - 1) * limit, limit)) {
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+        } else if (!carbon_builder_append_format(sql, " LIMIT %ld", limit)) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+    }
+    return CARBON_STATUS_OK;
+}
+
 static carbon_status carbon_append_pagination(
         carbon_compile_state *state,
         carbon_json_span query,
@@ -3316,133 +3417,77 @@ static carbon_status carbon_append_pagination(
     static const char *const page_names[] = {"PAGE", "page"};
     carbon_json_span pagination;
     carbon_json_span order;
+    carbon_json_span root_order;
     carbon_json_span limit_span;
     carbon_json_span page_span;
-    int found;
-    int wrote_order = 0;
+    int found_pagination;
+    int found_order = 0;
+    int found_root_order;
+    int found_limit;
+    int found_page = 0;
 
     *has_pagination = 0;
-    found = carbon_object_get_any(query, pagination_names, 2, &pagination);
-    if (found < 0) {
+    found_pagination = carbon_object_get_any(query, pagination_names, 2, &pagination);
+    if (found_pagination < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    found_root_order = carbon_object_get_any(query, order_names, 2, &root_order);
+    if (found_root_order < 0) {
         return CARBON_STATUS_INVALID_JSON;
     }
 
-    if (found == 0) {
-        found = carbon_object_get_any(query, limit_names, 2, &limit_span);
-        if (found < 0) {
+    if (found_pagination > 0) {
+        if (!carbon_span_starts_with(pagination, '{')) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        found_order = carbon_object_get_any(pagination, order_names, 2, &order);
+        if (found_order < 0) {
             return CARBON_STATUS_INVALID_JSON;
         }
-        if (found == 0) {
-            return CARBON_STATUS_OK;
+        if (found_order > 0 && found_root_order > 0) {
+            return CARBON_STATUS_INVALID_QUERY;
         }
+        found_limit = carbon_object_get_any(pagination, limit_names, 2, &limit_span);
+        if (found_limit < 0) {
+            return CARBON_STATUS_INVALID_JSON;
+        }
+        found_page = carbon_object_get_any(pagination, page_names, 2, &page_span);
+        if (found_page < 0) {
+            return CARBON_STATUS_INVALID_JSON;
+        }
+    } else {
+        found_limit = carbon_object_get_any(query, limit_names, 2, &limit_span);
+        if (found_limit < 0) {
+            return CARBON_STATUS_INVALID_JSON;
+        }
+        found_page = carbon_object_get_any(query, page_names, 2, &page_span);
+        if (found_page < 0) {
+            return CARBON_STATUS_INVALID_JSON;
+        }
+    }
+
+    if (found_order == 0 && found_root_order > 0) {
+        order = root_order;
+        found_order = 1;
+    }
+
+    if (found_order > 0) {
+        carbon_status status;
         *has_pagination = 1;
-        if (!carbon_builder_append(sql, " LIMIT ")
-            || !carbon_builder_append_len(sql, carbon_trim_span(limit_span).start,
-                                          (size_t) (carbon_trim_span(limit_span).end - carbon_trim_span(limit_span).start))) {
-            return CARBON_STATUS_OUT_OF_MEMORY;
-        }
-        return CARBON_STATUS_OK;
-    }
-
-    *has_pagination = 1;
-    if (!carbon_span_starts_with(pagination, '{')) {
-        return CARBON_STATUS_INVALID_QUERY;
-    }
-
-    found = carbon_object_get_any(pagination, order_names, 2, &order);
-    if (found < 0) {
-        return CARBON_STATUS_INVALID_JSON;
-    }
-    if (found > 0) {
-        const char *cursor = NULL;
-        carbon_json_span term;
-        int next;
-
-        if (!carbon_span_starts_with(order, '[') || !carbon_builder_append(sql, " ORDER BY ")) {
-            return CARBON_STATUS_INVALID_QUERY;
-        }
-        while ((next = carbon_array_next(order, &cursor, &term)) == 1) {
-            carbon_json_span expression = term;
-            carbon_json_span direction_span;
-            char *direction = NULL;
-            size_t count;
-
-            if (wrote_order && !carbon_builder_append(sql, ", ")) {
-                return CARBON_STATUS_OUT_OF_MEMORY;
-            }
-
-            if (carbon_span_starts_with(term, '[')
-                && carbon_array_count(term, &count)
-                && count == 2
-                && carbon_array_get(term, 1, &direction_span) == 1) {
-                direction = carbon_span_string_copy(direction_span);
-                if (direction != NULL) {
-                    char *upper = carbon_upper_copy(direction);
-                    if (upper != NULL && (strcmp(upper, "ASC") == 0 || strcmp(upper, "DESC") == 0)) {
-                        carbon_array_get(term, 0, &expression);
-                        free(direction);
-                        direction = upper;
-                    } else {
-                        free(upper);
-                    }
-                }
-            }
-
-            {
-                carbon_status status = carbon_append_expression(state, expression, sql);
-                if (status != CARBON_STATUS_OK) {
-                    free(direction);
-                    return status;
-                }
-            }
-            if (!carbon_builder_append_char(sql, ' ')
-                || !carbon_builder_append(sql, direction == NULL ? "ASC" : direction)) {
-                free(direction);
-                return CARBON_STATUS_OUT_OF_MEMORY;
-            }
-            free(direction);
-            wrote_order = 1;
-        }
-        if (next < 0) {
-            return CARBON_STATUS_INVALID_QUERY;
+        status = carbon_append_order_clause(state, order, sql);
+        if (status != CARBON_STATUS_OK) {
+            return status;
         }
     }
 
-    found = carbon_object_get_any(pagination, limit_names, 2, &limit_span);
-    if (found < 0) {
-        return CARBON_STATUS_INVALID_JSON;
-    }
-    if (found > 0) {
-        long limit;
-        long page = 1;
-        carbon_json_span trimmed = carbon_trim_span(limit_span);
-        limit = strtol(trimmed.start, NULL, 10);
-        found = carbon_object_get_any(pagination, page_names, 2, &page_span);
-        if (found > 0) {
-            carbon_json_span page_trimmed = carbon_trim_span(page_span);
-            page = strtol(page_trimmed.start, NULL, 10);
-            if (page < 1) {
-                page = 1;
-            }
-        }
-        if (state->dialect == CARBON_DIALECT_POSTGRESQL) {
-            if (!carbon_builder_append_format(sql, " LIMIT %ld", limit)) {
-                return CARBON_STATUS_OUT_OF_MEMORY;
-            }
-            if (page > 1 && !carbon_builder_append_format(sql, " OFFSET %ld", (page - 1) * limit)) {
-                return CARBON_STATUS_OUT_OF_MEMORY;
-            }
-        } else {
-            if (page > 1) {
-                if (!carbon_builder_append_format(sql, " LIMIT %ld, %ld", (page - 1) * limit, limit)) {
-                    return CARBON_STATUS_OUT_OF_MEMORY;
-                }
-            } else if (!carbon_builder_append_format(sql, " LIMIT %ld", limit)) {
-                return CARBON_STATUS_OUT_OF_MEMORY;
-            }
-        }
+    if (found_limit > 0) {
+        *has_pagination = 1;
+        return carbon_append_limit_clause(state, limit_span, page_span, found_page > 0, sql);
     }
 
+    if (found_pagination > 0) {
+        *has_pagination = 1;
+    }
     return CARBON_STATUS_OK;
 }
 

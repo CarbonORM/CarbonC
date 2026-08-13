@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","SELECT":["actor.actor_id","actor.first_name"],"WHERE":{"actor.actor_id":[">",10]},"ORDER":[["actor.last_name","ASC"]],"PAGINATION":{"LIMIT":25}}
+-- sql
+SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.last_name ASC LIMIT 25
+-- params
+[10]
+-- allowlist
+SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.last_name ASC LIMIT ?
