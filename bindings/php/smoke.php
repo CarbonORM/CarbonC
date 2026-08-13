@@ -186,6 +186,48 @@ carbon_assert(
     $advanced['params'] === [1, 10, 5000, 99, 100, 5000],
     'unexpected advanced params: ' . json_encode($advanced['params'])
 );
+carbon_assert(
+    carbon_and_group(
+        carbon_condition('actor.actor_id', carbon_op('>', 2)),
+        carbon_or_group(
+            carbon_condition('actor.first_name', carbon_op('LIKE', carbon_lit('A%'))),
+            carbon_condition('actor.first_name', carbon_op('LIKE', carbon_lit('B%')))
+        )
+    ) === [
+        'AND' => [
+            ['actor.actor_id' => ['>', 2]],
+            [
+                'OR' => [
+                    ['actor.first_name' => ['LIKE', ['LIT', 'A%']]],
+                    ['actor.first_name' => ['LIKE', ['LIT', 'B%']]],
+                ],
+            ],
+        ],
+    ],
+    'unexpected boolean group helper payload'
+);
+$booleanGrouped = carbon_query('actor')
+    ->select('actor.actor_id')
+    ->whereBetween('actor.actor_id', 1, 10)
+    ->whereOr(
+        carbon_condition('actor.first_name', carbon_op('LIKE', carbon_lit('A%'))),
+        carbon_condition('actor.first_name', carbon_op('LIKE', carbon_lit('B%')))
+    )
+    ->whereAnd(
+        carbon_condition('actor.actor_id', carbon_op('>', 2)),
+        carbon_condition('actor.actor_id', carbon_op('<', 9))
+    )
+    ->limit(5)
+    ->compile(null, 'mysql');
+carbon_assert($booleanGrouped['status'] === 0, 'unexpected boolean group status: ' . json_encode($booleanGrouped));
+carbon_assert(
+    $booleanGrouped['sql'] === 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) BETWEEN ? AND ? AND ((actor.first_name) LIKE ? OR (actor.first_name) LIKE ?) AND ((actor.actor_id) > ? AND (actor.actor_id) < ?) LIMIT 5',
+    'unexpected boolean group sql: ' . $booleanGrouped['sql']
+);
+carbon_assert(
+    $booleanGrouped['params'] === [1, 10, 'A%', 'B%', 2, 9],
+    'unexpected boolean group params: ' . json_encode($booleanGrouped['params'])
+);
 $grouped = carbon_query('actor')
     ->select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
     ->groupBy('actor.first_name')

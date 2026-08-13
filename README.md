@@ -285,7 +285,9 @@ for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), scalar
 subselect helpers, derived `join_subselect` targets, advanced predicate helpers
 (`where_op`, `where_in`, `where_not_in`, `where_between`, `where_not_between`,
-`where_exists`, `where_not_exists`), limit/page, and order controls.
+`where_exists`, `where_not_exists`), composable boolean group helpers
+(`condition`, `and_`, `or_`, `where_and`, `where_or`), limit/page, and order
+controls.
 `compile_query_result()` returns the same fields as the raw result plus decoded
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
 metadata into Python annotations such as
@@ -350,8 +352,10 @@ boundary for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), scalar
 `carbon_subselect()` helpers, derived `joinSubselect()` targets, advanced
 predicate helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`,
-`whereNotBetween`, `whereExists`, `whereNotExists`), limit/page, and order
-controls. `carbon_compile_query_result()` returns the same fields as the
+`whereNotBetween`, `whereExists`, `whereNotExists`), composable boolean group
+helpers (`carbon_condition`, `carbon_and_group`, `carbon_or_group`, `whereAnd`,
+`whereOr`), limit/page, and order controls. `carbon_compile_query_result()`
+returns the same fields as the
 raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
 class source keeps properties untyped for runtime compatibility, adds PHPDoc type
 annotations, and includes `DB_TYPES` and `NULLABLE` constants.
@@ -420,7 +424,8 @@ boundary for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), scalar
 `subselect()` helpers, derived `joinSubselect()` targets, advanced predicate
 helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
-`whereExists`, `whereNotExists`), limit/page, and order controls.
+`whereExists`, `whereNotExists`), composable boolean group helpers
+(`condition`, `andGroup`, `orGroup`, `whereAnd`, `whereOr`), limit/page, and order controls.
 `compileQueryResult()` returns the same fields as the raw result
 plus decoded JavaScript `params` and `diagnostics` values. The generated
 TypeScript source maps DB metadata into primitive field types and adds `dbTypes`
@@ -439,7 +444,8 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `compileQueryResult()`, `adaptCompileResult()`, `CarbonQuery`, `query()`,
 `fromTable()`, `subselect()`, `derivedTarget()`, `op()`, `lit()`, `param()`,
 `call()`, `alias()`, `distinct()`, `between()`, `inList()`, `existsSpec()`,
-`exists()`, `notExists()`, `schemaMetadata()`, `schemaModels()`, and
+`exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
+`schemaMetadata()`, `schemaModels()`, and
 `normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
 
 ## Ruby Binding
@@ -494,8 +500,10 @@ boundary for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), scalar
 `CarbonC.subselect` helpers, derived `join_subselect` targets, advanced
 predicate helpers (`where_op`, `where_in`, `where_not_in`, `where_between`,
-`where_not_between`, `where_exists`, `where_not_exists`), limit/page, and order
-controls. `CarbonC.compile_query_result` returns the same fields as the raw
+`where_not_between`, `where_exists`, `where_not_exists`), composable boolean
+group helpers (`CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
+`where_and`, `where_or`), limit/page, and order controls.
+`CarbonC.compile_query_result` returns the same fields as the raw
 result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
 Struct source includes `TYPES` and `NULLABLE` metadata constants for runtime
 consumers.
@@ -516,6 +524,7 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.param`, `CarbonC.call`, `CarbonC.alias_expression`,
 `CarbonC.distinct`, `CarbonC.between`, `CarbonC.in_list`,
 `CarbonC.exists_spec`, `CarbonC.exists`, `CarbonC.not_exists`,
+`CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
 `CarbonC.schema_metadata`, and
 `CarbonC.normalize_allowlist_sql`.
 
@@ -523,5 +532,5 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 1. Expand the remaining CarbonNode C6 grammar behind golden fixtures.
 2. Add richer multi-diagnostic reporting for validation batches.
-3. Add composable AND/OR predicate group helpers and model-aware builder
-   scaffolds as the remaining C6 grammar lands.
+3. Add model-aware builder scaffolds over generated schema metadata as the
+   remaining C6 grammar lands.

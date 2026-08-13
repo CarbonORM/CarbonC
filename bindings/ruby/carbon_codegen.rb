@@ -58,6 +58,18 @@ module CarbonC
       append_exists('NOT_EXISTS', CarbonC.exists_spec(outer_column, subquery, inner_column))
     end
 
+    def where_group(operator, *conditions)
+      append_boolean_group(operator, conditions)
+    end
+
+    def where_and(*conditions)
+      where_group('AND', *conditions)
+    end
+
+    def where_or(*conditions)
+      where_group('OR', *conditions)
+    end
+
     def join(kind, target, on)
       @payload['JOIN'] ||= {}
       raise TypeError, 'JOIN must be a Hash' unless @payload['JOIN'].is_a?(Hash)
@@ -169,6 +181,17 @@ module CarbonC
       self
     end
 
+    def append_boolean_group(operator, conditions)
+      operator_key = operator.to_s.upcase.gsub(/\s+/, '_')
+      raise ArgumentError, 'operator must be AND or OR' unless %w[AND OR].include?(operator_key)
+
+      where_payload[operator_key] ||= []
+      raise TypeError, "WHERE.#{operator_key} must be an Array" unless where_payload[operator_key].is_a?(Array)
+
+      where_payload[operator_key].concat(conditions.map { |condition| copy_payload_value(condition) })
+      self
+    end
+
     def copy_payload_value(value)
       case value
       when Array
@@ -250,6 +273,25 @@ module CarbonC
 
     def not_exists(*specs)
       {'NOT_EXISTS' => specs.map { |spec| carbon_codegen_query_payload(spec) }}
+    end
+
+    def condition(column, value)
+      {column => carbon_codegen_query_payload(value)}
+    end
+
+    def group(operator, *conditions)
+      operator_key = operator.to_s.upcase.gsub(/\s+/, '_')
+      raise ArgumentError, 'operator must be AND or OR' unless %w[AND OR].include?(operator_key)
+
+      {operator_key => conditions.map { |condition| carbon_codegen_query_payload(condition) }}
+    end
+
+    def and_group(*conditions)
+      group('AND', *conditions)
+    end
+
+    def or_group(*conditions)
+      group('OR', *conditions)
     end
 
     def compile_query_value(query, schema = nil, dialect = 'mysql')

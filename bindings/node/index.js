@@ -161,6 +161,26 @@ function notExists(...specs) {
   return {NOT_EXISTS: specs.map(copyPayloadValue)};
 }
 
+function condition(column, value) {
+  return {[column]: copyPayloadValue(value)};
+}
+
+function group(operator, ...conditions) {
+  const operatorKey = operator.toUpperCase().replace(/\s+/g, '_');
+  if (operatorKey !== 'AND' && operatorKey !== 'OR') {
+    throw new TypeError('operator must be AND or OR');
+  }
+  return {[operatorKey]: conditions.map(copyPayloadValue)};
+}
+
+function andGroup(...conditions) {
+  return group('AND', ...conditions);
+}
+
+function orGroup(...conditions) {
+  return group('OR', ...conditions);
+}
+
 function subselectOperand(query) {
   if (Array.isArray(query)
     && query.length === 2
@@ -243,6 +263,18 @@ class CarbonQuery {
 
   whereNotExists(outerColumn, subquery, innerColumn) {
     return this.appendExists('NOT_EXISTS', existsSpec(outerColumn, subquery, innerColumn));
+  }
+
+  whereGroup(operator, ...conditions) {
+    return this.appendBooleanGroup(operator, conditions);
+  }
+
+  whereAnd(...conditions) {
+    return this.whereGroup('AND', ...conditions);
+  }
+
+  whereOr(...conditions) {
+    return this.whereGroup('OR', ...conditions);
   }
 
   join(kind, target, on) {
@@ -368,6 +400,22 @@ class CarbonQuery {
       throw new TypeError(`WHERE.${operator} must be an array`);
     }
     where[operator].push(spec);
+    return this;
+  }
+
+  appendBooleanGroup(operator, conditions) {
+    const operatorKey = operator.toUpperCase().replace(/\s+/g, '_');
+    if (operatorKey !== 'AND' && operatorKey !== 'OR') {
+      throw new TypeError('operator must be AND or OR');
+    }
+    const where = this.whereMap();
+    if (where[operatorKey] === undefined) {
+      where[operatorKey] = [];
+    }
+    if (!Array.isArray(where[operatorKey])) {
+      throw new TypeError(`WHERE.${operatorKey} must be an array`);
+    }
+    where[operatorKey].push(...conditions.map(copyPayloadValue));
     return this;
   }
 }
@@ -540,5 +588,11 @@ native.exists_spec = existsSpec;
 native.exists = exists;
 native.notExists = notExists;
 native.not_exists = notExists;
+native.condition = condition;
+native.group = group;
+native.andGroup = andGroup;
+native.and_group = andGroup;
+native.orGroup = orGroup;
+native.or_group = orGroup;
 
 module.exports = native;

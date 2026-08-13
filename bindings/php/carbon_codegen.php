@@ -152,6 +152,30 @@ if (!function_exists('carbon_schema_models')) {
         return ['NOT_EXISTS' => array_values($specs)];
     }
 
+    function carbon_condition(string $column, $value): array
+    {
+        return [$column => $value];
+    }
+
+    function carbon_group(string $operator, ...$conditions): array
+    {
+        $operatorKey = strtoupper(str_replace(' ', '_', $operator));
+        if ($operatorKey !== 'AND' && $operatorKey !== 'OR') {
+            throw new InvalidArgumentException('operator must be AND or OR');
+        }
+        return [$operatorKey => array_values($conditions)];
+    }
+
+    function carbon_and_group(...$conditions): array
+    {
+        return carbon_group('AND', ...$conditions);
+    }
+
+    function carbon_or_group(...$conditions): array
+    {
+        return carbon_group('OR', ...$conditions);
+    }
+
     function carbon_codegen_subselect_operand($query)
     {
         if (is_array($query)) {
@@ -252,6 +276,21 @@ if (!function_exists('carbon_schema_models')) {
             public function whereNotExists(string $outerColumn, $query, ?string $innerColumn = null): self
             {
                 return $this->appendExists('NOT_EXISTS', carbon_exists_spec($outerColumn, $query, $innerColumn));
+            }
+
+            public function whereGroup(string $operator, ...$conditions): self
+            {
+                return $this->appendBooleanGroup($operator, $conditions);
+            }
+
+            public function whereAnd(...$conditions): self
+            {
+                return $this->whereGroup('AND', ...$conditions);
+            }
+
+            public function whereOr(...$conditions): self
+            {
+                return $this->whereGroup('OR', ...$conditions);
             }
 
             public function join(string $kind, $target, array $on): self
@@ -402,6 +441,25 @@ if (!function_exists('carbon_schema_models')) {
                     throw new RuntimeException('WHERE.' . $operator . ' must be an array');
                 }
                 $where[$operator][] = $spec;
+                return $this;
+            }
+
+            private function appendBooleanGroup(string $operator, array $conditions): self
+            {
+                $operatorKey = strtoupper(str_replace(' ', '_', $operator));
+                if ($operatorKey !== 'AND' && $operatorKey !== 'OR') {
+                    throw new InvalidArgumentException('operator must be AND or OR');
+                }
+                $where =& $this->wherePayload();
+                if (!array_key_exists($operatorKey, $where)) {
+                    $where[$operatorKey] = [];
+                }
+                if (!is_array($where[$operatorKey])) {
+                    throw new RuntimeException('WHERE.' . $operatorKey . ' must be an array');
+                }
+                foreach ($conditions as $condition) {
+                    $where[$operatorKey][] = $condition;
+                }
                 return $this;
             }
         }

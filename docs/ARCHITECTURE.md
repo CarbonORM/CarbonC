@@ -78,8 +78,9 @@ The initial compiler supports:
   objects, and Ruby hashes
 - package-level result adapters that retain the raw JSON fields while adding
   decoded native `params` and `diagnostics` values
-- package-level SELECT query-builder facades that emit canonical payloads for
-  table/from, select, where, join, group/having, limit/page, and order controls
+- package-level query-builder facades that emit canonical payloads for
+  table/from, select, where, boolean predicate groups, join, group/having,
+  writes, subselects, limit/page, and order controls
 - `dialect`: `mysql`, `postgresql`, or `postgres`
 - `FROM` or legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
@@ -157,7 +158,8 @@ layout changes.
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers, package-level native payload helpers, typed result adapters,
-read/write/subselect/predicate query-builder facades, typed source generators, and binding-friendly diagnostic
+read/write/subselect/predicate query-builder facades, boolean-group compiler
+wrapping, typed source generators, and binding-friendly diagnostic
 JSON. The next implementation step is to cover additional C6 grammar and
-schema-aware write normalization edge cases while expanding composable boolean
-group and model-aware builder helpers to match the compiler grammar.
+schema-aware write normalization edge cases while expanding model-aware builder
+helpers to match the compiler grammar.

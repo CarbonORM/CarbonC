@@ -1250,6 +1250,7 @@ static void test_golden_fixtures(void) {
     run_fixture("select-pagination");
     run_fixture("spatial-order");
     run_fixture("where-in-between");
+    run_fixture("where-boolean-groups");
     run_fixture("join-alias");
     run_fixture("derived-join");
     run_fixture("group-having");

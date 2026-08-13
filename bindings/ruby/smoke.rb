@@ -171,6 +171,47 @@ end
 unless advanced.fetch('params') == [1, 10, 5000, 99, 100, 5000]
   raise "unexpected advanced params: #{advanced.fetch('params').inspect}"
 end
+expected_boolean_group_payload = {
+  'AND' => [
+    {'actor.actor_id' => ['>', 2]},
+    {
+      'OR' => [
+        {'actor.first_name' => ['LIKE', ['LIT', 'A%']]},
+        {'actor.first_name' => ['LIKE', ['LIT', 'B%']]}
+      ]
+    }
+  ]
+}
+actual_boolean_group_payload = CarbonC.and_group(
+  CarbonC.condition('actor.actor_id', CarbonC.op('>', 2)),
+  CarbonC.or_group(
+    CarbonC.condition('actor.first_name', CarbonC.op('LIKE', CarbonC.lit('A%'))),
+    CarbonC.condition('actor.first_name', CarbonC.op('LIKE', CarbonC.lit('B%')))
+  )
+)
+unless actual_boolean_group_payload == expected_boolean_group_payload
+  raise "unexpected boolean group helper payload: #{actual_boolean_group_payload.inspect}"
+end
+boolean_grouped = CarbonC.query('actor')
+                         .select('actor.actor_id')
+                         .where_between('actor.actor_id', 1, 10)
+                         .where_or(
+                           CarbonC.condition('actor.first_name', CarbonC.op('LIKE', CarbonC.lit('A%'))),
+                           CarbonC.condition('actor.first_name', CarbonC.op('LIKE', CarbonC.lit('B%')))
+                         )
+                         .where_and(
+                           CarbonC.condition('actor.actor_id', CarbonC.op('>', 2)),
+                           CarbonC.condition('actor.actor_id', CarbonC.op('<', 9))
+                         )
+                         .limit(5)
+                         .compile(nil, 'mysql')
+raise "unexpected boolean group status: #{boolean_grouped.inspect}" unless boolean_grouped.fetch('status') == 0
+unless boolean_grouped.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) BETWEEN ? AND ? AND ((actor.first_name) LIKE ? OR (actor.first_name) LIKE ?) AND ((actor.actor_id) > ? AND (actor.actor_id) < ?) LIMIT 5'
+  raise "unexpected boolean group sql: #{boolean_grouped.fetch('sql')}"
+end
+unless boolean_grouped.fetch('params') == [1, 10, 'A%', 'B%', 2, 9]
+  raise "unexpected boolean group params: #{boolean_grouped.fetch('params').inspect}"
+end
 grouped = CarbonC.query('actor')
                  .select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
                  .group_by('actor.first_name')

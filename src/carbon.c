@@ -2397,6 +2397,7 @@ static carbon_status carbon_build_where_object_pass(
         char *key_upper;
         carbon_string_builder part = {0};
         int is_numeric = carbon_span_is_numeric_key(entry.key);
+        int wrap_part = 0;
 
         if (numeric != is_numeric) {
             continue;
@@ -2411,6 +2412,7 @@ static carbon_status carbon_build_where_object_pass(
         }
 
         if (carbon_is_boolean_operator(key_upper)) {
+            wrap_part = 1;
             if (!carbon_span_starts_with(entry.value, '[')) {
                 status = CARBON_STATUS_INVALID_QUERY;
             } else {
@@ -2438,7 +2440,9 @@ static carbon_status carbon_build_where_object_pass(
             carbon_builder_free(&part);
             return CARBON_STATUS_OUT_OF_MEMORY;
         }
-        if (!carbon_builder_append(sql, part.data)) {
+        if (wrap_part
+            ? !carbon_builder_append_wrapped_expression(sql, part.data)
+            : !carbon_builder_append(sql, part.data)) {
             carbon_builder_free(&part);
             return CARBON_STATUS_OUT_OF_MEMORY;
         }

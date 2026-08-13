@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","SELECT":["actor.actor_id"],"WHERE":{"actor.actor_id":["BETWEEN",[1,10]],"OR":[{"actor.first_name":["LIKE",["LIT","A%"]]},{"actor.first_name":["LIKE",["LIT","B%"]]}],"AND":[{"actor.actor_id":[">",2]},{"actor.actor_id":["<",9]}]},"PAGINATION":{"LIMIT":5}}
+-- sql
+SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) BETWEEN ? AND ? AND ((actor.first_name) LIKE ? OR (actor.first_name) LIKE ?) AND ((actor.actor_id) > ? AND (actor.actor_id) < ?) LIMIT 5
+-- params
+[1,10,"A%","B%",2,9]
+-- allowlist
+SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) BETWEEN ? AND ? AND ((actor.first_name) LIKE ? OR (actor.first_name) LIKE ?) AND ((actor.actor_id) > ? AND (actor.actor_id) < ?) LIMIT ?

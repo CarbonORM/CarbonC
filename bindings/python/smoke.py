@@ -176,6 +176,46 @@ def main() -> None:
         "LIMIT 3"
     ), advanced
     assert advanced["params"] == [1, 10, 5000, 99, 100, 5000], advanced
+    assert carbon_codegen.and_(
+        carbon_codegen.condition("actor.actor_id", carbon_codegen.op(">", 2)),
+        carbon_codegen.or_(
+            carbon_codegen.condition("actor.first_name", carbon_codegen.op("LIKE", carbon_codegen.lit("A%"))),
+            carbon_codegen.condition("actor.first_name", carbon_codegen.op("LIKE", carbon_codegen.lit("B%"))),
+        ),
+    ) == {
+        "AND": [
+            {"actor.actor_id": [">", 2]},
+            {
+                "OR": [
+                    {"actor.first_name": ["LIKE", ["LIT", "A%"]]},
+                    {"actor.first_name": ["LIKE", ["LIT", "B%"]]},
+                ]
+            },
+        ]
+    }
+    boolean_grouped = (
+        carbon_codegen.query("actor")
+        .select("actor.actor_id")
+        .where_between("actor.actor_id", 1, 10)
+        .where_or(
+            carbon_codegen.condition("actor.first_name", carbon_codegen.op("LIKE", carbon_codegen.lit("A%"))),
+            carbon_codegen.condition("actor.first_name", carbon_codegen.op("LIKE", carbon_codegen.lit("B%"))),
+        )
+        .where_and(
+            carbon_codegen.condition("actor.actor_id", carbon_codegen.op(">", 2)),
+            carbon_codegen.condition("actor.actor_id", carbon_codegen.op("<", 9)),
+        )
+        .limit(5)
+        .compile(dialect="mysql")
+    )
+    assert boolean_grouped["status"] == 0, boolean_grouped
+    assert boolean_grouped["sql"] == (
+        "SELECT actor.actor_id FROM `actor` "
+        "WHERE (actor.actor_id) BETWEEN ? AND ? "
+        "AND ((actor.first_name) LIKE ? OR (actor.first_name) LIKE ?) "
+        "AND ((actor.actor_id) > ? AND (actor.actor_id) < ?) LIMIT 5"
+    ), boolean_grouped
+    assert boolean_grouped["params"] == [1, 10, "A%", "B%", 2, 9], boolean_grouped
     grouped = (
         carbon_codegen.query("actor")
         .select(["DISTINCT", "actor.first_name"], ["AS", ["COUNT", "actor.actor_id"], "cnt"])

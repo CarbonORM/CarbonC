@@ -107,6 +107,16 @@ class Query:
         self._append_exists("NOT_EXISTS", exists_spec(outer_column, subquery, inner_column))
         return self
 
+    def where_group(self, operator: str, *conditions: Any) -> "Query":
+        self._append_boolean(operator, conditions)
+        return self
+
+    def where_and(self, *conditions: Any) -> "Query":
+        return self.where_group("AND", *conditions)
+
+    def where_or(self, *conditions: Any) -> "Query":
+        return self.where_group("OR", *conditions)
+
     def join(self, kind: str, target: Any, on: Mapping[str, Any]) -> "Query":
         joins = self._payload.setdefault("JOIN", {})
         if not isinstance(joins, dict):
@@ -191,6 +201,16 @@ class Query:
         if not isinstance(specs, list):
             raise TypeError(f"WHERE.{operator} must be a list")
         specs.append(spec)
+
+    def _append_boolean(self, operator: str, conditions: Sequence[Any]) -> None:
+        op_key = operator.upper().replace(" ", "_")
+        if op_key not in {"AND", "OR"}:
+            raise ValueError("operator must be AND or OR")
+        where = self._where()
+        parts = where.setdefault(op_key, [])
+        if not isinstance(parts, list):
+            raise TypeError(f"WHERE.{op_key} must be a list")
+        parts.extend(_condition_payload(condition) for condition in conditions)
 
     def _pagination(self) -> dict[str, Any]:
         pagination = self._payload.setdefault("PAGINATION", {})
@@ -278,10 +298,33 @@ def not_exists(*specs: Sequence[Any]) -> dict[str, list[Any]]:
     return {"NOT_EXISTS": [list(spec) for spec in specs]}
 
 
+def condition(column: str, value: Any) -> dict[str, Any]:
+    return {column: Query._copy_payload_value(value)}
+
+
+def group(operator: str, *conditions: Any) -> dict[str, list[Any]]:
+    op_key = operator.upper().replace(" ", "_")
+    if op_key not in {"AND", "OR"}:
+        raise ValueError("operator must be AND or OR")
+    return {op_key: [_condition_payload(condition) for condition in conditions]}
+
+
+def and_(*conditions: Any) -> dict[str, list[Any]]:
+    return group("AND", *conditions)
+
+
+def or_(*conditions: Any) -> dict[str, list[Any]]:
+    return group("OR", *conditions)
+
+
 def _query_payload(query: Any) -> Any:
     if isinstance(query, Query):
         return query.to_payload()
     return Query._copy_payload_value(query)
+
+
+def _condition_payload(condition: Any) -> Any:
+    return Query._copy_payload_value(condition)
 
 
 def _subselect_operand(query: Any) -> Any:

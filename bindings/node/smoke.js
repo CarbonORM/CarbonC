@@ -161,6 +161,45 @@ assert.strictEqual(
   'SELECT property_units.unit_id FROM `property_units` WHERE (property_units.unit_id) BETWEEN ? AND ? AND ( property_units.parcel_id IN (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ?) ) AND ( property_units.account_id NOT IN (?, ?) ) AND EXISTS (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ? AND (parcel_sales.parcel_id) = property_units.parcel_id) LIMIT 3'
 );
 assert.deepStrictEqual(advanced.params, [1, 10, 5000, 99, 100, 5000]);
+assert.deepStrictEqual(
+  carbon.andGroup(
+    carbon.condition('actor.actor_id', carbon.op('>', 2)),
+    carbon.orGroup(
+      carbon.condition('actor.first_name', carbon.op('LIKE', carbon.lit('A%'))),
+      carbon.condition('actor.first_name', carbon.op('LIKE', carbon.lit('B%')))
+    )
+  ),
+  {
+    AND: [
+      {'actor.actor_id': ['>', 2]},
+      {
+        OR: [
+          {'actor.first_name': ['LIKE', ['LIT', 'A%']]},
+          {'actor.first_name': ['LIKE', ['LIT', 'B%']]},
+        ],
+      },
+    ],
+  }
+);
+const booleanGrouped = carbon.query('actor')
+  .select('actor.actor_id')
+  .whereBetween('actor.actor_id', 1, 10)
+  .whereOr(
+    carbon.condition('actor.first_name', carbon.op('LIKE', carbon.lit('A%'))),
+    carbon.condition('actor.first_name', carbon.op('LIKE', carbon.lit('B%')))
+  )
+  .whereAnd(
+    carbon.condition('actor.actor_id', carbon.op('>', 2)),
+    carbon.condition('actor.actor_id', carbon.op('<', 9))
+  )
+  .limit(5)
+  .compile(undefined, 'mysql');
+assert.strictEqual(booleanGrouped.status, 0, JSON.stringify(booleanGrouped));
+assert.strictEqual(
+  booleanGrouped.sql,
+  'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) BETWEEN ? AND ? AND ((actor.first_name) LIKE ? OR (actor.first_name) LIKE ?) AND ((actor.actor_id) > ? AND (actor.actor_id) < ?) LIMIT 5'
+);
+assert.deepStrictEqual(booleanGrouped.params, [1, 10, 'A%', 'B%', 2, 9]);
 const grouped = carbon.query('actor')
   .select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
   .groupBy('actor.first_name')
