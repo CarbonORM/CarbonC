@@ -38,6 +38,10 @@ module CarbonC
       self
     end
 
+    def join_subselect(kind, alias_name, subquery, on)
+      join(kind, CarbonC.derived_target(alias_name, subquery), on)
+    end
+
     def group_by(*expressions)
       @payload['GROUP_BY'] = if expressions.length == 1 && expressions.first.is_a?(Array)
                                expressions.first.dup
@@ -138,6 +142,14 @@ module CarbonC
       Query.new(table)
     end
 
+    def subselect(query)
+      ['SUBSELECT', carbon_codegen_query_payload(query)]
+    end
+
+    def derived_target(alias_name, query)
+      JSON.generate('SUBSELECT' => carbon_codegen_query_payload(query), 'AS' => alias_name)
+    end
+
     def compile_query_value(query, schema = nil, dialect = 'mysql')
       compile_query(
         carbon_codegen_payload_json(query),
@@ -232,6 +244,19 @@ module CarbonC
       return payload if payload.is_a?(String)
 
       JSON.generate(payload)
+    end
+
+    def carbon_codegen_query_payload(query)
+      return query.to_payload if query.is_a?(Query)
+
+      case query
+      when Array
+        query.map { |item| item.is_a?(Hash) ? item.dup : item }
+      when Hash
+        query.dup
+      else
+        query
+      end
     end
 
     def carbon_codegen_decode_json_field(result, field)

@@ -102,6 +102,36 @@ def main() -> None:
         "SELECT": ["actor.actor_id"],
         "JOIN": {"INNER": {"film_actor fa": {"fa.actor_id": ["=", "actor.actor_id"]}}},
     }, join_payload
+    recent_actor_ids = (
+        carbon_codegen.query("film_actor")
+        .select("film_actor.actor_id")
+        .where({"film_actor.film_id": [">", 10]})
+        .limit(1)
+    )
+    assert carbon_codegen.subselect(recent_actor_ids) == [
+        "SUBSELECT",
+        {
+            "FROM": "film_actor",
+            "SELECT": ["film_actor.actor_id"],
+            "WHERE": {"film_actor.film_id": [">", 10]},
+            "PAGINATION": {"LIMIT": 1},
+        },
+    ]
+    derived = (
+        carbon_codegen.query("actor")
+        .select("actor.actor_id", "fa_recent.actor_id")
+        .join_subselect("INNER", "fa_recent", recent_actor_ids, {"fa_recent.actor_id": ["=", "actor.actor_id"]})
+        .where({"actor.actor_id": [">", 100]})
+        .compile(dialect="mysql")
+    )
+    assert derived["status"] == 0, derived
+    assert derived["sql"] == (
+        "SELECT actor.actor_id, fa_recent.actor_id FROM `actor` "
+        "INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` WHERE (film_actor.film_id) > ? LIMIT 1) "
+        "AS `fa_recent` ON ((fa_recent.actor_id) = actor.actor_id) "
+        "WHERE (actor.actor_id) > ? LIMIT 100"
+    ), derived
+    assert derived["params"] == [10, 100], derived
     grouped = (
         carbon_codegen.query("actor")
         .select(["DISTINCT", "actor.first_name"], ["AS", ["COUNT", "actor.actor_id"], "cnt"])

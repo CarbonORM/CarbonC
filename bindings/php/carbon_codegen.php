@@ -61,6 +61,28 @@ if (!function_exists('carbon_schema_models')) {
         return carbon_adapt_compile_result(carbon_compile_query_value($query, $schema, $dialect));
     }
 
+    function carbon_codegen_query_payload($query)
+    {
+        if ($query instanceof CarbonQuery) {
+            return $query->toPayload();
+        }
+        return $query;
+    }
+
+    function carbon_subselect($query): array
+    {
+        return ['SUBSELECT', carbon_codegen_query_payload($query)];
+    }
+
+    function carbon_derived_target(string $alias, $query): string
+    {
+        $encoded = json_encode(['SUBSELECT' => carbon_codegen_query_payload($query), 'AS' => $alias]);
+        if ($encoded === false) {
+            throw new InvalidArgumentException('derived JOIN target could not be encoded as JSON');
+        }
+        return $encoded;
+    }
+
     if (!class_exists('CarbonQuery', false)) {
         final class CarbonQuery
         {
@@ -112,6 +134,11 @@ if (!function_exists('carbon_schema_models')) {
                 }
                 $this->payload['JOIN'][$kind][$target] = $on;
                 return $this;
+            }
+
+            public function joinSubselect(string $kind, string $alias, $query, array $on): self
+            {
+                return $this->join($kind, carbon_derived_target($alias, $query), $on);
             }
 
             public function groupBy(...$expressions): self

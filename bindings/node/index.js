@@ -90,6 +90,21 @@ function copyPayloadValue(value) {
   return value;
 }
 
+function queryPayload(query) {
+  if (query instanceof CarbonQuery) {
+    return query.toPayload();
+  }
+  return copyPayloadValue(query);
+}
+
+function subselect(query) {
+  return ['SUBSELECT', queryPayload(query)];
+}
+
+function derivedTarget(alias, query) {
+  return JSON.stringify({SUBSELECT: queryPayload(query), AS: alias});
+}
+
 class CarbonQuery {
   constructor(table) {
     this.payload = {};
@@ -132,6 +147,10 @@ class CarbonQuery {
     }
     this.payload.JOIN[kind][target] = {...on};
     return this;
+  }
+
+  joinSubselect(kind, alias, subquery, on) {
+    return this.join(kind, derivedTarget(alias, subquery), on);
   }
 
   groupBy(...expressions) {
@@ -364,5 +383,8 @@ native.CarbonQuery = CarbonQuery;
 native.query = query;
 native.fromTable = fromTable;
 native.from_table = fromTable;
+native.subselect = subselect;
+native.derivedTarget = derivedTarget;
+native.derived_target = derivedTarget;
 
 module.exports = native;

@@ -89,6 +89,9 @@ class Query:
         join_group[target] = dict(on)
         return self
 
+    def join_subselect(self, kind: str, alias: str, subquery: Any, on: Mapping[str, Any]) -> "Query":
+        return self.join(kind, derived_target(alias, subquery), on)
+
     def group_by(self, *expressions: Any) -> "Query":
         if len(expressions) == 1 and isinstance(expressions[0], (list, tuple)):
             self._payload["GROUP_BY"] = list(expressions[0])
@@ -169,6 +172,20 @@ def query(table: Any = None) -> Query:
 
 def from_table(table: Any) -> Query:
     return Query(table)
+
+
+def subselect(query: Any) -> list[Any]:
+    return ["SUBSELECT", _query_payload(query)]
+
+
+def derived_target(alias: str, query: Any) -> str:
+    return json.dumps({"SUBSELECT": _query_payload(query), "AS": alias}, separators=(",", ":"))
+
+
+def _query_payload(query: Any) -> Any:
+    if isinstance(query, Query):
+        return query.to_payload()
+    return Query._copy_payload_value(query)
 
 
 def _dedupe(name: str, used: MutableSet[str]) -> str:

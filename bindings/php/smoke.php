@@ -116,6 +116,33 @@ carbon_assert(
     ],
     'unexpected join builder payload: ' . json_encode($joinPayload)
 );
+$recentActorIds = carbon_query('film_actor')
+    ->select('film_actor.actor_id')
+    ->where(['film_actor.film_id' => ['>', 10]])
+    ->limit(1);
+carbon_assert(
+    carbon_subselect($recentActorIds) === [
+        'SUBSELECT',
+        [
+            'FROM' => 'film_actor',
+            'SELECT' => ['film_actor.actor_id'],
+            'WHERE' => ['film_actor.film_id' => ['>', 10]],
+            'PAGINATION' => ['LIMIT' => 1],
+        ],
+    ],
+    'unexpected subselect helper payload'
+);
+$derived = carbon_query('actor')
+    ->select('actor.actor_id', 'fa_recent.actor_id')
+    ->joinSubselect('INNER', 'fa_recent', $recentActorIds, ['fa_recent.actor_id' => ['=', 'actor.actor_id']])
+    ->where(['actor.actor_id' => ['>', 100]])
+    ->compile(null, 'mysql');
+carbon_assert($derived['status'] === 0, 'unexpected derived compile status: ' . json_encode($derived));
+carbon_assert(
+    $derived['sql'] === 'SELECT actor.actor_id, fa_recent.actor_id FROM `actor` INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` WHERE (film_actor.film_id) > ? LIMIT 1) AS `fa_recent` ON ((fa_recent.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT 100',
+    'unexpected derived sql: ' . $derived['sql']
+);
+carbon_assert($derived['params'] === [10, 100], 'unexpected derived params: ' . json_encode($derived['params']));
 $grouped = carbon_query('actor')
     ->select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
     ->groupBy('actor.first_name')

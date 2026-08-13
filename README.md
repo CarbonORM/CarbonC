@@ -282,8 +282,9 @@ dataclass_source = carbon_codegen.schema_models({
 
 `Query.to_payload()` returns the canonical dict sent through the C JSON boundary
 for table/from, select, where, join, group/having, write operations
-(`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), limit/page,
-and order controls.
+(`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), scalar
+subselect helpers, derived `join_subselect` targets, limit/page, and order
+controls.
 `compile_query_result()` returns the same fields as the raw result plus decoded
 Python `params` and `diagnostics` values. The generated dataclass source maps DB
 metadata into Python annotations such as
@@ -345,8 +346,9 @@ $modelSource = carbon_schema_models([
 
 `CarbonQuery::toPayload()` returns the canonical array sent through the C JSON
 boundary for table/from, select, where, join, group/having, write operations
-(`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), limit/page,
-and order controls. `carbon_compile_query_result()` returns the same fields as the
+(`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), scalar
+`carbon_subselect()` helpers, derived `joinSubselect()` targets, limit/page, and
+order controls. `carbon_compile_query_result()` returns the same fields as the
 raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
 class source keeps properties untyped for runtime compatibility, adds PHPDoc type
 annotations, and includes `DB_TYPES` and `NULLABLE` constants.
@@ -412,8 +414,9 @@ const typeSource = carbon.schemaModels({
 
 `CarbonQuery.toPayload()` returns the canonical object sent through the C JSON
 boundary for table/from, select, where, join, group/having, write operations
-(`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), limit/page,
-and order controls. `compileQueryResult()` returns the same fields as the raw result
+(`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), scalar
+`subselect()` helpers, derived `joinSubselect()` targets, limit/page, and order
+controls. `compileQueryResult()` returns the same fields as the raw result
 plus decoded JavaScript `params` and `diagnostics` values. The generated
 TypeScript source maps DB metadata into primitive field types and adds `dbTypes`
 and `nullable` metadata beside each generated interface.
@@ -429,7 +432,8 @@ node examples/node/index.js
 The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `statusCode()`, `compileQuery()`, `compileQueryValue()`,
 `compileQueryResult()`, `adaptCompileResult()`, `CarbonQuery`, `query()`,
-`fromTable()`, `schemaMetadata()`, `schemaModels()`, and
+`fromTable()`, `subselect()`, `derivedTarget()`, `schemaMetadata()`,
+`schemaModels()`, and
 `normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
 
 ## Ruby Binding
@@ -481,8 +485,9 @@ model_source = CarbonC.schema_models({
 
 `CarbonC::Query#to_payload` returns the canonical hash sent through the C JSON
 boundary for table/from, select, where, join, group/having, write operations
-(`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), limit/page,
-and order controls. `CarbonC.compile_query_result` returns the same fields as the raw
+(`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), scalar
+`CarbonC.subselect` helpers, derived `join_subselect` targets, limit/page, and
+order controls. `CarbonC.compile_query_result` returns the same fields as the raw
 result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
 Struct source includes `TYPES` and `NULLABLE` metadata constants for runtime
 consumers.
@@ -499,11 +504,12 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.status_code`, `CarbonC.status_message`, `CarbonC.compile_query`,
 `CarbonC.compile_query_value`, `CarbonC.compile_query_result`,
 `CarbonC.adapt_compile_result`, `CarbonC.query`, `CarbonC.from_table`,
-`CarbonC.schema_metadata`, and `CarbonC.normalize_allowlist_sql`.
+`CarbonC.subselect`, `CarbonC.derived_target`, `CarbonC.schema_metadata`, and
+`CarbonC.normalize_allowlist_sql`.
 
 ## Next Milestones
 
 1. Expand the remaining CarbonNode C6 grammar behind golden fixtures.
 2. Add richer multi-diagnostic reporting for validation batches.
-3. Add subselect and derived-target query-builder coverage as the remaining C6
-   grammar lands.
+3. Add higher-level EXISTS/NOT_EXISTS and advanced-operator builder helpers as
+   the remaining C6 grammar lands.

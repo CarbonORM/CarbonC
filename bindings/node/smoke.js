@@ -103,6 +103,30 @@ assert.deepStrictEqual(
     JOIN: {INNER: {'film_actor fa': {'fa.actor_id': ['=', 'actor.actor_id']}}},
   }
 );
+const recentActorIds = carbon.query('film_actor')
+  .select('film_actor.actor_id')
+  .where({'film_actor.film_id': ['>', 10]})
+  .limit(1);
+assert.deepStrictEqual(carbon.subselect(recentActorIds), [
+  'SUBSELECT',
+  {
+    FROM: 'film_actor',
+    SELECT: ['film_actor.actor_id'],
+    WHERE: {'film_actor.film_id': ['>', 10]},
+    PAGINATION: {LIMIT: 1},
+  },
+]);
+const derived = carbon.query('actor')
+  .select('actor.actor_id', 'fa_recent.actor_id')
+  .joinSubselect('INNER', 'fa_recent', recentActorIds, {'fa_recent.actor_id': ['=', 'actor.actor_id']})
+  .where({'actor.actor_id': ['>', 100]})
+  .compile(undefined, 'mysql');
+assert.strictEqual(derived.status, 0, JSON.stringify(derived));
+assert.strictEqual(
+  derived.sql,
+  'SELECT actor.actor_id, fa_recent.actor_id FROM `actor` INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` WHERE (film_actor.film_id) > ? LIMIT 1) AS `fa_recent` ON ((fa_recent.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT 100'
+);
+assert.deepStrictEqual(derived.params, [10, 100]);
 const grouped = carbon.query('actor')
   .select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
   .groupBy('actor.first_name')

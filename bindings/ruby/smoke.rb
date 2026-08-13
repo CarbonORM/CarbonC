@@ -104,6 +104,32 @@ expected_join_payload = {
 unless join_payload == expected_join_payload
   raise "unexpected join builder payload: #{join_payload.inspect}"
 end
+recent_actor_ids = CarbonC.query('film_actor')
+                          .select('film_actor.actor_id')
+                          .where({'film_actor.film_id' => ['>', 10]})
+                          .limit(1)
+expected_subselect_payload = [
+  'SUBSELECT',
+  {
+    'FROM' => 'film_actor',
+    'SELECT' => ['film_actor.actor_id'],
+    'WHERE' => {'film_actor.film_id' => ['>', 10]},
+    'PAGINATION' => {'LIMIT' => 1}
+  }
+]
+unless CarbonC.subselect(recent_actor_ids) == expected_subselect_payload
+  raise "unexpected subselect helper payload: #{CarbonC.subselect(recent_actor_ids).inspect}"
+end
+derived = CarbonC.query('actor')
+                 .select('actor.actor_id', 'fa_recent.actor_id')
+                 .join_subselect('INNER', 'fa_recent', recent_actor_ids, {'fa_recent.actor_id' => ['=', 'actor.actor_id']})
+                 .where({'actor.actor_id' => ['>', 100]})
+                 .compile(nil, 'mysql')
+raise "unexpected derived compile status: #{derived.inspect}" unless derived.fetch('status') == 0
+unless derived.fetch('sql') == 'SELECT actor.actor_id, fa_recent.actor_id FROM `actor` INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` WHERE (film_actor.film_id) > ? LIMIT 1) AS `fa_recent` ON ((fa_recent.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT 100'
+  raise "unexpected derived sql: #{derived.fetch('sql')}"
+end
+raise "unexpected derived params: #{derived.fetch('params').inspect}" unless derived.fetch('params') == [10, 100]
 grouped = CarbonC.query('actor')
                  .select(['DISTINCT', 'actor.first_name'], ['AS', ['COUNT', 'actor.actor_id'], 'cnt'])
                  .group_by('actor.first_name')
