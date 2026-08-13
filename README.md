@@ -83,6 +83,8 @@ Supported in this slice:
   multi-row `VALUES` cardinality, and `IN` bind-list cardinality
 - schema-aware table, unqualified-reference, dotted-reference, join-alias, and
   write-column validation when `schema_json` includes a `TABLES` object
+- schema-declared write column ordering for `INSERT`, `UPDATE`, and upsert
+  update lists
 
 Derived JOIN targets use the same JSON-only ABI as other compiler inputs: the
 JOIN target key is a stringified object with `SUBSELECT` and `AS`, while the
@@ -96,11 +98,14 @@ Root-level POST rows ignore request metadata keys such as `DB`, `cacheResults`,
 and `UPDATE: [...]`; that `UPDATE` array remains upsert metadata. Single-row and
 multi-row insert/upsert payloads are covered now, including
 `dataInsertMultipleRows`; later rows bind `null` for missing first-row columns to
-match CarbonNode's batch insert behavior. PostgreSQL writes currently cover
-simple insert/update/delete forms and schema-derived conflict targets for
-`ON CONFLICT` upserts, plus `INNER` joined updates through `UPDATE ... FROM` and
-`INNER` joined deletes through `DELETE ... USING`. PostgreSQL non-`INNER` joined
-writes and PostgreSQL derived joined writes are later work.
+match CarbonNode's batch insert behavior. When schema `COLUMNS` metadata is
+present, write columns are emitted in schema order and later rows may use either
+qualified or short keys for the same normalized column. PostgreSQL writes
+currently cover simple insert/update/delete forms and schema-derived conflict
+targets for `ON CONFLICT` upserts, plus `INNER` joined updates through
+`UPDATE ... FROM` and `INNER` joined deletes through `DELETE ... USING`.
+PostgreSQL non-`INNER` joined writes and PostgreSQL derived joined writes are
+later work.
 
 Schema validation is opt-in for this slice. Passing `{}` keeps syntax-only
 identifier checks. Passing a `TABLES` object validates unqualified references
@@ -275,9 +280,8 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 
 ## Next Milestones
 
-1. Expand fixture coverage for schema-aware write normalization.
-2. Expand schema validation to generated type metadata and binding-friendly
+1. Expand schema validation to generated type metadata and binding-friendly
    diagnostic paths.
-3. Add package-level ergonomics for each binding without moving DB execution
+2. Add package-level ergonomics for each binding without moving DB execution
    into C.
-4. Add structured diagnostic paths for binding-friendly errors.
+3. Add structured diagnostic paths for binding-friendly errors.

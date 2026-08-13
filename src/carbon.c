@@ -3121,9 +3121,10 @@ static void carbon_write_columns_free(carbon_write_columns *columns) {
     columns->count = 0;
 }
 
-static int carbon_write_columns_find_short(
+static int carbon_write_columns_find_short_index(
         const carbon_write_columns *columns,
-        const char *short_column) {
+        const char *short_column,
+        size_t *found_index) {
     size_t index;
 
     if (columns == NULL || short_column == NULL) {
@@ -3131,10 +3132,20 @@ static int carbon_write_columns_find_short(
     }
     for (index = 0; index < columns->count; ++index) {
         if (strcmp(columns->short_columns[index], short_column) == 0) {
+            if (found_index != NULL) {
+                *found_index = index;
+            }
             return 1;
         }
     }
     return 0;
+}
+
+static int carbon_write_columns_find_short(
+        const carbon_write_columns *columns,
+        const char *short_column) {
+    size_t unused;
+    return carbon_write_columns_find_short_index(columns, short_column, &unused);
 }
 
 static carbon_status carbon_write_columns_add(
@@ -3178,6 +3189,197 @@ static carbon_status carbon_write_columns_add(
     return CARBON_STATUS_OK;
 }
 
+static void carbon_write_columns_swap(
+        carbon_write_columns *columns,
+        size_t left,
+        size_t right) {
+    char *key;
+    char *short_column;
+
+    if (columns == NULL || left == right) {
+        return;
+    }
+
+    key = columns->keys[left];
+    columns->keys[left] = columns->keys[right];
+    columns->keys[right] = key;
+
+    short_column = columns->short_columns[left];
+    columns->short_columns[left] = columns->short_columns[right];
+    columns->short_columns[right] = short_column;
+}
+
+static carbon_status carbon_schema_table_columns_span(
+        const carbon_compile_state *state,
+        const char *table,
+        carbon_json_span *columns,
+        int *has_columns) {
+    static const char *const column_names[] = {"COLUMNS", "columns"};
+    carbon_json_span definition;
+    int found;
+
+    *has_columns = 0;
+    if (!carbon_schema_enabled(state)) {
+        return CARBON_STATUS_OK;
+    }
+
+    found = carbon_schema_find_table(state->schema, table, &definition);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    definition = carbon_trim_span(definition);
+    if (carbon_span_starts_with(definition, '[')) {
+        *columns = definition;
+        *has_columns = 1;
+        return CARBON_STATUS_OK;
+    }
+    if (!carbon_span_starts_with(definition, '{')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    found = carbon_object_get_any(definition, column_names, 2, columns);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_OK;
+    }
+
+    *columns = carbon_trim_span(*columns);
+    if (!carbon_span_starts_with(*columns, '[') && !carbon_span_starts_with(*columns, '{')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    *has_columns = 1;
+    return CARBON_STATUS_OK;
+}
+
+static char *carbon_copy_schema_write_column_short(
+        carbon_compile_state *state,
+        const char *table,
+        carbon_json_span span) {
+    char *column;
+    char *short_column;
+
+    if (span.start == NULL || span.end == NULL) {
+        return NULL;
+    }
+    column = carbon_span_string_copy(span);
+    if (column == NULL) {
+        return NULL;
+    }
+    short_column = carbon_trim_write_column(state, table, column);
+    free(column);
+    return short_column;
+}
+
+static carbon_status carbon_schema_declared_write_column_short(
+        carbon_compile_state *state,
+        const char *table,
+        carbon_json_span preferred,
+        carbon_json_span fallback,
+        char **short_column) {
+    *short_column = carbon_copy_schema_write_column_short(state, table, preferred);
+    if (*short_column != NULL) {
+        return CARBON_STATUS_OK;
+    }
+
+    *short_column = carbon_copy_schema_write_column_short(state, table, fallback);
+    return *short_column == NULL ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_reorder_write_columns_from_schema(
+        carbon_compile_state *state,
+        const char *table,
+        carbon_write_columns *columns) {
+    carbon_json_span schema_columns;
+    int has_columns = 0;
+    size_t write_position = 0;
+    carbon_status status;
+
+    if (columns == NULL || columns->count < 2 || !carbon_schema_enabled(state)) {
+        return CARBON_STATUS_OK;
+    }
+
+    status = carbon_schema_table_columns_span(state, table, &schema_columns, &has_columns);
+    if (status != CARBON_STATUS_OK || !has_columns) {
+        return status;
+    }
+
+    if (carbon_span_starts_with(schema_columns, '[')) {
+        const char *cursor = NULL;
+        carbon_json_span item;
+        int next;
+
+        while ((next = carbon_array_next(schema_columns, &cursor, &item)) == 1) {
+            char *short_column = NULL;
+            size_t found_index;
+
+            status = carbon_schema_declared_write_column_short(
+                    state,
+                    table,
+                    item,
+                    (carbon_json_span) {0},
+                    &short_column);
+            if (status != CARBON_STATUS_OK) {
+                return status;
+            }
+            if (carbon_write_columns_find_short_index(columns, short_column, &found_index)
+                && found_index >= write_position) {
+                carbon_write_columns_swap(columns, write_position, found_index);
+                ++write_position;
+                if (write_position == columns->count) {
+                    free(short_column);
+                    return CARBON_STATUS_OK;
+                }
+            }
+            free(short_column);
+        }
+        return next < 0 || write_position != columns->count
+               ? CARBON_STATUS_INVALID_QUERY
+               : CARBON_STATUS_OK;
+    }
+
+    if (carbon_span_starts_with(schema_columns, '{')) {
+        const char *cursor = NULL;
+        carbon_object_entry entry;
+        int next;
+
+        while ((next = carbon_object_next(schema_columns, &cursor, &entry)) == 1) {
+            char *short_column = NULL;
+            size_t found_index;
+
+            status = carbon_schema_declared_write_column_short(
+                    state,
+                    table,
+                    entry.value,
+                    entry.key,
+                    &short_column);
+            if (status != CARBON_STATUS_OK) {
+                return status;
+            }
+            if (carbon_write_columns_find_short_index(columns, short_column, &found_index)
+                && found_index >= write_position) {
+                carbon_write_columns_swap(columns, write_position, found_index);
+                ++write_position;
+                if (write_position == columns->count) {
+                    free(short_column);
+                    return CARBON_STATUS_OK;
+                }
+            }
+            free(short_column);
+        }
+        return next < 0 || write_position != columns->count
+               ? CARBON_STATUS_INVALID_QUERY
+               : CARBON_STATUS_OK;
+    }
+
+    return CARBON_STATUS_INVALID_QUERY;
+}
+
 static carbon_status carbon_collect_write_columns(
         carbon_compile_state *state,
         const char *table,
@@ -3214,6 +3416,93 @@ static carbon_status carbon_collect_write_columns(
     return CARBON_STATUS_OK;
 }
 
+static carbon_status carbon_collect_write_column_array(
+        carbon_compile_state *state,
+        const char *table,
+        carbon_json_span column_list,
+        int allow_empty,
+        carbon_write_columns *columns) {
+    const char *cursor = NULL;
+    carbon_json_span item;
+    int next;
+
+    if (!carbon_span_starts_with(column_list, '[')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    while ((next = carbon_array_next(column_list, &cursor, &item)) == 1) {
+        char *key = carbon_span_string_copy(item);
+        char *short_column = key == NULL ? NULL : carbon_trim_write_column(state, table, key);
+        carbon_status status;
+
+        if (short_column == NULL) {
+            free(key);
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+        status = carbon_write_columns_add(columns, key, short_column);
+        if (status != CARBON_STATUS_OK) {
+            return status;
+        }
+    }
+
+    if (next < 0 || (!allow_empty && columns->count == 0)) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    return CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_find_write_row_value(
+        carbon_compile_state *state,
+        const char *table,
+        carbon_json_span row,
+        const char *key,
+        const char *short_column,
+        carbon_json_span *value,
+        int *found) {
+    const char *cursor = NULL;
+    carbon_object_entry entry;
+    int next;
+    int matched = 0;
+
+    *found = 0;
+    next = carbon_object_get_property(row, key, value);
+    if (next < 0) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    if (next > 0) {
+        *found = 1;
+        return CARBON_STATUS_OK;
+    }
+
+    while ((next = carbon_object_next(row, &cursor, &entry)) == 1) {
+        char *candidate_key = carbon_span_string_copy(entry.key);
+        char *candidate_short = candidate_key == NULL
+                                ? NULL
+                                : carbon_trim_write_column(state, table, candidate_key);
+
+        free(candidate_key);
+        if (candidate_short == NULL) {
+            continue;
+        }
+        if (strcmp(candidate_short, short_column) == 0) {
+            free(candidate_short);
+            if (matched) {
+                return CARBON_STATUS_INVALID_QUERY;
+            }
+            *value = entry.value;
+            matched = 1;
+            continue;
+        }
+        free(candidate_short);
+    }
+    if (next < 0) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    *found = matched;
+    return CARBON_STATUS_OK;
+}
+
 static carbon_status carbon_append_write_column_list(
         carbon_compile_state *state,
         const carbon_write_columns *columns,
@@ -3236,6 +3525,7 @@ static carbon_status carbon_append_write_column_list(
 
 static carbon_status carbon_append_write_row_values(
         carbon_compile_state *state,
+        const char *table,
         carbon_json_span row,
         const carbon_write_columns *columns,
         carbon_string_builder *sql) {
@@ -3252,9 +3542,16 @@ static carbon_status carbon_append_write_row_values(
         if (index > 0 && !carbon_builder_append(sql, ", ")) {
             return CARBON_STATUS_OUT_OF_MEMORY;
         }
-        found = carbon_object_get_property(row, columns->keys[index], &value);
-        if (found < 0) {
-            return CARBON_STATUS_INVALID_QUERY;
+        status = carbon_find_write_row_value(
+                state,
+                table,
+                row,
+                columns->keys[index],
+                columns->short_columns[index],
+                &value,
+                &found);
+        if (status != CARBON_STATUS_OK) {
+            return status;
         }
         if (found == 0) {
             value.start = "null";
@@ -3270,6 +3567,7 @@ static carbon_status carbon_append_write_row_values(
 
 static carbon_status carbon_append_write_values(
         carbon_compile_state *state,
+        const char *table,
         carbon_json_span rows,
         const carbon_write_columns *columns,
         carbon_string_builder *sql) {
@@ -3279,7 +3577,7 @@ static carbon_status carbon_append_write_values(
         if (!carbon_builder_append_char(sql, '(')) {
             return CARBON_STATUS_OUT_OF_MEMORY;
         }
-        status = carbon_append_write_row_values(state, rows, columns, sql);
+        status = carbon_append_write_row_values(state, table, rows, columns, sql);
         if (status != CARBON_STATUS_OK) {
             return status;
         }
@@ -3304,7 +3602,7 @@ static carbon_status carbon_append_write_values(
             if (!carbon_builder_append_char(sql, '(')) {
                 return CARBON_STATUS_OUT_OF_MEMORY;
             }
-            status = carbon_append_write_row_values(state, row, columns, sql);
+            status = carbon_append_write_row_values(state, table, row, columns, sql);
             if (status != CARBON_STATUS_OK) {
                 return status;
             }
@@ -3324,40 +3622,48 @@ static carbon_status carbon_append_mysql_upsert_update(
         const char *table,
         carbon_json_span update_columns,
         carbon_string_builder *sql) {
-    const char *cursor = NULL;
-    carbon_json_span item;
-    int next;
+    carbon_write_columns columns = {0};
+    size_t index;
     int wrote = 0;
+    carbon_status status;
 
-    if (!carbon_span_starts_with(update_columns, '[')
-        || !carbon_builder_append(sql, " ON DUPLICATE KEY UPDATE ")) {
+    if (!carbon_span_starts_with(update_columns, '[')) {
         return CARBON_STATUS_INVALID_QUERY;
     }
 
-    while ((next = carbon_array_next(update_columns, &cursor, &item)) == 1) {
-        char *column = carbon_span_string_copy(item);
-        char *short_column = column == NULL ? NULL : carbon_trim_write_column(state, table, column);
+    status = carbon_collect_write_column_array(state, table, update_columns, 0, &columns);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+    status = carbon_reorder_write_columns_from_schema(state, table, &columns);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
 
-        free(column);
-        if (short_column == NULL) {
-            return CARBON_STATUS_INVALID_QUERY;
-        }
+    if (!carbon_builder_append(sql, " ON DUPLICATE KEY UPDATE ")) {
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+    for (index = 0; index < columns.count; ++index) {
         if (wrote && !carbon_builder_append(sql, ", ")) {
-            free(short_column);
-            return CARBON_STATUS_OUT_OF_MEMORY;
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto cleanup;
         }
-        if (!carbon_append_quoted_table(sql, state->dialect, short_column)
+        if (!carbon_append_quoted_table(sql, state->dialect, columns.short_columns[index])
             || !carbon_builder_append(sql, " = VALUES(")
-            || !carbon_append_quoted_table(sql, state->dialect, short_column)
+            || !carbon_append_quoted_table(sql, state->dialect, columns.short_columns[index])
             || !carbon_builder_append_char(sql, ')')) {
-            free(short_column);
-            return CARBON_STATUS_OUT_OF_MEMORY;
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto cleanup;
         }
-        free(short_column);
         wrote = 1;
     }
 
-    return next < 0 || !wrote ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OK;
+    status = wrote ? CARBON_STATUS_OK : CARBON_STATUS_INVALID_QUERY;
+
+cleanup:
+    carbon_write_columns_free(&columns);
+    return status;
 }
 
 static carbon_status carbon_append_schema_primary_columns(
@@ -3444,9 +3750,8 @@ static carbon_status carbon_append_postgresql_upsert_update(
         carbon_json_span update_columns,
         carbon_string_builder *sql,
         const char **error_message) {
-    const char *cursor = NULL;
-    carbon_json_span item;
-    int next;
+    carbon_write_columns columns = {0};
+    size_t index;
     int wrote = 0;
     int wrote_conflict = 0;
     carbon_status status;
@@ -3454,8 +3759,17 @@ static carbon_status carbon_append_postgresql_upsert_update(
     if (!carbon_span_starts_with(update_columns, '[')) {
         return CARBON_STATUS_INVALID_QUERY;
     }
+    status = carbon_collect_write_column_array(state, table, update_columns, 1, &columns);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+    status = carbon_reorder_write_columns_from_schema(state, table, &columns);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
     if (!carbon_builder_append(sql, " ON CONFLICT (")) {
-        return CARBON_STATUS_OUT_OF_MEMORY;
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto cleanup;
     }
 
     status = carbon_append_schema_primary_columns(state, table, sql, &wrote_conflict);
@@ -3463,45 +3777,40 @@ static carbon_status carbon_append_postgresql_upsert_update(
         if (status == CARBON_STATUS_UNSUPPORTED_QUERY && error_message != NULL) {
             *error_message = "PostgreSQL ON CONFLICT support requires primary key metadata";
         }
-        return status;
+        goto cleanup;
     }
     if (!wrote_conflict || !carbon_builder_append(sql, ") ")) {
-        return wrote_conflict ? CARBON_STATUS_OUT_OF_MEMORY : CARBON_STATUS_UNSUPPORTED_QUERY;
+        status = wrote_conflict ? CARBON_STATUS_OUT_OF_MEMORY : CARBON_STATUS_UNSUPPORTED_QUERY;
+        goto cleanup;
     }
 
-    while ((next = carbon_array_next(update_columns, &cursor, &item)) == 1) {
-        char *column = carbon_span_string_copy(item);
-        char *short_column = column == NULL ? NULL : carbon_trim_write_column(state, table, column);
-
-        free(column);
-        if (short_column == NULL) {
-            return CARBON_STATUS_INVALID_QUERY;
-        }
+    for (index = 0; index < columns.count; ++index) {
         if (!wrote) {
             if (!carbon_builder_append(sql, "DO UPDATE SET ")) {
-                free(short_column);
-                return CARBON_STATUS_OUT_OF_MEMORY;
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto cleanup;
             }
         } else if (!carbon_builder_append(sql, ", ")) {
-            free(short_column);
-            return CARBON_STATUS_OUT_OF_MEMORY;
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto cleanup;
         }
-        if (!carbon_append_quoted_table(sql, state->dialect, short_column)
+        if (!carbon_append_quoted_table(sql, state->dialect, columns.short_columns[index])
             || !carbon_builder_append(sql, " = EXCLUDED.")
-            || !carbon_append_quoted_table(sql, state->dialect, short_column)) {
-            free(short_column);
-            return CARBON_STATUS_OUT_OF_MEMORY;
+            || !carbon_append_quoted_table(sql, state->dialect, columns.short_columns[index])) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto cleanup;
         }
-        free(short_column);
         wrote = 1;
     }
-    if (next < 0) {
-        return CARBON_STATUS_INVALID_QUERY;
-    }
     if (!wrote && !carbon_builder_append(sql, "DO NOTHING")) {
-        return CARBON_STATUS_OUT_OF_MEMORY;
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto cleanup;
     }
-    return CARBON_STATUS_OK;
+    status = CARBON_STATUS_OK;
+
+cleanup:
+    carbon_write_columns_free(&columns);
+    return status;
 }
 
 static carbon_status carbon_compile_insert_statement(
@@ -3597,6 +3906,10 @@ static carbon_status carbon_compile_insert_statement(
     if (status != CARBON_STATUS_OK) {
         goto cleanup;
     }
+    status = carbon_reorder_write_columns_from_schema(state, table, &columns);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
 
     if (!carbon_builder_append(sql, verb)
         || !carbon_builder_append(sql, " INTO ")
@@ -3613,7 +3926,7 @@ static carbon_status carbon_compile_insert_statement(
         status = CARBON_STATUS_OUT_OF_MEMORY;
         goto cleanup;
     }
-    status = carbon_append_write_values(state, insert_rows, &columns, sql);
+    status = carbon_append_write_values(state, table, insert_rows, &columns, sql);
     if (status != CARBON_STATUS_OK) {
         goto cleanup;
     }
@@ -3659,12 +3972,11 @@ static carbon_status carbon_compile_update_statement(
     carbon_json_span where_span;
     carbon_json_span join_span;
     char *table = NULL;
+    carbon_write_columns columns = {0};
     carbon_string_builder postgresql_conditions = {0};
     carbon_query_scope scope;
     const carbon_query_scope *previous_scope = state->scope;
-    const char *cursor = NULL;
-    carbon_object_entry entry;
-    int next;
+    size_t index;
     int wrote = 0;
     int found;
     int has_join;
@@ -3711,34 +4023,47 @@ static carbon_status carbon_compile_update_statement(
         goto cleanup;
     }
 
-    while ((next = carbon_object_next(update_rows, &cursor, &entry)) == 1) {
-        char *column = carbon_span_string_copy(entry.key);
-        char *short_column = column == NULL ? NULL : carbon_trim_write_column(state, table, column);
+    status = carbon_collect_write_columns(state, table, update_rows, 0, &columns);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+    status = carbon_reorder_write_columns_from_schema(state, table, &columns);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
 
-        free(column);
-        if (short_column == NULL) {
-            status = CARBON_STATUS_INVALID_QUERY;
-            goto cleanup;
-        }
+    for (index = 0; index < columns.count; ++index) {
+        carbon_json_span value;
+        int found_value;
+
         if (wrote && !carbon_builder_append(sql, ", ")) {
-            free(short_column);
             status = CARBON_STATUS_OUT_OF_MEMORY;
             goto cleanup;
         }
-        if (!carbon_append_quoted_table(sql, state->dialect, short_column)
+        if (!carbon_append_quoted_table(sql, state->dialect, columns.short_columns[index])
             || !carbon_builder_append(sql, " = ")) {
-            free(short_column);
             status = CARBON_STATUS_OUT_OF_MEMORY;
             goto cleanup;
         }
-        free(short_column);
-        status = carbon_append_write_value(state, entry.value, sql);
+        status = carbon_find_write_row_value(
+                state,
+                table,
+                update_rows,
+                columns.keys[index],
+                columns.short_columns[index],
+                &value,
+                &found_value);
+        if (status != CARBON_STATUS_OK || !found_value) {
+            status = status == CARBON_STATUS_OK ? CARBON_STATUS_INVALID_QUERY : status;
+            goto cleanup;
+        }
+        status = carbon_append_write_value(state, value, sql);
         if (status != CARBON_STATUS_OK) {
             goto cleanup;
         }
         wrote = 1;
     }
-    if (next < 0 || !wrote) {
+    if (!wrote) {
         status = CARBON_STATUS_INVALID_QUERY;
         goto cleanup;
     }
@@ -3793,6 +4118,7 @@ static carbon_status carbon_compile_update_statement(
 
 cleanup:
     state->scope = previous_scope;
+    carbon_write_columns_free(&columns);
     carbon_builder_free(&postgresql_conditions);
     free(table);
     return status;

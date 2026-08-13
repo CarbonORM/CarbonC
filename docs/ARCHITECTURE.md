@@ -86,6 +86,8 @@ The initial compiler supports:
   cardinality, `IN` bind-list cardinality, and `LIMIT` forms
 - opt-in schema validation from `schema_json.TABLES`, `schema_json.tables`, or
   `schema_json.C6.TABLES`
+- schema-declared write column ordering for `INSERT`, `UPDATE`, and upsert
+  update lists
 
 Derived JOIN targets stay ABI-neutral: bindings pass a JSON string key whose
 decoded value is an object containing `SUBSELECT` and `AS`, and the associated
@@ -110,10 +112,12 @@ When `TABLES` metadata is present, the compiler validates `FROM` tables, joined
 tables, unqualified current-table references, dotted column references,
 join-alias references, insert/update/upsert write columns against C6 `COLUMNS`
 data, and PostgreSQL upsert conflict targets from `PRIMARY_SHORT` or `PRIMARY`.
-Derived aliases are validated as JOIN-visible qualifiers while their projected
-columns stay owned by the nested `SUBSELECT`. Empty or absent schema metadata
-keeps the previous syntax-only behavior so language bindings can adopt the
-validator incrementally.
+Schema `COLUMNS` declaration order is used to normalize write SQL and parameter
+order for `INSERT`, `UPDATE`, and upsert update lists; later insert rows may use
+qualified or short keys for the same normalized column. Derived aliases are
+validated as JOIN-visible qualifiers while their projected columns stay owned by
+the nested `SUBSELECT`. Empty or absent schema metadata keeps the previous
+syntax-only behavior so language bindings can adopt the validator incrementally.
 
 ## Direction
 
@@ -121,4 +125,4 @@ CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers. The next implementation step is to expand those fixtures to generated
 type metadata, binding-friendly diagnostic paths, schema-aware write
-normalization, and package-level ergonomics.
+normalization edge cases, and package-level ergonomics.

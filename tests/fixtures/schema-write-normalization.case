@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","dataInsertMultipleRows":[{"last_name":"ONE","actor.actor_id":7,"first_name":"ALICE"},{"actor_id":8,"actor.first_name":"BOB","actor.last_name":"TWO"}],"UPDATE":["last_name","first_name"]}
+-- sql
+INSERT INTO `actor` (`actor_id`, `first_name`, `last_name`) VALUES (?, ?, ?), (?, ?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`), `last_name` = VALUES(`last_name`)
+-- params
+[7,"ALICE","ONE",8,"BOB","TWO"]
+-- allowlist
+INSERT INTO `actor` (`actor_id`, `first_name`, `last_name`) VALUES (? ×3) ×* ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`), `last_name` = VALUES(`last_name`)
