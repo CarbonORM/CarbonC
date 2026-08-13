@@ -145,6 +145,93 @@ static void test_multiple_where_uses_and(void) {
     carbon_context_free(context);
 }
 
+static void test_postgresql_insert_write_returning(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] =
+            "{\"dialect\":\"postgresql\","
+            "\"FROM\":\"actor\","
+            "\"INSERT\":{\"actor.actor_id\":7,\"actor.first_name\":\"ALICE\"}}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "INSERT INTO \"actor\" (\"actor_id\", \"first_name\") VALUES ($1, $2) RETURNING *");
+    assert_buffer_equals(&result.params_json, "[7,\"ALICE\"]");
+    assert_buffer_equals(&result.allowlist_key,
+                         "INSERT INTO \"actor\" (\"actor_id\", \"first_name\") VALUES ($1, $2) RETURNING *");
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
+static void test_delete_false_rejected(void) {
+    carbon_context *context = carbon_context_new();
+    const char query[] = "{\"FROM\":\"actor\",\"DELETE\":false}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_INVALID_QUERY);
+    assert(result.status == CARBON_STATUS_INVALID_QUERY);
+
+    carbon_compile_result_free(&result);
+    carbon_context_free(context);
+}
+
+static void test_postgresql_write_join_rejected(void) {
+    carbon_context *context = carbon_context_new();
+    const char update_query[] =
+            "{\"dialect\":\"postgresql\","
+            "\"FROM\":\"actor\","
+            "\"UPDATE\":{\"actor.first_name\":\"ALICE\"},"
+            "\"JOIN\":{\"INNER\":{\"film_actor fa\":{\"fa.actor_id\":[\"=\",\"actor.actor_id\"]}}}}";
+    const char delete_query[] =
+            "{\"dialect\":\"postgresql\","
+            "\"FROM\":\"actor\","
+            "\"DELETE\":true,"
+            "\"JOIN\":{\"INNER\":{\"film_actor fa\":{\"fa.actor_id\":[\"=\",\"actor.actor_id\"]}}}}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = "{}",
+            .schema_json_length = 2
+    };
+    carbon_compile_result result;
+
+    assert(context != NULL);
+
+    request.query_json = update_query;
+    request.query_json_length = sizeof(update_query) - 1;
+    carbon_compile_result_init(&result);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_UNSUPPORTED_QUERY);
+    assert(result.status == CARBON_STATUS_UNSUPPORTED_QUERY);
+    carbon_compile_result_free(&result);
+
+    request.query_json = delete_query;
+    request.query_json_length = sizeof(delete_query) - 1;
+    carbon_compile_result_init(&result);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_UNSUPPORTED_QUERY);
+    assert(result.status == CARBON_STATUS_UNSUPPORTED_QUERY);
+    carbon_compile_result_free(&result);
+
+    carbon_context_free(context);
+}
+
 static char *read_file(const char *path) {
     FILE *file = fopen(path, "rb");
     long size;
@@ -242,6 +329,10 @@ static void test_golden_fixtures(void) {
     run_fixture("scalar-subselect");
     run_fixture("exists-correlated");
     run_fixture("not-exists-correlated");
+    run_fixture("insert-basic");
+    run_fixture("replace-upsert");
+    run_fixture("update-where");
+    run_fixture("delete-where");
 }
 
 int main(void) {
@@ -251,6 +342,9 @@ int main(void) {
     test_identifier_rejection();
     test_allowlist_normalizer();
     test_multiple_where_uses_and();
+    test_postgresql_insert_write_returning();
+    test_delete_false_rejected();
+    test_postgresql_write_join_rejected();
     test_golden_fixtures();
     puts("carbonc_tests: ok");
     return 0;

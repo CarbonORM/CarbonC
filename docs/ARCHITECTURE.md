@@ -64,16 +64,22 @@ The initial compiler supports:
   `PARAM`
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
+- explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads
+- MySQL upsert update lists through `UPDATE: ["column_name"]`
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL and PostgreSQL placeholder styles
 
 Unsupported query shapes return `CARBON_STATUS_UNSUPPORTED_QUERY` rather than
 silently compiling weaker SQL.
 
+PostgreSQL write support covers simple insert/update/delete forms in this
+slice. Joined writes and schema-derived conflict targets remain outside the
+v0.1 compiler boundary.
+
 ## Direction
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`. The next implementation step is to expand those
-fixtures to derived joins, write builders, and schema-aware identifier
-validation. That should happen before expanding language bindings beyond smoke
-wrappers.
+fixtures to derived joins, multi-row writes, PostgreSQL conflict targets, and
+schema-aware identifier validation. That should happen before expanding
+language bindings beyond smoke wrappers.

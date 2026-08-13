@@ -25,7 +25,7 @@ The language bindings should own:
 
 The current kernel is intentionally small. It provides a versioned ABI, explicit
 buffer ownership, and a fixture-backed query compiler slice for canonical C6
-`SELECT` payloads:
+payloads:
 
 ```json
 {
@@ -66,10 +66,18 @@ Supported in this slice:
   `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `LIT`, and `PARAM`
 - `GROUP_BY` expression lists and `HAVING` boolean clauses
 - scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
+- explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads
+- MySQL upsert update lists through `UPDATE: ["column_name"]`
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL `?` placeholders and PostgreSQL `$1`-style placeholders
 - CarbonNode-style allowlist normalization for whitespace, `LIMIT`, `OFFSET`,
   and `IN` bind-list cardinality
+
+Write support is intentionally explicit: this slice accepts operation keys such
+as `INSERT`, `REPLACE`, `UPDATE`, and `DELETE`, not CarbonNode's loose root-level
+POST rows. Single-row insert/upsert payloads are covered now. PostgreSQL writes
+currently cover simple insert/update/delete forms; joined writes, multi-row POST
+normalization, and schema-derived conflict targets are later work.
 
 This is not the full C6 grammar yet. It is the foundation for porting the rest
 of CarbonNode's canonical query grammar into C behind stable fixtures.
@@ -102,8 +110,8 @@ ctest --test-dir build --output-on-failure
 
 ## Next Milestones
 
-1. Expand fixture coverage for derived joins, insert, update, delete, and
-   upsert payloads.
+1. Expand fixture coverage for derived joins, multi-row writes, PostgreSQL
+   conflict targets, and schema-aware write normalization.
 2. Add schema metadata checks so identifiers are validated against generated C6
    schema data, not only identifier syntax.
 3. Add structured error codes and paths for binding-friendly diagnostics.

@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","UPDATE":{"actor.first_name":["CONCAT",["LIT","Mr. "],"actor.last_name"]},"WHERE":{"actor.actor_id":["=",7]},"PAGINATION":{"LIMIT":1}}
+-- sql
+UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name) WHERE (actor.actor_id) = ? LIMIT 1
+-- params
+["Mr. ",7]
+-- allowlist
+UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name) WHERE (actor.actor_id) = ? LIMIT ?

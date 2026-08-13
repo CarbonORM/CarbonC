@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","REPLACE":{"actor.first_name":"BOB","actor.last_name":"SMITH"},"UPDATE":["first_name","last_name"]}
+-- sql
+REPLACE INTO `actor` (`first_name`, `last_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`), `last_name` = VALUES(`last_name`)
+-- params
+["BOB","SMITH"]
+-- allowlist
+REPLACE INTO `actor` (`first_name`, `last_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`), `last_name` = VALUES(`last_name`)
