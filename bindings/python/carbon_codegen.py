@@ -38,6 +38,7 @@ class C6C:
     DELETE = "DELETE"
     DESC = "DESC"
     DISTINCT = "DISTINCT"
+    EQUAL = "="
     EXISTS = "EXISTS"
     FALSE = "FALSE"
     FORCE_INDEX = "FORCE INDEX"
@@ -623,6 +624,22 @@ def lit(value: Any) -> list[Any]:
     return [C6C.LIT, value]
 
 
+def eq_lit(value: Any) -> list[Any]:
+    return [C6C.EQUAL, lit(value)]
+
+
+def in_lit(values: Any) -> list[Any]:
+    return [C6C.IN, [lit(value) for value in values]]
+
+
+def not_in_lit(values: Any) -> list[Any]:
+    return [C6C.NOT_IN, [lit(value) for value in values]]
+
+
+def between_lit(start: Any, end: Any) -> list[Any]:
+    return [C6C.BETWEEN, [lit(start), lit(end)]]
+
+
 def param(value: Any) -> list[Any]:
     return [C6C.PARAM, value]
 
@@ -979,6 +996,7 @@ __all__ = [
     "and_",
     "as_",
     "between",
+    "between_lit",
     "call",
     "compile_query",
     "compile_query_result",
@@ -989,12 +1007,14 @@ __all__ = [
     "distinct",
     "exists",
     "exists_spec",
+    "eq_lit",
     "fn",
     "force_index",
     "from_table",
     "group",
     "ignore_index",
     "in_",
+    "in_lit",
     "index_hint",
     "lit",
     "match_against",
@@ -1015,6 +1035,7 @@ __all__ = [
     "not_between",
     "not_exists",
     "not_in",
+    "not_in_lit",
     "op",
     "or_",
     "param",

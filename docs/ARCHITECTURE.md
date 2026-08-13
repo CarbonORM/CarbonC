@@ -36,12 +36,14 @@ package layer around those extensions owns native dict/array/object/hash
 serialization helpers, typed result adapters that decode params/diagnostics JSON,
 optional query-builder facades, CarbonNode-compatible `C6C` token constants, C
 `CARBON_C6_*` macros, `CarbonDialect` / `Dialect` constants, C
-`CARBON_DIALECT_*` macros, context-based local/server execution envelopes, and
-typed source generators for Python dataclasses, TypeScript interfaces, PHP model
-classes, and Ruby Struct models. Generated model sources expose table,
-field-name, and qualified-column constants plus routeable model `Get` helpers
-so query authors do not hand-type schema identifiers or manually attach the
-model table. DB execution remains outside CarbonC.
+`CARBON_DIALECT_*` macros, language-normalized literal predicate helpers such as
+`eqLit` / `eq_lit` / `carbon_eq_lit`, context-based local/server execution
+envelopes, and typed source generators for Python dataclasses, TypeScript
+interfaces, PHP model classes, and Ruby Struct models. Generated model sources
+expose table, field-name, and qualified-column constants plus routeable model
+`Get` helpers so query authors do not hand-type grammar strings, schema
+identifiers, or manually attach the model table. DB execution remains outside
+CarbonC.
 
 The preferred package-level runtime contract is a complete native query payload
 object/array/hash keyed by generated constants. Fluent builders are secondary
@@ -104,6 +106,8 @@ The initial compiler supports:
 - package-level model `Get` payload helpers and context-based execution request
   envelopes that choose `local` or `server` without executing DB calls
 - package-level C6 token constants exposed idiomatically as `C6C` / `C6`
+- package-level literal predicate helpers exposed idiomatically as `eqLit`,
+  `eq_lit`, `carbon_eq_lit`, and equivalents for `IN`, `NOT_IN`, and `BETWEEN`
 - package-level dialect constants exposed idiomatically as `CarbonDialect` /
   `Dialect`
 - package-level result adapters that retain the raw JSON fields while adding

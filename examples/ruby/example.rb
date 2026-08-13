@@ -41,7 +41,7 @@ get_request = CarbonModels::Actor.Get(
   {
     CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID, CarbonModels::Actor::FIRST_NAME],
     CarbonC::C6C::WHERE => {
-      CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+      CarbonModels::Actor::ACTOR_ID => CarbonC.eq_lit(10)
     },
     CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 5}
   },

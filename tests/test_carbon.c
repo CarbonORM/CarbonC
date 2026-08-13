@@ -44,6 +44,7 @@ static void test_version(void) {
     assert(strcmp(carbon_status_code((carbon_status) 999), "unknown_status") == 0);
     assert(strcmp(CARBON_C6_FROM, "FROM") == 0);
     assert(strcmp(CARBON_C6_SELECT, "SELECT") == 0);
+    assert(strcmp(CARBON_C6_EQUAL, "=") == 0);
     assert(strcmp(CARBON_C6_GREATER_THAN, ">") == 0);
     assert(strcmp(CARBON_C6_FORCE_INDEX, "FORCE INDEX") == 0);
     assert(strcmp(CARBON_DIALECT_MYSQL, "mysql") == 0);

@@ -44,7 +44,12 @@ raise 'unexpected version' unless CarbonC.version == '0.1.0'
 raise 'unexpected status code' unless CarbonC.status_code(3) == 'invalid_query'
 raise 'unexpected status message' unless CarbonC.status_message(0) == 'ok'
 raise 'unexpected C6C FROM constant' unless CarbonC::C6C::FROM == 'FROM'
+raise 'unexpected C6C EQUAL constant' unless CarbonC::C6C::EQUAL == '='
 raise 'unexpected C6C GREATER_THAN constant' unless CarbonC::C6C::GREATER_THAN == '>'
+raise 'unexpected eq_lit payload' unless CarbonC.eq_lit(10) == ['=', ['LIT', 10]]
+raise 'unexpected in_lit payload' unless CarbonC.in_lit([1, 2]) == ['IN', [['LIT', 1], ['LIT', 2]]]
+raise 'unexpected not_in_lit payload' unless CarbonC.not_in_lit([1, 2]) == ['NOT_IN', [['LIT', 1], ['LIT', 2]]]
+raise 'unexpected between_lit payload' unless CarbonC.between_lit(1, 2) == ['BETWEEN', [['LIT', 1], ['LIT', 2]]]
 raise 'unexpected dialect MYSQL constant' unless CarbonC::Dialect::MYSQL == 'mysql'
 raise 'unexpected dialect POSTGRESQL constant' unless CarbonC::Dialect::POSTGRESQL == 'postgresql'
 raise 'unexpected dialect POSTGRES constant' unless CarbonC::Dialect::POSTGRES == 'postgres'
@@ -523,14 +528,14 @@ raise "unexpected model values payload: #{model_values.inspect}" unless model_va
 get_payload = CarbonModels::Actor.GetPayload(
   CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
   CarbonC::C6C::WHERE => {
-    CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+    CarbonModels::Actor::ACTOR_ID => CarbonC.eq_lit(10)
   },
   CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 500},
   'cacheResults' => false
 )
 expected_get_payload = {
   'SELECT' => ['actor.actor_id'],
-  'WHERE' => {'actor.actor_id' => ['>', 10]},
+  'WHERE' => {'actor.actor_id' => ['=', ['LIT', 10]]},
   'PAGINATION' => {'LIMIT' => 500},
   'cacheResults' => false,
   'FROM' => 'actor'
@@ -559,9 +564,22 @@ get_result = CarbonC.compile_query_result(
   get_request.fetch('schema'),
   get_request.fetch('dialect')
 )
-unless get_result.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 500'
+unless get_result.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) = ? LIMIT 500'
   raise "unexpected model get sql: #{get_result.fetch('sql')}"
 end
+in_lit_result = CarbonC.compile_query_result(
+  {
+    CarbonC::C6C::FROM => CarbonModels::Actor::TABLE,
+    CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
+    CarbonC::C6C::WHERE => {CarbonModels::Actor::ACTOR_ID => CarbonC.in_lit([1, 2])}
+  },
+  schema,
+  CarbonC::Dialect::MYSQL
+)
+unless in_lit_result.fetch('sql') == 'SELECT actor.actor_id FROM `actor` WHERE ( actor.actor_id IN (?, ?) ) LIMIT 100'
+  raise "unexpected in-lit sql: #{in_lit_result.fetch('sql')}"
+end
+raise "unexpected in-lit params: #{in_lit_result.fetch('params').inspect}" unless in_lit_result.fetch('params') == [1, 2]
 model_inserted = CarbonC.model_insert(
   CarbonModels::Actor,
   CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'

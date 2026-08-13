@@ -489,7 +489,12 @@ def main() -> None:
     exec(models, generated)
     actor_model = generated["Actor"]
     assert carbon_codegen.C6C.FROM == "FROM"
+    assert carbon_codegen.C6C.EQUAL == "="
     assert carbon_codegen.C6C.GREATER_THAN == ">"
+    assert carbon_codegen.eq_lit(10) == ["=", ["LIT", 10]]
+    assert carbon_codegen.in_lit([1, 2]) == ["IN", [["LIT", 1], ["LIT", 2]]]
+    assert carbon_codegen.not_in_lit([1, 2]) == ["NOT_IN", [["LIT", 1], ["LIT", 2]]]
+    assert carbon_codegen.between_lit(1, 2) == ["BETWEEN", [["LIT", 1], ["LIT", 2]]]
     assert carbon_codegen.model_table(actor_model) == "actor"
     assert actor_model.TABLE == "actor"
     assert actor_model.FIELD_ACTOR_ID == "actor_id"
@@ -530,7 +535,7 @@ def main() -> None:
     get_query = {
         carbon_codegen.C6C.SELECT: [actor_model.ACTOR_ID],
         carbon_codegen.C6C.WHERE: {
-            actor_model.ACTOR_ID: carbon_codegen.op(carbon_codegen.C6C.GREATER_THAN, 10),
+            actor_model.ACTOR_ID: carbon_codegen.eq_lit(10),
         },
         carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 500},
         "cacheResults": False,
@@ -538,7 +543,7 @@ def main() -> None:
     get_payload = actor_model.GetPayload(get_query)
     assert get_payload == {
         "SELECT": ["actor.actor_id"],
-        "WHERE": {"actor.actor_id": [">", 10]},
+        "WHERE": {"actor.actor_id": ["=", ["LIT", 10]]},
         "PAGINATION": {"LIMIT": 500},
         "cacheResults": False,
         "FROM": "actor",
@@ -563,7 +568,17 @@ def main() -> None:
         schema=schema,
         dialect=get_request["dialect"],
     )
-    assert get_result["sql"] == "SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 500", get_result
+    assert get_result["sql"] == "SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) = ? LIMIT 500", get_result
+    in_lit_result = carbon_codegen.compile_query_result(
+        {
+            carbon_codegen.C6C.FROM: actor_model.TABLE,
+            carbon_codegen.C6C.SELECT: [actor_model.ACTOR_ID],
+            carbon_codegen.C6C.WHERE: {actor_model.ACTOR_ID: carbon_codegen.in_lit([1, 2])},
+        },
+        schema=schema,
+    )
+    assert in_lit_result["sql"] == "SELECT actor.actor_id FROM `actor` WHERE ( actor.actor_id IN (?, ?) ) LIMIT 100", in_lit_result
+    assert in_lit_result["params"] == [1, 2], in_lit_result
     model_inserted = carbon_codegen.model_insert(actor_model, {actor_model.FIELD_FIRST_NAME: "ALICE"}).compile(
         schema=schema,
         dialect=carbon_codegen.CarbonDialect.MYSQL,

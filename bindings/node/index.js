@@ -46,6 +46,7 @@ const C6C = Object.freeze({
   DELETE: 'DELETE',
   DESC: 'DESC',
   DISTINCT: 'DISTINCT',
+  EQUAL: '=',
   EXISTS: 'EXISTS',
   FALSE: 'FALSE',
   FORCE_INDEX: 'FORCE INDEX',
@@ -344,6 +345,22 @@ function op(operator, ...operands) {
 
 function lit(value) {
   return [C6C.LIT, value];
+}
+
+function eqLit(value) {
+  return [C6C.EQUAL, lit(value)];
+}
+
+function inLit(values) {
+  return [C6C.IN, [...values].map(lit)];
+}
+
+function notInLit(values) {
+  return [C6C.NOT_IN, [...values].map(lit)];
+}
+
+function betweenLit(start, end) {
+  return [C6C.BETWEEN, [lit(start), lit(end)]];
 }
 
 function param(value) {
@@ -1039,6 +1056,14 @@ native.derivedTarget = derivedTarget;
 native.derived_target = derivedTarget;
 native.op = op;
 native.lit = lit;
+native.eqLit = eqLit;
+native.eq_lit = eqLit;
+native.inLit = inLit;
+native.in_lit = inLit;
+native.notInLit = notInLit;
+native.not_in_lit = notInLit;
+native.betweenLit = betweenLit;
+native.between_lit = betweenLit;
 native.param = param;
 native.call = call;
 native.fn = fn;

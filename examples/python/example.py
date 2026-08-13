@@ -42,7 +42,7 @@ get_request = Actor.Get(
     {
         carbon_codegen.C6C.SELECT: [Actor.ACTOR_ID, Actor.FIRST_NAME],
         carbon_codegen.C6C.WHERE: {
-            Actor.ACTOR_ID: carbon_codegen.op(carbon_codegen.C6C.GREATER_THAN, 10),
+            Actor.ACTOR_ID: carbon_codegen.eq_lit(10),
         },
         carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 5},
     },

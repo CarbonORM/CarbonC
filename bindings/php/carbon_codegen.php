@@ -24,6 +24,7 @@ if (!function_exists('carbon_schema_models')) {
             public const DELETE = 'DELETE';
             public const DESC = 'DESC';
             public const DISTINCT = 'DISTINCT';
+            public const EQUAL = '=';
             public const EXISTS = 'EXISTS';
             public const FALSE = 'FALSE';
             public const FORCE_INDEX = 'FORCE INDEX';
@@ -355,6 +356,26 @@ if (!function_exists('carbon_schema_models')) {
     function carbon_lit($value): array
     {
         return [C6C::LIT, $value];
+    }
+
+    function carbon_eq_lit($value): array
+    {
+        return [C6C::EQUAL, carbon_lit($value)];
+    }
+
+    function carbon_in_lit(array $values): array
+    {
+        return [C6C::IN, array_map('carbon_lit', array_values($values))];
+    }
+
+    function carbon_not_in_lit(array $values): array
+    {
+        return [C6C::NOT_IN, array_map('carbon_lit', array_values($values))];
+    }
+
+    function carbon_between_lit($start, $end): array
+    {
+        return [C6C::BETWEEN, [carbon_lit($start), carbon_lit($end)]];
     }
 
     function carbon_param($value): array

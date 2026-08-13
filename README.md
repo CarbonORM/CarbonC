@@ -32,7 +32,7 @@ payloads:
   "FROM": "actor",
   "SELECT": ["actor.actor_id", "actor.first_name"],
   "WHERE": {
-    "actor.actor_id": [">", 10]
+    "actor.actor_id": ["=", ["LIT", 10]]
   },
   "PAGINATION": {
     "ORDER": [["actor.last_name", "ASC"]],
@@ -43,8 +43,9 @@ payloads:
 
 This JSON is the stable ABI shape. Normal package code should build it through
 generated table/field/column constants plus the `C6C` token constants and
-`CarbonDialect` / `Dialect` dialect constants so query authors do not hand-type
-grammar strings or schema identifiers.
+literal predicate helpers such as `eqLit()` / `eq_lit()` / `carbon_eq_lit()`,
+plus `CarbonDialect` / `Dialect` dialect constants so query authors do not
+hand-type grammar strings or schema identifiers.
 
 Language packages also expose a small execution-envelope layer for applications
 that need the same model method payload to run in different contexts. The
@@ -58,7 +59,7 @@ const Actor = carbon.modelApi(ActorMeta);
 const request = Actor.Get({
   [carbon.C6C.SELECT]: [ActorColumns.actor_id],
   [carbon.C6C.WHERE]: {
-    [ActorColumns.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
+    [ActorColumns.actor_id]: carbon.eqLit(10),
   },
   [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 500},
   cacheResults: false,
@@ -74,7 +75,7 @@ The compiler returns a numeric `status`, stable string `status_code`, SQL, a
 JSON array of bound parameter values, and a normalized allowlist key:
 
 ```sql
-SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.last_name ASC LIMIT 25
+SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) = ? ORDER BY actor.last_name ASC LIMIT 25
 ```
 
 ```json
@@ -82,7 +83,7 @@ SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? 
 ```
 
 ```text
-SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.last_name ASC LIMIT ?
+SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) = ? ORDER BY actor.last_name ASC LIMIT ?
 ```
 
 Supported in this slice:
@@ -97,6 +98,9 @@ Supported in this slice:
 - dialect constants exposed in each binding as `CarbonDialect` / `Dialect`
 - C consumers can use the matching `CARBON_C6_*` token macros and
   `CARBON_DIALECT_*` macros from `include/carbon.h`
+- language-normalized literal predicate helpers such as `eqLit()` / `eq_lit()`,
+  `inLit()` / `in_lit()`, `notInLit()` / `not_in_lit()`, and `betweenLit()` /
+  `between_lit()` for generated query payloads
 - package-level typed source generation helpers for Python dataclasses,
   TypeScript interfaces, PHP model classes, and Ruby Struct models, including
   generated table, field-name, and qualified-column constants
@@ -334,7 +338,7 @@ query = {
     carbon_codegen.C6C.FROM: Actor.TABLE,
     carbon_codegen.C6C.SELECT: [Actor.ACTOR_ID],
     carbon_codegen.C6C.WHERE: {
-        Actor.ACTOR_ID: carbon_codegen.op(carbon_codegen.C6C.GREATER_THAN, 10),
+        Actor.ACTOR_ID: carbon_codegen.eq_lit(10),
     },
     carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 5},
 }
@@ -347,7 +351,7 @@ get_request = Actor.Get(
     {
         carbon_codegen.C6C.SELECT: [Actor.ACTOR_ID],
         carbon_codegen.C6C.WHERE: {
-            Actor.ACTOR_ID: carbon_codegen.op(carbon_codegen.C6C.GREATER_THAN, 10),
+            Actor.ACTOR_ID: carbon_codegen.eq_lit(10),
         },
         carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 500},
         "cacheResults": False,
@@ -385,7 +389,8 @@ subselect helpers, derived `join_subselect` targets, advanced predicate helpers
 (`where_op`, `where_in`, `where_not_in`, `where_between`, `where_not_between`,
 `where_match_against`, `where_exists`, `where_not_exists`), composable boolean group helpers
 (`condition`, `and_`, `or_`, `where_and`, `where_or`), expression helpers
-(`fn`, `custom_call`, `call`, `lit`, `param`, `st_contains`, `st_within`,
+(`fn`, `custom_call`, `call`, `lit`, `eq_lit`, `in_lit`, `not_in_lit`,
+`between_lit`, `param`, `st_contains`, `st_within`,
 `mbr_contains`), CarbonNode-compatible token constants (`C6C` / `C6`),
 dialect constants (`CarbonDialect` / `Dialect`), index hint helpers (`index_hints`, `force_index`,
 `use_index`, `ignore_index`), limit/page, and order controls.
@@ -458,7 +463,7 @@ $query = [
     C6C::FROM => Actor::TABLE,
     C6C::SELECT => [Actor::ACTOR_ID],
     C6C::WHERE => [
-        Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
+        Actor::ACTOR_ID => carbon_eq_lit(10),
     ],
     C6C::PAGINATION => [C6C::LIMIT => 5],
 ];
@@ -467,7 +472,7 @@ $getRequest = Actor::Get(
     [
         C6C::SELECT => [Actor::ACTOR_ID],
         C6C::WHERE => [
-            Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
+            Actor::ACTOR_ID => carbon_eq_lit(10),
         ],
         C6C::PAGINATION => [C6C::LIMIT => 500],
         "cacheResults" => false,
@@ -501,7 +506,8 @@ predicate helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`,
 `whereNotBetween`, `whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group
 helpers (`carbon_condition`, `carbon_and_group`, `carbon_or_group`, `whereAnd`,
 `whereOr`), expression helpers (`carbon_fn`, `carbon_custom_call`,
-`carbon_call`, `carbon_lit`, `carbon_param`, `carbon_st_contains`,
+`carbon_call`, `carbon_lit`, `carbon_eq_lit`, `carbon_in_lit`,
+`carbon_not_in_lit`, `carbon_between_lit`, `carbon_param`, `carbon_st_contains`,
 `carbon_st_within`, `carbon_mbr_contains`), index hint helpers
 (`indexHints`, `forceIndex`, `useIndex`, `ignoreIndex`, `carbon_force_index`,
 `carbon_use_index`, `carbon_ignore_index`), limit/page, and order controls.
@@ -601,7 +607,7 @@ const query = {
   [carbon.C6C.FROM]: ActorTable,
   [carbon.C6C.SELECT]: [ActorColumns.actor_id],
   [carbon.C6C.WHERE]: {
-    [ActorColumns.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
+    [ActorColumns.actor_id]: carbon.eqLit(10),
   },
   [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 5},
 };
@@ -613,7 +619,7 @@ const typedResult = carbon.compileQueryResult(
 const getRequest = Actor.Get({
   [carbon.C6C.SELECT]: [Actor.COLUMNS.actor_id],
   [carbon.C6C.WHERE]: {
-    [Actor.COLUMNS.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
+    [Actor.COLUMNS.actor_id]: carbon.eqLit(10),
   },
   [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 500},
   cacheResults: false,
@@ -649,7 +655,8 @@ boundary for table/from, select, where, join, group/having, write operations
 helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
 `whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group helpers
 (`condition`, `andGroup`, `orGroup`, `whereAnd`, `whereOr`), expression helpers
-(`fn`, `customCall`, `call`, `lit`, `param`, `stContains`, `stWithin`,
+(`fn`, `customCall`, `call`, `lit`, `eqLit`, `inLit`, `notInLit`,
+`betweenLit`, `param`, `stContains`, `stWithin`,
 `mbrContains`), index hint helpers (`indexHints`, `forceIndex`, `useIndex`,
 `ignoreIndex`), limit/page, and order controls.
 `compileQueryResult()` returns the same fields as the raw result
@@ -680,8 +687,9 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `statusCode()`, `compileQuery()`, `compileQueryValue()`,
 `compileQueryResult()`, `adaptCompileResult()`, `C6C`, `C6`, `CarbonDialect`,
 `Dialect`, `CarbonExecutionTarget`, `ExecutionTarget`, `CarbonQuery`, `query()`,
-`fromTable()`, `subselect()`, `derivedTarget()`, `op()`, `lit()`, `param()`,
-`call()`, `alias()`, `distinct()`, `between()`, `inList()`, `existsSpec()`,
+`fromTable()`, `subselect()`, `derivedTarget()`, `op()`, `lit()`, `eqLit()`,
+`inLit()`, `notInLit()`, `betweenLit()`, `param()`, `call()`, `alias()`,
+`distinct()`, `between()`, `inList()`, `existsSpec()`,
 `exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
 `forceIndex()`, `useIndex()`, `ignoreIndex()`, `modelQuery()`, `modelSelect()`,
 `modelColumn()`, `modelApi()`, `modelGetPayload()`, `modelGetRequest()`, `routeQuery()`,
@@ -732,7 +740,7 @@ query = {
   CarbonC::C6C::FROM => CarbonModels::Actor::TABLE,
   CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
   CarbonC::C6C::WHERE => {
-    CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+    CarbonModels::Actor::ACTOR_ID => CarbonC.eq_lit(10)
   },
   CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 5}
 }
@@ -741,7 +749,7 @@ get_request = CarbonModels::Actor.Get(
   {
     CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
     CarbonC::C6C::WHERE => {
-      CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+      CarbonModels::Actor::ACTOR_ID => CarbonC.eq_lit(10)
     },
     CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 500},
     'cacheResults' => false
@@ -776,7 +784,8 @@ predicate helpers (`where_op`, `where_in`, `where_not_in`, `where_between`,
 `where_not_between`, `where_match_against`, `where_exists`, `where_not_exists`), composable boolean
 group helpers (`CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
 `where_and`, `where_or`), expression helpers (`CarbonC.fn`,
-`CarbonC.custom_call`, `CarbonC.call`, `CarbonC.lit`, `CarbonC.param`,
+`CarbonC.custom_call`, `CarbonC.call`, `CarbonC.lit`, `CarbonC.eq_lit`,
+`CarbonC.in_lit`, `CarbonC.not_in_lit`, `CarbonC.between_lit`, `CarbonC.param`,
 `CarbonC.st_contains`, `CarbonC.st_within`, `CarbonC.mbr_contains`), index hint
 helpers (`index_hints`, `force_index`, `use_index`, `ignore_index`), limit/page,
 and order controls.
@@ -813,6 +822,8 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC::Dialect`, `CarbonC::ExecutionTarget`,
 `CarbonC.query`, `CarbonC.from_table`,
 `CarbonC.subselect`, `CarbonC.derived_target`, `CarbonC.op`, `CarbonC.lit`,
+`CarbonC.eq_lit`, `CarbonC.in_lit`, `CarbonC.not_in_lit`,
+`CarbonC.between_lit`,
 `CarbonC.param`, `CarbonC.call`, `CarbonC.alias_expression`,
 `CarbonC.distinct`, `CarbonC.between`, `CarbonC.in_list`,
 `CarbonC.exists_spec`, `CarbonC.exists`, `CarbonC.not_exists`,

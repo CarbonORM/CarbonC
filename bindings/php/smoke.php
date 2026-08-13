@@ -16,7 +16,12 @@ function carbon_assert(bool $condition, string $message): void
 }
 
 carbon_assert(C6C::FROM === 'FROM', 'unexpected C6C FROM constant');
+carbon_assert(C6C::EQUAL === '=', 'unexpected C6C EQUAL constant');
 carbon_assert(C6C::GREATER_THAN === '>', 'unexpected C6C GREATER_THAN constant');
+carbon_assert(carbon_eq_lit(10) === ['=', ['LIT', 10]], 'unexpected carbon_eq_lit payload');
+carbon_assert(carbon_in_lit([1, 2]) === ['IN', [['LIT', 1], ['LIT', 2]]], 'unexpected carbon_in_lit payload');
+carbon_assert(carbon_not_in_lit([1, 2]) === ['NOT_IN', [['LIT', 1], ['LIT', 2]]], 'unexpected carbon_not_in_lit payload');
+carbon_assert(carbon_between_lit(1, 2) === ['BETWEEN', [['LIT', 1], ['LIT', 2]]], 'unexpected carbon_between_lit payload');
 carbon_assert(CarbonDialect::MYSQL === 'mysql', 'unexpected CarbonDialect MYSQL constant');
 carbon_assert(CarbonDialect::POSTGRESQL === 'postgresql', 'unexpected CarbonDialect POSTGRESQL constant');
 carbon_assert(CarbonDialect::POSTGRES === 'postgres', 'unexpected CarbonDialect POSTGRES constant');
@@ -550,7 +555,7 @@ carbon_assert(
 $getQuery = [
     C6C::SELECT => [Actor::ACTOR_ID],
     C6C::WHERE => [
-        Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
+        Actor::ACTOR_ID => carbon_eq_lit(10),
     ],
     C6C::PAGINATION => [C6C::LIMIT => 500],
     'cacheResults' => false,
@@ -559,7 +564,7 @@ $getPayload = Actor::GetPayload($getQuery);
 carbon_assert(
     $getPayload === [
         'SELECT' => ['actor.actor_id'],
-        'WHERE' => ['actor.actor_id' => ['>', 10]],
+        'WHERE' => ['actor.actor_id' => ['=', ['LIT', 10]]],
         'PAGINATION' => ['LIMIT' => 500],
         'cacheResults' => false,
         'FROM' => 'actor',
@@ -586,9 +591,23 @@ carbon_assert(
 );
 $getResult = carbon_compile_query_result($getRequest['query'], $getRequest['schema'], $getRequest['dialect']);
 carbon_assert(
-    $getResult['sql'] === 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 500',
+    $getResult['sql'] === 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) = ? LIMIT 500',
     'unexpected model get sql: ' . $getResult['sql']
 );
+$inLitResult = carbon_compile_query_result(
+    [
+        C6C::FROM => Actor::TABLE,
+        C6C::SELECT => [Actor::ACTOR_ID],
+        C6C::WHERE => [Actor::ACTOR_ID => carbon_in_lit([1, 2])],
+    ],
+    $schema,
+    CarbonDialect::MYSQL
+);
+carbon_assert(
+    $inLitResult['sql'] === 'SELECT actor.actor_id FROM `actor` WHERE ( actor.actor_id IN (?, ?) ) LIMIT 100',
+    'unexpected in-lit sql: ' . $inLitResult['sql']
+);
+carbon_assert($inLitResult['params'] === [1, 2], 'unexpected in-lit params: ' . json_encode($inLitResult['params']));
 $modelInserted = carbon_model_insert(Actor::class, [Actor::FIELD_FIRST_NAME => 'ALICE'])
     ->compile($schema, CarbonDialect::MYSQL);
 carbon_assert(

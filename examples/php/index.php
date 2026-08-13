@@ -52,7 +52,7 @@ $getRequest = Actor::Get(
     [
         C6C::SELECT => [Actor::ACTOR_ID, Actor::FIRST_NAME],
         C6C::WHERE => [
-            Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
+            Actor::ACTOR_ID => carbon_eq_lit(10),
         ],
         C6C::PAGINATION => [C6C::LIMIT => 5],
     ],

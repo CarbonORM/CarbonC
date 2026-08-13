@@ -25,6 +25,7 @@ module CarbonC
     DELETE = 'DELETE'
     DESC = 'DESC'
     DISTINCT = 'DISTINCT'
+    EQUAL = '='
     EXISTS = 'EXISTS'
     FALSE = 'FALSE'
     FORCE_INDEX = 'FORCE INDEX'
@@ -341,6 +342,22 @@ module CarbonC
 
     def lit(value)
       [C6C::LIT, value]
+    end
+
+    def eq_lit(value)
+      [C6C::EQUAL, lit(value)]
+    end
+
+    def in_lit(values)
+      [C6C::IN, values.map { |value| lit(value) }]
+    end
+
+    def not_in_lit(values)
+      [C6C::NOT_IN, values.map { |value| lit(value) }]
+    end
+
+    def between_lit(start_value, end_value)
+      [C6C::BETWEEN, [lit(start_value), lit(end_value)]]
     end
 
     def param(value)

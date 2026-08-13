@@ -44,7 +44,12 @@ assert.strictEqual(carbon.version(), '0.1.0');
 assert.strictEqual(carbon.statusCode(3), 'invalid_query');
 assert.strictEqual(carbon.statusMessage(0), 'ok');
 assert.strictEqual(carbon.C6C.FROM, 'FROM');
+assert.strictEqual(carbon.C6C.EQUAL, '=');
 assert.strictEqual(carbon.C6.GREATER_THAN, '>');
+assert.deepStrictEqual(carbon.eqLit(10), ['=', ['LIT', 10]]);
+assert.deepStrictEqual(carbon.inLit([1, 2]), ['IN', [['LIT', 1], ['LIT', 2]]]);
+assert.deepStrictEqual(carbon.notInLit([1, 2]), ['NOT_IN', [['LIT', 1], ['LIT', 2]]]);
+assert.deepStrictEqual(carbon.betweenLit(1, 2), ['BETWEEN', [['LIT', 1], ['LIT', 2]]]);
 assert.strictEqual(carbon.CarbonDialect.MYSQL, 'mysql');
 assert.strictEqual(carbon.Dialect.POSTGRESQL, 'postgresql');
 assert.strictEqual(carbon.Dialect.POSTGRES, 'postgres');
@@ -490,14 +495,14 @@ assert.deepStrictEqual(carbon.modelValues(actorMeta, {[actorMeta.fields.first_na
 const getPayload = Actor.GetPayload({
   [carbon.C6C.SELECT]: [Actor.COLUMNS.actor_id],
   [carbon.C6C.WHERE]: {
-    [Actor.COLUMNS.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
+    [Actor.COLUMNS.actor_id]: carbon.eqLit(10),
   },
   [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 500},
   cacheResults: false,
 });
 assert.deepStrictEqual(getPayload, {
   SELECT: ['actor.actor_id'],
-  WHERE: {'actor.actor_id': ['>', 10]},
+  WHERE: {'actor.actor_id': ['=', ['LIT', 10]]},
   PAGINATION: {LIMIT: 500},
   cacheResults: false,
   FROM: 'actor',
@@ -516,7 +521,14 @@ assert.strictEqual(getRequest.model, 'actor');
 assert.strictEqual(getRequest.cacheResults, false);
 assert.deepStrictEqual(getRequest.route, {target: 'server', reason: 'local_unavailable'});
 const getResult = carbon.compileQueryResult(getRequest.query, getRequest.schema, getRequest.dialect);
-assert.strictEqual(getResult.sql, 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) > ? LIMIT 500');
+assert.strictEqual(getResult.sql, 'SELECT actor.actor_id FROM `actor` WHERE (actor.actor_id) = ? LIMIT 500');
+const inLitResult = carbon.compileQueryResult({
+  [carbon.C6C.FROM]: Actor.TABLE,
+  [carbon.C6C.SELECT]: [Actor.COLUMNS.actor_id],
+  [carbon.C6C.WHERE]: {[Actor.COLUMNS.actor_id]: carbon.inLit([1, 2])},
+}, schema);
+assert.strictEqual(inLitResult.sql, 'SELECT actor.actor_id FROM `actor` WHERE ( actor.actor_id IN (?, ?) ) LIMIT 100');
+assert.deepStrictEqual(inLitResult.params, [1, 2]);
 const modelInserted = carbon.modelInsert(actorMeta, {[actorMeta.fields.first_name]: 'ALICE'})
   .compile(schema, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(modelInserted.sql, 'INSERT INTO `actor` (`first_name`) VALUES (?)');

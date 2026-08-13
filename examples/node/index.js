@@ -49,7 +49,7 @@ const Actor = carbon.modelApi({
 const getRequest = Actor.Get({
   [carbon.C6C.SELECT]: [Actor.COLUMNS.actor_id, Actor.COLUMNS.first_name],
   [carbon.C6C.WHERE]: {
-    [Actor.COLUMNS.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
+    [Actor.COLUMNS.actor_id]: carbon.eqLit(10),
   },
   [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 5},
 }, {
