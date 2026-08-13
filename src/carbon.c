@@ -619,6 +619,13 @@ static int carbon_identifier_is_dotted(const char *identifier) {
     return identifier != NULL && strchr(identifier, '.') != NULL;
 }
 
+static int carbon_identifier_alias_valid(const char *identifier) {
+    return identifier != NULL
+           && strcmp(identifier, "*") != 0
+           && strchr(identifier, '.') == NULL
+           && carbon_identifier_valid(identifier);
+}
+
 static int carbon_append_quoted_table(
         carbon_string_builder *builder,
         carbon_dialect dialect,
@@ -628,6 +635,151 @@ static int carbon_append_quoted_table(
     return carbon_builder_append_char(builder, quote)
            && carbon_builder_append(builder, identifier)
            && carbon_builder_append_char(builder, quote);
+}
+
+static int carbon_ascii_case_equals(const char *left, const char *right) {
+    while (*left != '\0' && *right != '\0') {
+        if (toupper((unsigned char) *left) != toupper((unsigned char) *right)) {
+            return 0;
+        }
+        ++left;
+        ++right;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+static int carbon_parse_join_target(const char *raw, char **table, char **alias) {
+    const char *cursor;
+    const char *start;
+    const char *end;
+    char *first = NULL;
+    char *second = NULL;
+
+    *table = NULL;
+    *alias = NULL;
+
+    if (raw == NULL) {
+        return 0;
+    }
+
+    cursor = raw;
+    while (isspace((unsigned char) *cursor)) {
+        ++cursor;
+    }
+    start = cursor;
+    while (*cursor != '\0' && !isspace((unsigned char) *cursor)) {
+        ++cursor;
+    }
+    end = cursor;
+    if (start == end) {
+        return 0;
+    }
+
+    first = carbon_strndup_local(start, (size_t) (end - start));
+    if (first == NULL || !carbon_identifier_valid(first) || strcmp(first, "*") == 0) {
+        free(first);
+        return 0;
+    }
+
+    while (isspace((unsigned char) *cursor)) {
+        ++cursor;
+    }
+    if (*cursor == '\0') {
+        *table = first;
+        return 1;
+    }
+
+    start = cursor;
+    while (*cursor != '\0' && !isspace((unsigned char) *cursor)) {
+        ++cursor;
+    }
+    end = cursor;
+    second = carbon_strndup_local(start, (size_t) (end - start));
+    if (second == NULL) {
+        free(first);
+        return 0;
+    }
+
+    if (carbon_ascii_case_equals(second, "AS")) {
+        free(second);
+        second = NULL;
+        while (isspace((unsigned char) *cursor)) {
+            ++cursor;
+        }
+        start = cursor;
+        while (*cursor != '\0' && !isspace((unsigned char) *cursor)) {
+            ++cursor;
+        }
+        end = cursor;
+        if (start == end) {
+            free(first);
+            return 0;
+        }
+        second = carbon_strndup_local(start, (size_t) (end - start));
+        if (second == NULL) {
+            free(first);
+            return 0;
+        }
+    }
+
+    while (isspace((unsigned char) *cursor)) {
+        ++cursor;
+    }
+    if (*cursor != '\0' || !carbon_identifier_alias_valid(second)) {
+        free(first);
+        free(second);
+        return 0;
+    }
+
+    *table = first;
+    *alias = second;
+    return 1;
+}
+
+static char *carbon_normalize_join_type(const char *raw) {
+    carbon_string_builder builder = {0};
+    int wrote_space = 0;
+    char *kind;
+
+    if (raw == NULL) {
+        return NULL;
+    }
+
+    while (isspace((unsigned char) *raw)) {
+        ++raw;
+    }
+    while (*raw != '\0') {
+        unsigned char ch = (unsigned char) *raw;
+        if (ch == '_' || isspace(ch)) {
+            if (builder.length > 0) {
+                wrote_space = 1;
+            }
+        } else {
+            if (wrote_space && !carbon_builder_append_char(&builder, ' ')) {
+                carbon_builder_free(&builder);
+                return NULL;
+            }
+            wrote_space = 0;
+            if (!carbon_builder_append_char(&builder, (char) toupper(ch))) {
+                carbon_builder_free(&builder);
+                return NULL;
+            }
+        }
+        ++raw;
+    }
+
+    kind = builder.data;
+    if (kind == NULL
+        || !(strcmp(kind, "INNER") == 0
+             || strcmp(kind, "LEFT") == 0
+             || strcmp(kind, "LEFT OUTER") == 0
+             || strcmp(kind, "RIGHT") == 0
+             || strcmp(kind, "RIGHT OUTER") == 0)) {
+        carbon_builder_free(&builder);
+        return NULL;
+    }
+
+    return kind;
 }
 
 static int carbon_parse_dialect(const char *value, carbon_dialect *dialect) {
@@ -1345,6 +1497,106 @@ static carbon_status carbon_append_select_list(
     return CARBON_STATUS_OK;
 }
 
+static carbon_status carbon_append_join_clauses(
+        carbon_compile_state *state,
+        carbon_json_span query,
+        carbon_string_builder *sql) {
+    static const char *const join_names[] = {"JOIN", "join"};
+    carbon_json_span joins;
+    const char *join_cursor = NULL;
+    carbon_object_entry join_entry;
+    int found = carbon_object_get_any(query, join_names, 2, &joins);
+    int next;
+
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_OK;
+    }
+    if (!carbon_span_starts_with(joins, '{')) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    while ((next = carbon_object_next(joins, &join_cursor, &join_entry)) == 1) {
+        char *join_kind = carbon_span_string_copy(join_entry.key);
+        char *normalized_join_kind = join_kind == NULL ? NULL : carbon_normalize_join_type(join_kind);
+        const char *target_cursor = NULL;
+        carbon_object_entry target_entry;
+        int target_next;
+
+        free(join_kind);
+        if (normalized_join_kind == NULL || !carbon_span_starts_with(join_entry.value, '{')) {
+            free(normalized_join_kind);
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+
+        while ((target_next = carbon_object_next(join_entry.value, &target_cursor, &target_entry)) == 1) {
+            char *raw_target = carbon_span_string_copy(target_entry.key);
+            char *table = NULL;
+            char *alias = NULL;
+            carbon_string_builder on_clause = {0};
+            carbon_status status = CARBON_STATUS_OK;
+
+            if (raw_target == NULL || !carbon_parse_join_target(raw_target, &table, &alias)) {
+                free(raw_target);
+                free(normalized_join_kind);
+                return CARBON_STATUS_INVALID_QUERY;
+            }
+            free(raw_target);
+
+            if (!carbon_builder_append_char(sql, ' ')
+                || !carbon_builder_append(sql, normalized_join_kind)
+                || !carbon_builder_append(sql, " JOIN ")
+                || !carbon_append_quoted_table(sql, state->dialect, table)) {
+                free(table);
+                free(alias);
+                free(normalized_join_kind);
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+
+            if (alias != NULL
+                && (!carbon_builder_append(sql, " AS ")
+                    || !carbon_append_quoted_table(sql, state->dialect, alias))) {
+                free(table);
+                free(alias);
+                free(normalized_join_kind);
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+
+            if (carbon_span_starts_with(target_entry.value, '{')) {
+                status = carbon_build_where_node(state, target_entry.value, "AND", &on_clause);
+            } else {
+                status = CARBON_STATUS_INVALID_QUERY;
+            }
+
+            free(table);
+            free(alias);
+            if (status != CARBON_STATUS_OK) {
+                carbon_builder_free(&on_clause);
+                free(normalized_join_kind);
+                return status;
+            }
+            if (on_clause.length > 0
+                && (!carbon_builder_append(sql, " ON (")
+                    || !carbon_builder_append(sql, on_clause.data)
+                    || !carbon_builder_append_char(sql, ')'))) {
+                carbon_builder_free(&on_clause);
+                free(normalized_join_kind);
+                return CARBON_STATUS_OUT_OF_MEMORY;
+            }
+            carbon_builder_free(&on_clause);
+        }
+
+        free(normalized_join_kind);
+        if (target_next < 0) {
+            return CARBON_STATUS_INVALID_QUERY;
+        }
+    }
+
+    return next < 0 ? CARBON_STATUS_INVALID_QUERY : CARBON_STATUS_OK;
+}
+
 static carbon_status carbon_append_pagination(
         carbon_compile_state *state,
         carbon_json_span query,
@@ -1877,6 +2129,11 @@ carbon_status carbon_compile_query(
     if (!carbon_builder_append(&sql, " FROM ")
         || !carbon_append_quoted_table(&sql, dialect, table)) {
         status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto fail;
+    }
+
+    status = carbon_append_join_clauses(&state, query, &sql);
+    if (status != CARBON_STATUS_OK) {
         goto fail;
     }
 

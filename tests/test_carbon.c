@@ -237,6 +237,7 @@ static void test_golden_fixtures(void) {
     run_fixture("select-pagination");
     run_fixture("spatial-order");
     run_fixture("where-in-between");
+    run_fixture("join-alias");
 }
 
 int main(void) {

@@ -60,6 +60,8 @@ Supported in this slice:
 
 - `FROM` / legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
+- `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
+  `RIGHT_OUTER` table aliases
 - `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
   `BETWEEN`, `IS`, `IS_NOT`, `LIT`, and `PARAM`
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
@@ -98,8 +100,8 @@ ctest --test-dir build --output-on-failure
 
 ## Next Milestones
 
-1. Expand fixture coverage for joins, `GROUP_BY`, `HAVING`, subselects, insert,
-   update, delete, and upsert payloads.
+1. Expand fixture coverage for derived joins, `GROUP_BY`, `HAVING`, subselects,
+   insert, update, delete, and upsert payloads.
 2. Add schema metadata checks so identifiers are validated against generated C6
    schema data, not only identifier syntax.
 3. Add structured error codes and paths for binding-friendly diagnostics.

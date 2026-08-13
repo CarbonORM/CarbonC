@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","SELECT":["actor.actor_id"],"JOIN":{"INNER":{"film_actor fa":{"fa.actor_id":["=","actor.actor_id"]}},"LEFT":{"film_actor fb":{"fb.actor_id":["=","actor.actor_id"]}}},"WHERE":{"actor.actor_id":[">",0]}}
+-- sql
+SELECT actor.actor_id FROM `actor` INNER JOIN `film_actor` AS `fa` ON ((fa.actor_id) = actor.actor_id) LEFT JOIN `film_actor` AS `fb` ON ((fb.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT 100
+-- params
+[0]
+-- allowlist
+SELECT actor.actor_id FROM `actor` INNER JOIN `film_actor` AS `fa` ON ((fa.actor_id) = actor.actor_id) LEFT JOIN `film_actor` AS `fb` ON ((fb.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT ?
