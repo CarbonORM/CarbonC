@@ -33,13 +33,18 @@ thin: they call the C compiler, return SQL, params JSON, allowlist key, numeric
 status, stable status code, error fields, and normalized schema metadata. The
 package layer around those extensions owns native dict/array/object/hash
 serialization helpers, typed result adapters that decode params/diagnostics JSON,
-query-builder facades, CarbonNode-compatible `C6C` token constants, C
+optional query-builder facades, CarbonNode-compatible `C6C` token constants, C
 `CARBON_C6_*` macros, `CarbonDialect` / `Dialect` constants, C
 `CARBON_DIALECT_*` macros, and typed source generators for Python dataclasses,
 TypeScript interfaces, PHP model classes, and Ruby Struct models. Generated
 model sources expose table, field-name, and qualified-column constants so query
 authors do not hand-type schema identifiers. DB execution remains outside
 CarbonC.
+
+The preferred package-level runtime contract is a complete native query payload
+object/array/hash keyed by generated constants. Fluent builders are secondary
+helpers that emit the same payload shape for callers that want incremental
+construction.
 
 This keeps the C ABI stable and keeps each language package idiomatic.
 
@@ -88,7 +93,7 @@ The initial compiler supports:
   `Dialect`
 - package-level result adapters that retain the raw JSON fields while adding
   decoded native `params` and `diagnostics` values
-- package-level query-builder facades that emit canonical payloads for
+- optional package-level query-builder facades that emit canonical payloads for
   table/from, select, where, boolean predicate groups, join, group/having,
   writes, subselects, limit/page, and order controls
 - `dialect`: `mysql`, `postgresql`, or `postgres`

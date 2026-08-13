@@ -267,9 +267,10 @@ ctest --test-dir build --output-on-failure
 The Python binding wraps the same C ABI from
 `bindings/python/carbon_python.c` and returns a plain Python `dict` with
 `status`, `status_code`, `sql`, `params_json`, `allowlist_key`, `error`, and
-`diagnostics_json` fields. `bindings/python/carbon_codegen.py` adds a
-`Query` facade, native-payload compile helpers, typed result adapters, and
-source generation helpers over the normalized schema metadata:
+`diagnostics_json` fields. `bindings/python/carbon_codegen.py` adds
+native-payload compile helpers, typed result adapters, source generation helpers
+over the normalized schema metadata, and an optional `Query` facade for
+incremental construction:
 
 ```python
 import json
@@ -280,13 +281,21 @@ schema = {
     "TABLES": {
         "actor": {
             "PRIMARY_SHORT": ["actor_id"],
-            "COLUMNS": {"actor.actor_id": "actor_id"},
+            "COLUMNS": {
+                "actor.actor_id": "actor_id",
+                "actor.first_name": "first_name",
+            },
             "TYPE_VALIDATION": {
                 "actor.actor_id": {
                     "COLUMN_NAME": "actor_id",
                     "MYSQL_TYPE": "smallint",
                     "NOT_NULL": True,
-                }
+                },
+                "actor.first_name": {
+                    "COLUMN_NAME": "first_name",
+                    "MYSQL_TYPE": "varchar",
+                    "NOT_NULL": True,
+                },
             },
         }
     }
@@ -295,23 +304,41 @@ generated: dict[str, object] = {}
 exec(carbon_codegen.schema_models(schema), generated)
 Actor = generated["Actor"]
 
-typed_result = (
-    carbon_codegen.query(Actor.TABLE)
-    .select(Actor.ACTOR_ID)
-    .where_op(Actor.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 10)
-    .limit(5)
-    .compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
+query = {
+    carbon_codegen.C6C.FROM: Actor.TABLE,
+    carbon_codegen.C6C.SELECT: [Actor.ACTOR_ID],
+    carbon_codegen.C6C.WHERE: {
+        Actor.ACTOR_ID: carbon_codegen.op(carbon_codegen.C6C.GREATER_THAN, 10),
+    },
+    carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 5},
+}
+typed_result = carbon_codegen.compile_query_result(
+    query,
+    schema=schema,
+    dialect=carbon_codegen.CarbonDialect.MYSQL,
 )
-field_selected = carbon_codegen.model_select(Actor, Actor.FIELD_ACTOR_ID)
-write_result = carbon_codegen.model_insert(
-    Actor,
-    {Actor.FIELD_FIRST_NAME: "ALICE"},
-).compile(schema=schema, dialect=carbon_codegen.CarbonDialect.MYSQL)
+field_column = carbon_codegen.model_column(Actor, Actor.FIELD_ACTOR_ID)
+write_payload = {
+    carbon_codegen.C6C.FROM: Actor.TABLE,
+    carbon_codegen.C6C.INSERT: carbon_codegen.model_values(
+        Actor,
+        {Actor.FIELD_FIRST_NAME: "ALICE"},
+    ),
+}
+write_result = carbon_codegen.compile_query_result(
+    write_payload,
+    schema=schema,
+    dialect=carbon_codegen.CarbonDialect.MYSQL,
+)
 metadata_json = carbon.schema_metadata(json.dumps(schema))
 dataclass_source = carbon_codegen.schema_models(schema)
 ```
 
-`Query.to_payload()` returns the canonical dict sent through the C JSON boundary
+The default package path is to pass a complete native dict payload through
+`compile_query_result()` / `compile_query_value()`, matching CarbonORM's
+front-end/back-end query-object convention. `Query.to_payload()` is available
+when callers want incremental construction; it returns the canonical dict sent
+through the C JSON boundary
 for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), scalar
 subselect helpers, derived `join_subselect` targets, advanced predicate helpers
@@ -348,10 +375,9 @@ The PHP extension wraps the same compile result shape from
 `bindings/php/carbon_php.c` as an associative array, including
 `diagnostics_json`. The
 `bindings/php/carbon_codegen.php` helper adds `C6C` / `C6`, `CarbonDialect`,
-`CarbonQuery`,
-`carbon_compile_query_value()` for native arrays, typed result adapters, and
-native PHP model class source over
-`carbon_schema_metadata()`:
+`carbon_compile_query_value()` for native arrays, typed result adapters, native
+PHP model class source over `carbon_schema_metadata()`, and an optional
+`CarbonQuery` facade for incremental construction:
 
 ```php
 require_once __DIR__ . "/bindings/php/carbon_codegen.php";
@@ -360,11 +386,19 @@ $schema = [
     "TABLES" => [
         "actor" => [
             "PRIMARY_SHORT" => ["actor_id"],
-            "COLUMNS" => ["actor.actor_id" => "actor_id"],
+            "COLUMNS" => [
+                "actor.actor_id" => "actor_id",
+                "actor.first_name" => "first_name",
+            ],
             "TYPE_VALIDATION" => [
                 "actor.actor_id" => [
                     "COLUMN_NAME" => "actor_id",
                     "MYSQL_TYPE" => "smallint",
+                    "NOT_NULL" => true,
+                ],
+                "actor.first_name" => [
+                    "COLUMN_NAME" => "first_name",
+                    "MYSQL_TYPE" => "varchar",
                     "NOT_NULL" => true,
                 ],
             ],
@@ -374,20 +408,32 @@ $schema = [
 $modelSource = carbon_schema_models($schema);
 eval(preg_replace('/^<\\?php\\s*/', '', $modelSource));
 
-$typedResult = carbon_query(Actor::TABLE)
-    ->select(Actor::ACTOR_ID)
-    ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 10)
-    ->limit(5)
-    ->compile($schema, CarbonDialect::MYSQL);
-$fieldSelected = carbon_model_select(Actor::class, Actor::FIELD_ACTOR_ID);
-$writeResult = carbon_model_insert(Actor::class, [
-    Actor::FIELD_FIRST_NAME => "ALICE",
-])->compile($schema, CarbonDialect::MYSQL);
+$query = [
+    C6C::FROM => Actor::TABLE,
+    C6C::SELECT => [Actor::ACTOR_ID],
+    C6C::WHERE => [
+        Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
+    ],
+    C6C::PAGINATION => [C6C::LIMIT => 5],
+];
+$typedResult = carbon_compile_query_result($query, $schema, CarbonDialect::MYSQL);
+$fieldColumn = carbon_model_column(Actor::class, Actor::FIELD_ACTOR_ID);
+$writePayload = [
+    C6C::FROM => Actor::TABLE,
+    C6C::INSERT => carbon_model_values(Actor::class, [
+        Actor::FIELD_FIRST_NAME => "ALICE",
+    ]),
+];
+$writeResult = carbon_compile_query_result($writePayload, $schema, CarbonDialect::MYSQL);
 $metadataJson = carbon_schema_metadata(json_encode($schema));
 $namespacedModelSource = carbon_schema_models($schema, "CarbonORM\\Generated");
 ```
 
-`CarbonQuery::toPayload()` returns the canonical array sent through the C JSON
+The default package path is to pass a complete native array payload through
+`carbon_compile_query_result()` / `carbon_compile_query_value()`, matching
+CarbonORM's front-end/back-end query-object convention. `CarbonQuery::toPayload()`
+is available when callers want incremental construction; it returns the
+canonical array sent through the C JSON
 boundary for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), scalar
 `carbon_subselect()` helpers, derived `joinSubselect()` targets, advanced
@@ -436,9 +482,9 @@ and `carbon_normalize_allowlist_sql()`.
 
 The Node binding uses plain N-API from `bindings/node/carbon_node.cpp` and
 exports camelCase methods plus snake_case aliases. `bindings/node/index.js`
-adds `CarbonQuery`, `query()`, `compileQueryValue()` / `compile_query_value()`
-for native objects, typed result adapters, and a package-level TypeScript source
-generator. Compile results include
+adds `compileQueryValue()` / `compile_query_value()` for native objects, typed
+result adapters, a package-level TypeScript source generator, and an optional
+`CarbonQuery` / `query()` facade for incremental construction. Compile results include
 `diagnostics_json` beside the status, SQL, params, allowlist, and error fields:
 
 ```js
@@ -448,11 +494,19 @@ const schema = {
   TABLES: {
     actor: {
       PRIMARY_SHORT: ['actor_id'],
-      COLUMNS: {'actor.actor_id': 'actor_id'},
+      COLUMNS: {
+        'actor.actor_id': 'actor_id',
+        'actor.first_name': 'first_name',
+      },
       TYPE_VALIDATION: {
         'actor.actor_id': {
           COLUMN_NAME: 'actor_id',
           MYSQL_TYPE: 'smallint',
+          NOT_NULL: true,
+        },
+        'actor.first_name': {
+          COLUMN_NAME: 'first_name',
+          MYSQL_TYPE: 'varchar',
           NOT_NULL: true,
         },
       },
@@ -472,19 +526,39 @@ const ActorColumns = Object.freeze(Object.fromEntries(
 ));
 const ActorMeta = {table: ActorTable, fields: ActorFields, columns: ActorColumns};
 
-const typedResult = carbon.query(ActorTable)
-  .select(ActorColumns.actor_id)
-  .whereOp(ActorColumns.actor_id, carbon.C6C.GREATER_THAN, 10)
-  .limit(5)
-  .compile(schema, carbon.CarbonDialect.MYSQL);
-const fieldSelected = carbon.modelSelect(ActorMeta, ActorFields.actor_id);
-const writeResult = carbon.modelInsert(ActorMeta, {
-  [ActorFields.first_name]: 'ALICE',
-}).compile(schema, carbon.CarbonDialect.MYSQL);
+const query = {
+  [carbon.C6C.FROM]: ActorTable,
+  [carbon.C6C.SELECT]: [ActorColumns.actor_id],
+  [carbon.C6C.WHERE]: {
+    [ActorColumns.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
+  },
+  [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 5},
+};
+const typedResult = carbon.compileQueryResult(
+  query,
+  schema,
+  carbon.CarbonDialect.MYSQL,
+);
+const fieldColumn = carbon.modelColumn(ActorMeta, ActorFields.actor_id);
+const writePayload = {
+  [carbon.C6C.FROM]: ActorTable,
+  [carbon.C6C.INSERT]: carbon.modelValues(ActorMeta, {
+    [ActorFields.first_name]: 'ALICE',
+  }),
+};
+const writeResult = carbon.compileQueryResult(
+  writePayload,
+  schema,
+  carbon.CarbonDialect.MYSQL,
+);
 const metadataJson = JSON.stringify(metadata);
 ```
 
-`CarbonQuery.toPayload()` returns the canonical object sent through the C JSON
+The default package path is to pass a complete native object payload through
+`compileQueryResult()` / `compileQueryValue()`, matching CarbonORM's
+front-end/back-end query-object convention. `CarbonQuery.toPayload()` is
+available when callers want incremental construction; it returns the canonical
+object sent through the C JSON
 boundary for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), scalar
 `subselect()` helpers, derived `joinSubselect()` targets, advanced predicate
@@ -532,10 +606,9 @@ The Ruby extension wraps the same compile result shape from
 `bindings/ruby/carbon_ruby.c` as a `Hash` with string keys, including
 `diagnostics_json`. The
 `bindings/ruby/carbon_codegen.rb` helper adds `CarbonC::C6C` / `CarbonC::C6`,
-`CarbonC::Dialect`, `CarbonC::Query`,
-`CarbonC.compile_query_value` for native hashes, typed result adapters, and Ruby
-Struct model source over
-`CarbonC.schema_metadata`:
+`CarbonC::Dialect`, `CarbonC.compile_query_value` for native hashes, typed
+result adapters, Ruby Struct model source over `CarbonC.schema_metadata`, and
+an optional `CarbonC::Query` facade for incremental construction:
 
 ```ruby
 require 'json'
@@ -545,11 +618,19 @@ schema = {
   'TABLES' => {
     'actor' => {
       'PRIMARY_SHORT' => ['actor_id'],
-      'COLUMNS' => {'actor.actor_id' => 'actor_id'},
+      'COLUMNS' => {
+        'actor.actor_id' => 'actor_id',
+        'actor.first_name' => 'first_name'
+      },
       'TYPE_VALIDATION' => {
         'actor.actor_id' => {
           'COLUMN_NAME' => 'actor_id',
           'MYSQL_TYPE' => 'smallint',
+          'NOT_NULL' => true
+        },
+        'actor.first_name' => {
+          'COLUMN_NAME' => 'first_name',
+          'MYSQL_TYPE' => 'varchar',
           'NOT_NULL' => true
         }
       }
@@ -558,25 +639,33 @@ schema = {
 }
 eval(CarbonC.schema_models(schema))
 
-typed_result = CarbonC.query(CarbonModels::Actor::TABLE)
-                      .select(CarbonModels::Actor::ACTOR_ID)
-                      .where_op(
-                        CarbonModels::Actor::ACTOR_ID,
-                        CarbonC::C6C::GREATER_THAN,
-                        10
-                      )
-                      .limit(5)
-                      .compile(schema, CarbonC::Dialect::MYSQL)
-field_selected = CarbonC.model_select(CarbonModels::Actor, CarbonModels::Actor::FIELD_ACTOR_ID)
-write_result = CarbonC.model_insert(
-  CarbonModels::Actor,
-  CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'
-).compile(schema, CarbonC::Dialect::MYSQL)
+query = {
+  CarbonC::C6C::FROM => CarbonModels::Actor::TABLE,
+  CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
+  CarbonC::C6C::WHERE => {
+    CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+  },
+  CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 5}
+}
+typed_result = CarbonC.compile_query_result(query, schema, CarbonC::Dialect::MYSQL)
+field_column = CarbonC.model_column(CarbonModels::Actor, CarbonModels::Actor::FIELD_ACTOR_ID)
+write_payload = {
+  CarbonC::C6C::FROM => CarbonModels::Actor::TABLE,
+  CarbonC::C6C::INSERT => CarbonC.model_values(
+    CarbonModels::Actor,
+    CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'
+  )
+}
+write_result = CarbonC.compile_query_result(write_payload, schema, CarbonC::Dialect::MYSQL)
 metadata_json = CarbonC.schema_metadata(JSON.generate(schema))
 model_source = CarbonC.schema_models(schema)
 ```
 
-`CarbonC::Query#to_payload` returns the canonical hash sent through the C JSON
+The default package path is to pass a complete native hash payload through
+`CarbonC.compile_query_result` / `CarbonC.compile_query_value`, matching
+CarbonORM's front-end/back-end query-object convention. `CarbonC::Query#to_payload`
+is available when callers want incremental construction; it returns the
+canonical hash sent through the C JSON
 boundary for table/from, select, where, join, group/having, write operations
 (`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), scalar
 `CarbonC.subselect` helpers, derived `join_subselect` targets, advanced

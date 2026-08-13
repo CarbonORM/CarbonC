@@ -37,11 +37,16 @@ schema = {
 
 eval(CarbonC.schema_models(schema))
 
-result = CarbonC.query(CarbonModels::Actor::TABLE)
-                .select(CarbonModels::Actor::ACTOR_ID, CarbonModels::Actor::FIRST_NAME)
-                .where_op(CarbonModels::Actor::ACTOR_ID, CarbonC::C6C::GREATER_THAN, 10)
-                .limit(5)
-                .compile(schema, CarbonC::Dialect::MYSQL)
+query = {
+  CarbonC::C6C::FROM => CarbonModels::Actor::TABLE,
+  CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID, CarbonModels::Actor::FIRST_NAME],
+  CarbonC::C6C::WHERE => {
+    CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+  },
+  CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 5}
+}
+
+result = CarbonC.compile_query_result(query, schema, CarbonC::Dialect::MYSQL)
 
 if result.fetch('status') != 0
   warn result.fetch('error')
