@@ -64,9 +64,9 @@ void carbon_compile_result_free(carbon_compile_result *result);
  * unqualified current-table references, dotted references, join aliases, and
  * write columns are validated against that schema. PostgreSQL upsert conflict
  * targets are derived from PRIMARY_SHORT or PRIMARY schema metadata, and
- * PostgreSQL INNER joined deletes compile through DELETE ... USING. The result
- * is initialized by this function. If a caller reuses a prior result object, it
- * must call carbon_compile_result_free() first.
+ * PostgreSQL INNER joined updates/deletes compile through UPDATE ... FROM and
+ * DELETE ... USING. The result is initialized by this function. If a caller
+ * reuses a prior result object, it must call carbon_compile_result_free() first.
  */
 carbon_status carbon_compile_query(
         carbon_context *context,

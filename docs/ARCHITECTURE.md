@@ -76,6 +76,7 @@ The initial compiler supports:
 - MySQL upsert update lists through `UPDATE: ["column_name"]`
 - PostgreSQL `ON CONFLICT` upserts from `PRIMARY_SHORT` or `PRIMARY` schema
   metadata, including `UPDATE: []` / `DO NOTHING`
+- PostgreSQL `UPDATE ... FROM` for `INNER` joined table aliases
 - PostgreSQL `DELETE ... USING` for `INNER` joined table aliases
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL and PostgreSQL placeholder styles
@@ -89,9 +90,9 @@ silently compiling weaker SQL.
 
 PostgreSQL write support covers simple insert/update/delete forms, multi-row
 `INSERT ... RETURNING *`, and schema-derived `ON CONFLICT` targets in this
-slice. PostgreSQL `INNER` joined deletes compile to `DELETE ... USING`; joined
-updates, non-`INNER` joined deletes, and derived joined deletes remain outside
-the v0.1 compiler boundary.
+slice. PostgreSQL `INNER` joined updates compile to `UPDATE ... FROM`, and
+`INNER` joined deletes compile to `DELETE ... USING`; non-`INNER` joined writes
+and derived joined writes remain outside the v0.1 compiler boundary.
 
 When `TABLES` metadata is present, the compiler validates `FROM` tables, joined
 tables, unqualified current-table references, dotted column references,

@@ -72,6 +72,7 @@ Supported in this slice:
 - MySQL upsert update lists through `UPDATE: ["column_name"]`
 - PostgreSQL `ON CONFLICT` upserts from `PRIMARY_SHORT` or `PRIMARY` schema
   metadata, including `UPDATE: []` / `DO NOTHING`
+- PostgreSQL `UPDATE ... FROM` for `INNER` joined table aliases
 - PostgreSQL `DELETE ... USING` for `INNER` joined table aliases
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL `?` placeholders and PostgreSQL `$1`-style placeholders
@@ -87,9 +88,10 @@ POST rows. Single-row and multi-row insert/upsert payloads are covered now,
 including `dataInsertMultipleRows`; later rows bind `null` for missing first-row
 columns to match CarbonNode's batch insert behavior. PostgreSQL writes currently
 cover simple insert/update/delete forms and schema-derived conflict targets for
-`ON CONFLICT` upserts, plus `INNER` joined deletes through `DELETE ... USING`.
-PostgreSQL joined updates, non-`INNER` joined deletes, derived joined deletes,
-and loose root-level POST normalization are later work.
+`ON CONFLICT` upserts, plus `INNER` joined updates through `UPDATE ... FROM` and
+`INNER` joined deletes through `DELETE ... USING`. PostgreSQL non-`INNER` joined
+writes, derived joined writes, and loose root-level POST normalization are later
+work.
 
 Schema validation is opt-in for this slice. Passing `{}` keeps syntax-only
 identifier checks. Passing a `TABLES` object validates unqualified references

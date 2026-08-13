@@ -2406,11 +2406,13 @@ static carbon_status carbon_append_wrapped_condition_part(
            : CARBON_STATUS_OUT_OF_MEMORY;
 }
 
-static carbon_status carbon_append_postgresql_delete_using(
+static carbon_status carbon_append_postgresql_join_sources(
         carbon_compile_state *state,
         carbon_json_span query,
         carbon_string_builder *sql,
         carbon_string_builder *conditions,
+        const char *clause_sql,
+        const char *non_inner_error_message,
         const char **error_message) {
     static const char *const join_names[] = {"JOIN", "join"};
     carbon_json_span joins;
@@ -2418,7 +2420,7 @@ static carbon_status carbon_append_postgresql_delete_using(
     carbon_object_entry join_entry;
     int found = carbon_object_get_any(query, join_names, 2, &joins);
     int next;
-    int wrote_using = 0;
+    int wrote_source = 0;
 
     if (found < 0) {
         return CARBON_STATUS_INVALID_JSON;
@@ -2444,7 +2446,7 @@ static carbon_status carbon_append_postgresql_delete_using(
         }
         if (strcmp(normalized_join_kind, "INNER") != 0) {
             if (error_message != NULL) {
-                *error_message = "PostgreSQL DELETE USING currently supports INNER joins only";
+                *error_message = non_inner_error_message;
             }
             free(normalized_join_kind);
             return CARBON_STATUS_UNSUPPORTED_QUERY;
@@ -2472,8 +2474,8 @@ static carbon_status carbon_append_postgresql_delete_using(
                 return status;
             }
 
-            if (!wrote_using) {
-                if (!carbon_builder_append(sql, " USING ")) {
+            if (!wrote_source) {
+                if (!carbon_builder_append(sql, clause_sql)) {
                     free(table);
                     free(alias);
                     free(normalized_join_kind);
@@ -2499,7 +2501,7 @@ static carbon_status carbon_append_postgresql_delete_using(
                 free(normalized_join_kind);
                 return CARBON_STATUS_OUT_OF_MEMORY;
             }
-            wrote_using = 1;
+            wrote_source = 1;
 
             if (carbon_span_starts_with(target_entry.value, '{')) {
                 status = carbon_build_where_node(state, target_entry.value, "AND", &on_clause);
@@ -3341,6 +3343,7 @@ static carbon_status carbon_compile_update_statement(
     carbon_json_span where_span;
     carbon_json_span join_span;
     char *table = NULL;
+    carbon_string_builder postgresql_conditions = {0};
     carbon_query_scope scope;
     const carbon_query_scope *previous_scope = state->scope;
     const char *cursor = NULL;
@@ -3376,19 +3379,16 @@ static carbon_status carbon_compile_update_statement(
         status = CARBON_STATUS_INVALID_JSON;
         goto cleanup;
     }
-    if (state->dialect == CARBON_DIALECT_POSTGRESQL && has_join > 0) {
-        status = CARBON_STATUS_UNSUPPORTED_QUERY;
-        goto cleanup;
-    }
-
     if (!carbon_builder_append(sql, "UPDATE ")
         || !carbon_append_quoted_table(sql, state->dialect, table)) {
         status = CARBON_STATUS_OUT_OF_MEMORY;
         goto cleanup;
     }
-    status = carbon_append_join_clauses(state, query, sql);
-    if (status != CARBON_STATUS_OK) {
-        goto cleanup;
+    if (state->dialect == CARBON_DIALECT_MYSQL) {
+        status = carbon_append_join_clauses(state, query, sql);
+        if (status != CARBON_STATUS_OK) {
+            goto cleanup;
+        }
     }
     if (!carbon_builder_append(sql, " SET ")) {
         status = CARBON_STATUS_OUT_OF_MEMORY;
@@ -3426,6 +3426,19 @@ static carbon_status carbon_compile_update_statement(
         status = CARBON_STATUS_INVALID_QUERY;
         goto cleanup;
     }
+    if (state->dialect == CARBON_DIALECT_POSTGRESQL && has_join > 0) {
+        status = carbon_append_postgresql_join_sources(
+                state,
+                query,
+                sql,
+                &postgresql_conditions,
+                " FROM ",
+                "PostgreSQL UPDATE FROM currently supports INNER joins only",
+                error_message);
+        if (status != CARBON_STATUS_OK) {
+            goto cleanup;
+        }
+    }
 
     found = carbon_object_get_any(query, where_names, 2, &where_span);
     if (found < 0) {
@@ -3439,19 +3452,32 @@ static carbon_status carbon_compile_update_statement(
             carbon_builder_free(&where);
             goto cleanup;
         }
-        if (where.length > 0 && (!carbon_builder_append(sql, " WHERE ")
-                                 || !carbon_builder_append(sql, where.data))) {
-            carbon_builder_free(&where);
+        if (state->dialect == CARBON_DIALECT_POSTGRESQL) {
+            status = carbon_append_wrapped_condition_part(&postgresql_conditions, where.data);
+        } else if (where.length > 0 && (!carbon_builder_append(sql, " WHERE ")
+                                        || !carbon_builder_append(sql, where.data))) {
             status = CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        if (status != CARBON_STATUS_OK) {
+            carbon_builder_free(&where);
             goto cleanup;
         }
         carbon_builder_free(&where);
+    }
+
+    if (state->dialect == CARBON_DIALECT_POSTGRESQL
+        && postgresql_conditions.length > 0
+        && (!carbon_builder_append(sql, " WHERE ")
+            || !carbon_builder_append(sql, postgresql_conditions.data))) {
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto cleanup;
     }
 
     status = carbon_append_pagination(state, query, sql, &has_pagination);
 
 cleanup:
     state->scope = previous_scope;
+    carbon_builder_free(&postgresql_conditions);
     free(table);
     return status;
 }
@@ -3518,7 +3544,14 @@ static carbon_status carbon_compile_delete_statement(
             goto cleanup;
         }
         if (has_join > 0) {
-            status = carbon_append_postgresql_delete_using(state, query, sql, &postgresql_conditions, error_message);
+            status = carbon_append_postgresql_join_sources(
+                    state,
+                    query,
+                    sql,
+                    &postgresql_conditions,
+                    " USING ",
+                    "PostgreSQL DELETE USING currently supports INNER joins only",
+                    error_message);
             if (status != CARBON_STATUS_OK) {
                 goto cleanup;
             }

@@ -350,7 +350,7 @@ static void test_postgresql_write_join_rejected(void) {
             "{\"dialect\":\"postgresql\","
             "\"FROM\":\"actor\","
             "\"UPDATE\":{\"actor.first_name\":\"ALICE\"},"
-            "\"JOIN\":{\"INNER\":{\"film_actor fa\":{\"fa.actor_id\":[\"=\",\"actor.actor_id\"]}}}}";
+            "\"JOIN\":{\"LEFT\":{\"film_actor fa\":{\"fa.actor_id\":[\"=\",\"actor.actor_id\"]}}}}";
     const char delete_query[] =
             "{\"dialect\":\"postgresql\","
             "\"FROM\":\"actor\","
@@ -370,6 +370,7 @@ static void test_postgresql_write_join_rejected(void) {
     carbon_compile_result_init(&result);
     assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_UNSUPPORTED_QUERY);
     assert(result.status == CARBON_STATUS_UNSUPPORTED_QUERY);
+    assert_buffer_equals(&result.error, "PostgreSQL UPDATE FROM currently supports INNER joins only");
     carbon_compile_result_free(&result);
 
     request.query_json = delete_query;
@@ -380,6 +381,43 @@ static void test_postgresql_write_join_rejected(void) {
     assert_buffer_equals(&result.error, "PostgreSQL DELETE USING currently supports INNER joins only");
     carbon_compile_result_free(&result);
 
+    carbon_context_free(context);
+}
+
+static void test_postgresql_update_from_inner_join(void) {
+    carbon_context *context = carbon_context_new();
+    const char schema[] =
+            "{\"TABLES\":{"
+            "\"actor\":{\"COLUMNS\":{\"actor.actor_id\":\"actor_id\",\"actor.first_name\":\"first_name\"}},"
+            "\"film_actor\":{\"COLUMNS\":{\"film_actor.actor_id\":\"actor_id\",\"film_actor.film_id\":\"film_id\"}}"
+            "}}";
+    const char query[] =
+            "{\"dialect\":\"postgresql\","
+            "\"FROM\":\"actor\","
+            "\"UPDATE\":{\"actor.first_name\":\"ALICE\"},"
+            "\"JOIN\":{\"INNER\":{\"film_actor fa\":{\"fa.actor_id\":[\"=\",\"actor.actor_id\"]}}},"
+            "\"WHERE\":{\"actor.actor_id\":[\">\",100]}}";
+    carbon_compile_request request = {
+            .dialect = "mysql",
+            .schema_json = schema,
+            .schema_json_length = sizeof(schema) - 1,
+            .query_json = query,
+            .query_json_length = sizeof(query) - 1
+    };
+    carbon_compile_result result;
+
+    carbon_compile_result_init(&result);
+    assert(context != NULL);
+    assert(carbon_compile_query(context, &request, &result) == CARBON_STATUS_OK);
+    assert_buffer_equals(&result.sql,
+                         "UPDATE \"actor\" SET \"first_name\" = $1 FROM \"film_actor\" AS \"fa\" "
+                         "WHERE ((fa.actor_id) = actor.actor_id) AND ((actor.actor_id) > $2)");
+    assert_buffer_equals(&result.params_json, "[\"ALICE\",100]");
+    assert_buffer_equals(&result.allowlist_key,
+                         "UPDATE \"actor\" SET \"first_name\" = $1 FROM \"film_actor\" AS \"fa\" "
+                         "WHERE ((fa.actor_id) = actor.actor_id) AND ((actor.actor_id) > $2)");
+
+    carbon_compile_result_free(&result);
     carbon_context_free(context);
 }
 
@@ -796,6 +834,7 @@ static void test_golden_fixtures(void) {
     run_fixture("update-where");
     run_fixture("delete-where");
     run_fixture_with_options("postgresql-upsert", "postgresql", postgres_upsert_schema);
+    run_fixture_with_options("postgresql-update-from", "postgresql", "{}");
     run_fixture_with_options("postgresql-delete-using", "postgresql", "{}");
 }
 
@@ -813,6 +852,7 @@ int main(void) {
     test_data_insert_multiple_rows_upsert_defaults_missing_values();
     test_delete_false_rejected();
     test_postgresql_write_join_rejected();
+    test_postgresql_update_from_inner_join();
     test_postgresql_delete_using_inner_join();
     test_schema_validates_c6_table_columns_and_aliases();
     test_schema_rejects_unknown_table();
