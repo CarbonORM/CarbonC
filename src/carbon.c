@@ -26,10 +26,24 @@ typedef struct carbon_json_span {
     const char *end;
 } carbon_json_span;
 
+typedef struct carbon_schema_view {
+    carbon_json_span root;
+    carbon_json_span tables;
+    int has_tables;
+} carbon_schema_view;
+
+typedef struct carbon_query_scope {
+    const char *base_table;
+    carbon_json_span query;
+    const struct carbon_query_scope *parent;
+} carbon_query_scope;
+
 typedef struct carbon_compile_state {
     carbon_dialect dialect;
     carbon_string_builder *sql;
     carbon_string_builder *params;
+    const carbon_schema_view *schema;
+    const carbon_query_scope *scope;
     int param_count;
 } carbon_compile_state;
 
@@ -741,6 +755,351 @@ static int carbon_parse_join_target(const char *raw, char **table, char **alias)
     return 1;
 }
 
+static int carbon_schema_enabled(const carbon_compile_state *state) {
+    return state != NULL && state->schema != NULL && state->schema->has_tables;
+}
+
+static int carbon_schema_column_name_matches(const char *candidate, const char *table, const char *column) {
+    size_t candidate_length;
+    size_t table_length;
+    size_t column_length;
+
+    if (candidate == NULL || table == NULL || column == NULL) {
+        return 0;
+    }
+    if (strcmp(candidate, column) == 0) {
+        return 1;
+    }
+
+    candidate_length = strlen(candidate);
+    table_length = strlen(table);
+    column_length = strlen(column);
+    return candidate_length == table_length + 1 + column_length
+           && strncmp(candidate, table, table_length) == 0
+           && candidate[table_length] == '.'
+           && strcmp(candidate + table_length + 1, column) == 0;
+}
+
+static int carbon_schema_span_matches_column(carbon_json_span span, const char *table, const char *column) {
+    char *candidate = carbon_span_string_copy(span);
+    int matched;
+
+    if (candidate == NULL) {
+        return 0;
+    }
+    matched = carbon_schema_column_name_matches(candidate, table, column);
+    free(candidate);
+    return matched;
+}
+
+static int carbon_schema_columns_array_has_column(
+        carbon_json_span columns,
+        const char *table,
+        const char *column) {
+    const char *cursor = NULL;
+    carbon_json_span item;
+    int next;
+
+    while ((next = carbon_array_next(columns, &cursor, &item)) == 1) {
+        if (carbon_schema_span_matches_column(item, table, column)) {
+            return 1;
+        }
+    }
+    return next < 0 ? -1 : 0;
+}
+
+static int carbon_schema_columns_object_has_column(
+        carbon_json_span columns,
+        const char *table,
+        const char *column) {
+    const char *cursor = NULL;
+    carbon_object_entry entry;
+    int next;
+
+    while ((next = carbon_object_next(columns, &cursor, &entry)) == 1) {
+        if (carbon_schema_span_matches_column(entry.key, table, column)
+            || carbon_schema_span_matches_column(entry.value, table, column)) {
+            return 1;
+        }
+    }
+    return next < 0 ? -1 : 0;
+}
+
+static int carbon_schema_find_table(
+        const carbon_schema_view *schema,
+        const char *table,
+        carbon_json_span *definition) {
+    if (schema == NULL || !schema->has_tables) {
+        return 0;
+    }
+    return carbon_object_get_property(schema->tables, table, definition);
+}
+
+static int carbon_schema_table_has_column(
+        carbon_json_span definition,
+        const char *table,
+        const char *column) {
+    static const char *const column_names[] = {"COLUMNS", "columns"};
+    carbon_json_span columns;
+    int found;
+
+    definition = carbon_trim_span(definition);
+    if (carbon_span_starts_with(definition, '[')) {
+        return carbon_schema_columns_array_has_column(definition, table, column);
+    }
+    if (!carbon_span_starts_with(definition, '{')) {
+        return -1;
+    }
+
+    found = carbon_object_get_any(definition, column_names, 2, &columns);
+    if (found < 0) {
+        return -1;
+    }
+    if (found == 0) {
+        return 1;
+    }
+
+    columns = carbon_trim_span(columns);
+    if (carbon_span_starts_with(columns, '[')) {
+        return carbon_schema_columns_array_has_column(columns, table, column);
+    }
+    if (carbon_span_starts_with(columns, '{')) {
+        return carbon_schema_columns_object_has_column(columns, table, column);
+    }
+    return -1;
+}
+
+static carbon_status carbon_schema_validate_table(
+        const carbon_compile_state *state,
+        const char *table) {
+    carbon_json_span definition;
+    int found;
+
+    if (!carbon_schema_enabled(state)) {
+        return CARBON_STATUS_OK;
+    }
+    found = carbon_schema_find_table(state->schema, table, &definition);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    return found > 0 ? CARBON_STATUS_OK : CARBON_STATUS_INVALID_QUERY;
+}
+
+static carbon_status carbon_schema_validate_column(
+        const carbon_compile_state *state,
+        const char *table,
+        const char *column) {
+    carbon_json_span definition;
+    int found;
+    int has_column;
+
+    if (!carbon_schema_enabled(state)) {
+        return CARBON_STATUS_OK;
+    }
+    found = carbon_schema_find_table(state->schema, table, &definition);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    has_column = carbon_schema_table_has_column(definition, table, column);
+    if (has_column < 0) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    return has_column > 0 ? CARBON_STATUS_OK : CARBON_STATUS_INVALID_QUERY;
+}
+
+static int carbon_schema_resolve_join_qualifier(
+        const carbon_query_scope *scope,
+        const char *qualifier,
+        char **table) {
+    static const char *const join_names[] = {"JOIN", "join"};
+    carbon_json_span joins;
+    const char *join_cursor = NULL;
+    carbon_object_entry join_entry;
+    int found;
+    int next;
+
+    *table = NULL;
+    found = carbon_object_get_any(scope->query, join_names, 2, &joins);
+    if (found <= 0) {
+        return found;
+    }
+    if (!carbon_span_starts_with(joins, '{')) {
+        return -1;
+    }
+
+    while ((next = carbon_object_next(joins, &join_cursor, &join_entry)) == 1) {
+        const char *target_cursor = NULL;
+        carbon_object_entry target_entry;
+        int target_next;
+
+        if (!carbon_span_starts_with(join_entry.value, '{')) {
+            return -1;
+        }
+        while ((target_next = carbon_object_next(join_entry.value, &target_cursor, &target_entry)) == 1) {
+            char *raw_target = carbon_span_string_copy(target_entry.key);
+            char *candidate_table = NULL;
+            char *candidate_alias = NULL;
+            int matched = 0;
+
+            if (raw_target == NULL
+                || !carbon_parse_join_target(raw_target, &candidate_table, &candidate_alias)) {
+                free(raw_target);
+                return -1;
+            }
+            free(raw_target);
+
+            matched = strcmp(candidate_table, qualifier) == 0
+                      || (candidate_alias != NULL && strcmp(candidate_alias, qualifier) == 0);
+            if (matched) {
+                *table = candidate_table;
+                free(candidate_alias);
+                return 1;
+            }
+
+            free(candidate_table);
+            free(candidate_alias);
+        }
+        if (target_next < 0) {
+            return -1;
+        }
+    }
+
+    return next < 0 ? -1 : 0;
+}
+
+static int carbon_schema_resolve_qualifier(
+        const carbon_compile_state *state,
+        const char *qualifier,
+        char **table) {
+    const carbon_query_scope *scope;
+
+    *table = NULL;
+    for (scope = state == NULL ? NULL : state->scope; scope != NULL; scope = scope->parent) {
+        int found;
+        if (scope->base_table != NULL && strcmp(scope->base_table, qualifier) == 0) {
+            *table = carbon_strndup_local(scope->base_table, strlen(scope->base_table));
+            return *table == NULL ? -1 : 1;
+        }
+        found = carbon_schema_resolve_join_qualifier(scope, qualifier, table);
+        if (found != 0) {
+            return found;
+        }
+    }
+    return 0;
+}
+
+static carbon_status carbon_schema_validate_reference_identifier(
+        const carbon_compile_state *state,
+        const char *identifier) {
+    const char *dot;
+    char *qualifier;
+    char *table = NULL;
+    int found;
+    carbon_status status;
+
+    if (!carbon_schema_enabled(state) || identifier == NULL || strcmp(identifier, "*") == 0) {
+        return CARBON_STATUS_OK;
+    }
+
+    dot = strrchr(identifier, '.');
+    if (dot == NULL) {
+        return CARBON_STATUS_OK;
+    }
+    if (dot[1] == '\0' || !carbon_identifier_alias_valid(dot + 1)) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    qualifier = carbon_strndup_local(identifier, (size_t) (dot - identifier));
+    if (qualifier == NULL) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    found = carbon_schema_resolve_qualifier(state, qualifier, &table);
+    free(qualifier);
+    if (found < 0) {
+        free(table);
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    status = carbon_schema_validate_column(state, table, dot + 1);
+    free(table);
+    return status;
+}
+
+static carbon_status carbon_schema_prepare(
+        const char *schema_json,
+        size_t schema_json_length,
+        carbon_schema_view *schema,
+        const char **error_message) {
+    static const char *const table_names[] = {"TABLES", "tables"};
+    static const char *const c6_names[] = {"C6", "c6"};
+    carbon_json_span c6;
+    int found;
+
+    schema->root.start = NULL;
+    schema->root.end = NULL;
+    schema->tables.start = NULL;
+    schema->tables.end = NULL;
+    schema->has_tables = 0;
+
+    if (schema_json == NULL || schema_json_length == 0) {
+        return CARBON_STATUS_OK;
+    }
+
+    schema->root.start = schema_json;
+    schema->root.end = schema_json + schema_json_length;
+    schema->root = carbon_trim_span(schema->root);
+    if (schema->root.start == schema->root.end) {
+        return CARBON_STATUS_OK;
+    }
+    if (!carbon_span_starts_with(schema->root, '{')) {
+        if (error_message != NULL) {
+            *error_message = "schema_json must be an object";
+        }
+        return CARBON_STATUS_INVALID_JSON;
+    }
+
+    found = carbon_object_get_any(schema->root, table_names, 2, &schema->tables);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        found = carbon_object_get_any(schema->root, c6_names, 2, &c6);
+        if (found < 0) {
+            return CARBON_STATUS_INVALID_JSON;
+        }
+        if (found > 0) {
+            if (!carbon_span_starts_with(c6, '{')) {
+                if (error_message != NULL) {
+                    *error_message = "schema C6 must be an object";
+                }
+                return CARBON_STATUS_INVALID_QUERY;
+            }
+            found = carbon_object_get_any(c6, table_names, 2, &schema->tables);
+            if (found < 0) {
+                return CARBON_STATUS_INVALID_JSON;
+            }
+        }
+    }
+    if (found == 0) {
+        return CARBON_STATUS_OK;
+    }
+    if (!carbon_span_starts_with(schema->tables, '{')) {
+        if (error_message != NULL) {
+            *error_message = "schema TABLES must be an object";
+        }
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+
+    schema->has_tables = 1;
+    return CARBON_STATUS_OK;
+}
+
 static char *carbon_normalize_join_type(const char *raw) {
     carbon_string_builder builder = {0};
     int wrote_space = 0;
@@ -872,13 +1231,22 @@ static carbon_status carbon_append_param(
     return CARBON_STATUS_OK;
 }
 
-static carbon_status carbon_append_reference_from_string(carbon_string_builder *sql, carbon_json_span string_span) {
+static carbon_status carbon_append_reference_from_string(
+        carbon_compile_state *state,
+        carbon_string_builder *sql,
+        carbon_json_span string_span) {
     char *identifier = carbon_span_string_copy(string_span);
+    carbon_status status;
     int ok;
 
     if (identifier == NULL || !carbon_identifier_valid(identifier)) {
         free(identifier);
         return CARBON_STATUS_INVALID_QUERY;
+    }
+    status = carbon_schema_validate_reference_identifier(state, identifier);
+    if (status != CARBON_STATUS_OK) {
+        free(identifier);
+        return status;
     }
 
     ok = carbon_builder_append(sql, identifier);
@@ -900,11 +1268,13 @@ static carbon_status carbon_compile_select_statement(
         const char **error_message);
 
 static carbon_status carbon_copy_query_table(
+        carbon_compile_state *state,
         carbon_json_span query,
         char **table,
         const char **error_message) {
     static const char *const table_names[] = {"FROM", "table"};
     carbon_json_span table_span;
+    carbon_status status;
     int found;
 
     *table = NULL;
@@ -927,7 +1297,44 @@ static carbon_status carbon_copy_query_table(
         *table = NULL;
         return CARBON_STATUS_INVALID_QUERY;
     }
+    status = carbon_schema_validate_table(state, *table);
+    if (status != CARBON_STATUS_OK) {
+        if (error_message != NULL && status == CARBON_STATUS_INVALID_QUERY) {
+            *error_message = "table is not present in schema";
+        }
+        free(*table);
+        *table = NULL;
+        return status;
+    }
     return CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_schema_validate_reference_in_payload_scope(
+        carbon_compile_state *state,
+        carbon_json_span payload,
+        const char *identifier) {
+    carbon_query_scope scope;
+    const carbon_query_scope *previous_scope = state->scope;
+    char *table = NULL;
+    carbon_status status;
+
+    if (!carbon_schema_enabled(state)) {
+        return CARBON_STATUS_OK;
+    }
+    status = carbon_copy_query_table(state, payload, &table, NULL);
+    if (status != CARBON_STATUS_OK) {
+        return status;
+    }
+
+    scope.base_table = table;
+    scope.query = payload;
+    scope.parent = previous_scope;
+    state->scope = &scope;
+    status = carbon_schema_validate_reference_identifier(state, identifier);
+    state->scope = previous_scope;
+
+    free(table);
+    return status;
 }
 
 static int carbon_extract_subselect_payload(carbon_json_span value, carbon_json_span *payload) {
@@ -1077,6 +1484,14 @@ static carbon_status carbon_append_exists_spec(
         status = CARBON_STATUS_INVALID_QUERY;
         goto cleanup;
     }
+    status = carbon_schema_validate_reference_identifier(state, outer_column);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
+    status = carbon_schema_validate_reference_in_payload_scope(state, payload, inner_column);
+    if (status != CARBON_STATUS_OK) {
+        goto cleanup;
+    }
 
     if (!carbon_builder_append_char(&correlation, '(')
         || !carbon_builder_append(&correlation, inner_column)
@@ -1161,7 +1576,7 @@ static carbon_status carbon_append_expression(
     value = carbon_trim_span(value);
 
     if (carbon_span_starts_with(value, '"')) {
-        return carbon_append_reference_from_string(sql, value);
+        return carbon_append_reference_from_string(state, sql, value);
     }
 
     if (carbon_span_starts_with(value, '[')) {
@@ -1310,6 +1725,13 @@ static carbon_status carbon_append_condition_operand(
         if (!carbon_identifier_valid(identifier) || !carbon_identifier_is_dotted(identifier)) {
             free(identifier);
             return CARBON_STATUS_INVALID_QUERY;
+        }
+        {
+            carbon_status status = carbon_schema_validate_reference_identifier(state, identifier);
+            if (status != CARBON_STATUS_OK) {
+                free(identifier);
+                return status;
+            }
         }
         if (!carbon_builder_append(sql, identifier)) {
             free(identifier);
@@ -1609,6 +2031,12 @@ static carbon_status carbon_build_legacy_column_condition(
     if (!carbon_identifier_valid(column)) {
         return CARBON_STATUS_INVALID_QUERY;
     }
+    if (carbon_identifier_is_dotted(column)) {
+        carbon_status validation_status = carbon_schema_validate_reference_identifier(state, column);
+        if (validation_status != CARBON_STATUS_OK) {
+            return validation_status;
+        }
+    }
 
     if (carbon_span_starts_with(value, '[')
         && carbon_array_count(value, &count)
@@ -1873,6 +2301,14 @@ static carbon_status carbon_append_join_clauses(
                 return CARBON_STATUS_INVALID_QUERY;
             }
             free(raw_target);
+
+            status = carbon_schema_validate_table(state, table);
+            if (status != CARBON_STATUS_OK) {
+                free(table);
+                free(alias);
+                free(normalized_join_kind);
+                return status;
+            }
 
             if (!carbon_builder_append_char(sql, ' ')
                 || !carbon_builder_append(sql, normalized_join_kind)
@@ -2146,7 +2582,10 @@ static carbon_status carbon_append_pagination(
     return CARBON_STATUS_OK;
 }
 
-static char *carbon_trim_write_column(const char *table, const char *column) {
+static char *carbon_trim_write_column(
+        carbon_compile_state *state,
+        const char *table,
+        const char *column) {
     const char *dot;
     char *short_column;
 
@@ -2168,6 +2607,10 @@ static char *carbon_trim_write_column(const char *table, const char *column) {
 
     short_column = carbon_strndup_local(column, strlen(column));
     if (short_column == NULL || !carbon_identifier_alias_valid(short_column)) {
+        free(short_column);
+        return NULL;
+    }
+    if (carbon_schema_validate_column(state, table, short_column) != CARBON_STATUS_OK) {
         free(short_column);
         return NULL;
     }
@@ -2201,7 +2644,7 @@ static carbon_status carbon_append_write_columns(
 
     while ((next = carbon_object_next(rows, &cursor, &entry)) == 1) {
         char *column = carbon_span_string_copy(entry.key);
-        char *short_column = column == NULL ? NULL : carbon_trim_write_column(table, column);
+        char *short_column = column == NULL ? NULL : carbon_trim_write_column(state, table, column);
         carbon_status status;
 
         free(column);
@@ -2251,7 +2694,7 @@ static carbon_status carbon_append_mysql_upsert_update(
 
     while ((next = carbon_array_next(update_columns, &cursor, &item)) == 1) {
         char *column = carbon_span_string_copy(item);
-        char *short_column = column == NULL ? NULL : carbon_trim_write_column(table, column);
+        char *short_column = column == NULL ? NULL : carbon_trim_write_column(state, table, column);
 
         free(column);
         if (short_column == NULL) {
@@ -2286,16 +2729,22 @@ static carbon_status carbon_compile_insert_statement(
     carbon_json_span insert_rows;
     carbon_json_span update_columns;
     char *table = NULL;
+    carbon_query_scope scope;
+    const carbon_query_scope *previous_scope = state->scope;
     const char *verb = "INSERT";
     int found_replace;
     int found_insert;
     int found_update;
     carbon_status status;
 
-    status = carbon_copy_query_table(query, &table, error_message);
+    status = carbon_copy_query_table(state, query, &table, error_message);
     if (status != CARBON_STATUS_OK) {
         return status;
     }
+    scope.base_table = table;
+    scope.query = query;
+    scope.parent = previous_scope;
+    state->scope = &scope;
 
     found_replace = carbon_object_get_any(query, replace_names, 2, &insert_rows);
     if (found_replace < 0) {
@@ -2373,6 +2822,7 @@ static carbon_status carbon_compile_insert_statement(
     status = CARBON_STATUS_OK;
 
 cleanup:
+    state->scope = previous_scope;
     free(table);
     return status;
 }
@@ -2389,6 +2839,8 @@ static carbon_status carbon_compile_update_statement(
     carbon_json_span where_span;
     carbon_json_span join_span;
     char *table = NULL;
+    carbon_query_scope scope;
+    const carbon_query_scope *previous_scope = state->scope;
     const char *cursor = NULL;
     carbon_object_entry entry;
     int next;
@@ -2398,10 +2850,14 @@ static carbon_status carbon_compile_update_statement(
     int has_pagination = 0;
     carbon_status status;
 
-    status = carbon_copy_query_table(query, &table, error_message);
+    status = carbon_copy_query_table(state, query, &table, error_message);
     if (status != CARBON_STATUS_OK) {
         return status;
     }
+    scope.base_table = table;
+    scope.query = query;
+    scope.parent = previous_scope;
+    state->scope = &scope;
 
     found = carbon_object_get_any(query, update_names, 2, &update_rows);
     if (found < 0) {
@@ -2439,7 +2895,7 @@ static carbon_status carbon_compile_update_statement(
 
     while ((next = carbon_object_next(update_rows, &cursor, &entry)) == 1) {
         char *column = carbon_span_string_copy(entry.key);
-        char *short_column = column == NULL ? NULL : carbon_trim_write_column(table, column);
+        char *short_column = column == NULL ? NULL : carbon_trim_write_column(state, table, column);
 
         free(column);
         if (short_column == NULL) {
@@ -2493,6 +2949,7 @@ static carbon_status carbon_compile_update_statement(
     status = carbon_append_pagination(state, query, sql, &has_pagination);
 
 cleanup:
+    state->scope = previous_scope;
     free(table);
     return status;
 }
@@ -2509,14 +2966,20 @@ static carbon_status carbon_compile_delete_statement(
     carbon_json_span where_span;
     carbon_json_span join_span;
     char *table = NULL;
+    carbon_query_scope scope;
+    const carbon_query_scope *previous_scope = state->scope;
     int found;
     int has_join;
     carbon_status status;
 
-    status = carbon_copy_query_table(query, &table, error_message);
+    status = carbon_copy_query_table(state, query, &table, error_message);
     if (status != CARBON_STATUS_OK) {
         return status;
     }
+    scope.base_table = table;
+    scope.query = query;
+    scope.parent = previous_scope;
+    state->scope = &scope;
 
     found = carbon_object_get_any(query, delete_names, 2, &delete_span);
     if (found < 0) {
@@ -2579,6 +3042,7 @@ static carbon_status carbon_compile_delete_statement(
     status = CARBON_STATUS_OK;
 
 cleanup:
+    state->scope = previous_scope;
     free(table);
     return status;
 }
@@ -2920,6 +3384,8 @@ static carbon_status carbon_compile_select_statement(
     static const char *const where_names[] = {"WHERE", "where"};
     carbon_json_span where_span;
     char *table = NULL;
+    carbon_query_scope scope;
+    const carbon_query_scope *previous_scope = state->scope;
     carbon_status status;
     int has_pagination = 0;
     int found;
@@ -2929,10 +3395,14 @@ static carbon_status carbon_compile_select_statement(
         return CARBON_STATUS_INVALID_JSON;
     }
 
-    status = carbon_copy_query_table(query, &table, error_message);
+    status = carbon_copy_query_table(state, query, &table, error_message);
     if (status != CARBON_STATUS_OK) {
         return status;
     }
+    scope.base_table = table;
+    scope.query = query;
+    scope.parent = previous_scope;
+    state->scope = &scope;
 
     if (!carbon_builder_append(sql, "SELECT ")) {
         status = CARBON_STATUS_OUT_OF_MEMORY;
@@ -3010,6 +3480,7 @@ static carbon_status carbon_compile_select_statement(
     }
 
 cleanup:
+    state->scope = previous_scope;
     free(table);
     return status;
 }
@@ -3027,6 +3498,7 @@ carbon_status carbon_compile_query(
     carbon_string_builder sql = {0};
     carbon_string_builder params = {0};
     carbon_compile_state state;
+    carbon_schema_view schema;
     const char *error_message = NULL;
     int found;
 
@@ -3044,12 +3516,25 @@ carbon_status carbon_compile_query(
         return carbon_set_result_error(result, CARBON_STATUS_INVALID_QUERY,
                                        "query_json_length must be greater than zero");
     }
+    if (request->schema_json == NULL && request->schema_json_length > 0) {
+        return carbon_set_result_error(result, CARBON_STATUS_INVALID_ARGUMENT,
+                                       "schema_json is required when schema_json_length is greater than zero");
+    }
 
     query.start = request->query_json;
     query.end = request->query_json + request->query_json_length;
     query = carbon_trim_span(query);
     if (!carbon_span_starts_with(query, '{')) {
         return carbon_set_result_error(result, CARBON_STATUS_INVALID_JSON, "query_json must be an object");
+    }
+
+    status = carbon_schema_prepare(
+            request->schema_json,
+            request->schema_json == NULL ? 0 : request->schema_json_length,
+            &schema,
+            &error_message);
+    if (status != CARBON_STATUS_OK) {
+        goto fail;
     }
 
     found = carbon_object_get_any(query, dialect_names, 2, &dialect_span);
@@ -3071,6 +3556,8 @@ carbon_status carbon_compile_query(
     state.dialect = dialect;
     state.sql = &sql;
     state.params = &params;
+    state.schema = &schema;
+    state.scope = NULL;
     state.param_count = 0;
 
     if (!carbon_builder_append(&params, "[")) {

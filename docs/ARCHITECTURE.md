@@ -68,6 +68,8 @@ The initial compiler supports:
 - MySQL upsert update lists through `UPDATE: ["column_name"]`
 - `PAGINATION.ORDER`, `LIMIT`, and `PAGE`
 - MySQL and PostgreSQL placeholder styles
+- opt-in schema validation from `schema_json.TABLES`, `schema_json.tables`, or
+  `schema_json.C6.TABLES`
 
 Unsupported query shapes return `CARBON_STATUS_UNSUPPORTED_QUERY` rather than
 silently compiling weaker SQL.
@@ -76,10 +78,16 @@ PostgreSQL write support covers simple insert/update/delete forms in this
 slice. Joined writes and schema-derived conflict targets remain outside the
 v0.1 compiler boundary.
 
+When `TABLES` metadata is present, the compiler validates `FROM` tables, joined
+tables, dotted column references, join-alias references, and insert/update/upsert
+write columns against C6 `COLUMNS` data. Empty or absent schema metadata keeps
+the previous syntax-only behavior so language bindings can adopt the validator
+incrementally.
+
 ## Direction
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`. The next implementation step is to expand those
-fixtures to derived joins, multi-row writes, PostgreSQL conflict targets, and
-schema-aware identifier validation. That should happen before expanding
-language bindings beyond smoke wrappers.
+fixtures to derived joins, multi-row writes, PostgreSQL conflict targets,
+unqualified-reference validation, and generated type metadata. That should
+happen before expanding language bindings beyond smoke wrappers.

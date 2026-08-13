@@ -72,12 +72,31 @@ Supported in this slice:
 - MySQL `?` placeholders and PostgreSQL `$1`-style placeholders
 - CarbonNode-style allowlist normalization for whitespace, `LIMIT`, `OFFSET`,
   and `IN` bind-list cardinality
+- schema-aware table, dotted-reference, join-alias, and write-column validation
+  when `schema_json` includes a `TABLES` object
 
 Write support is intentionally explicit: this slice accepts operation keys such
 as `INSERT`, `REPLACE`, `UPDATE`, and `DELETE`, not CarbonNode's loose root-level
 POST rows. Single-row insert/upsert payloads are covered now. PostgreSQL writes
 currently cover simple insert/update/delete forms; joined writes, multi-row POST
 normalization, and schema-derived conflict targets are later work.
+
+Schema validation is opt-in for this slice. Passing `{}` keeps syntax-only
+identifier checks. Passing a `TABLES` object validates against C6-style table
+metadata:
+
+```json
+{
+  "TABLES": {
+    "actor": {
+      "COLUMNS": {
+        "actor.actor_id": "actor_id",
+        "actor.first_name": "first_name"
+      }
+    }
+  }
+}
+```
 
 This is not the full C6 grammar yet. It is the foundation for porting the rest
 of CarbonNode's canonical query grammar into C behind stable fixtures.
@@ -112,8 +131,8 @@ ctest --test-dir build --output-on-failure
 
 1. Expand fixture coverage for derived joins, multi-row writes, PostgreSQL
    conflict targets, and schema-aware write normalization.
-2. Add schema metadata checks so identifiers are validated against generated C6
-   schema data, not only identifier syntax.
+2. Expand schema validation to unqualified references, generated type metadata,
+   and binding-friendly diagnostic paths.
 3. Add structured error codes and paths for binding-friendly diagnostics.
 4. Wrap the kernel from Node N-API, PHP, Python, and Ruby without moving DB
    execution into C.
