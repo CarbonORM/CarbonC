@@ -29,3 +29,4 @@ if result["status"] != 0:
 print(result["sql"])
 print(result["params_json"])
 print(result["allowlist_key"])
+print(carbon.schema_metadata(json.dumps(schema)))

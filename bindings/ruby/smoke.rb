@@ -36,6 +36,20 @@ raise "unexpected params: #{result.fetch('params_json')}" unless result.fetch('p
 unless result.fetch('allowlist_key') == 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? LIMIT ?'
   raise "unexpected allowlist: #{result.fetch('allowlist_key')}"
 end
+metadata = JSON.parse(CarbonC.schema_metadata(JSON.generate(schema)))
+expected_metadata = {
+  'tables' => [
+    {
+      'name' => 'actor',
+      'columns' => [
+        {'name' => 'actor_id', 'qualified' => 'actor.actor_id'},
+        {'name' => 'first_name', 'qualified' => 'actor.first_name'}
+      ],
+      'primary' => []
+    }
+  ]
+}
+raise "unexpected metadata: #{metadata.inspect}" unless metadata == expected_metadata
 
 rejected = CarbonC.compile_query(
   JSON.generate({'FROM' => 'actor', 'SELECT' => ['actor.last_name']}),

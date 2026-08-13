@@ -78,6 +78,18 @@ carbon_status carbon_compile_query(
         carbon_compile_result *result);
 
 /*
+ * Normalizes C6 schema metadata into a deterministic JSON shape for generated
+ * binding types. The output contains a tables array, each with name, ordered
+ * columns, and primary key columns. The output buffers are initialized by this
+ * function and must be released by the caller.
+ */
+carbon_status carbon_schema_metadata(
+        const char *schema_json,
+        size_t schema_json_length,
+        carbon_buffer *out,
+        carbon_buffer *error);
+
+/*
  * Normalizes generated SQL into the deterministic allowlist key used by
  * CarbonORM, including LIMIT, IN bind-list, parenthesized bind-group, and
  * multi-row VALUES cardinality normalization. The output buffers are

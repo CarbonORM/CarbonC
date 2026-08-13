@@ -38,6 +38,22 @@ assert.strictEqual(
   result.allowlist_key,
   'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? LIMIT ?'
 );
+assert.deepStrictEqual(JSON.parse(carbon.schemaMetadata(JSON.stringify(schema))), {
+  tables: [
+    {
+      name: 'actor',
+      columns: [
+        {name: 'actor_id', qualified: 'actor.actor_id'},
+        {name: 'first_name', qualified: 'actor.first_name'},
+      ],
+      primary: [],
+    },
+  ],
+});
+assert.strictEqual(
+  carbon.schema_metadata(JSON.stringify({})),
+  '{"tables":[]}'
+);
 
 const aliasResult = carbon.compile_query(JSON.stringify(query), JSON.stringify(schema), 'mysql');
 assert.deepStrictEqual(aliasResult, result);

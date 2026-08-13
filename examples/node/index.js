@@ -32,3 +32,4 @@ if (result.status !== 0) {
 console.log(result.sql);
 console.log(result.params_json);
 console.log(result.allowlist_key);
+console.log(carbon.schemaMetadata(JSON.stringify(schema)));

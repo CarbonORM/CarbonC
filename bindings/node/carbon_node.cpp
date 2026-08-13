@@ -384,6 +384,70 @@ fail:
     return carbon_node_null(env);
 }
 
+static napi_value carbon_node_schema_metadata(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1];
+    char *schema_json = NULL;
+    size_t schema_json_length = 0;
+    bool owns_schema_json = false;
+    carbon_buffer out;
+    carbon_buffer error;
+    carbon_status status;
+    napi_value value;
+
+    carbon_buffer_init(&out);
+    carbon_buffer_init(&error);
+
+    if (napi_get_cb_info(env, info, &argc, args, NULL, NULL) != napi_ok) {
+        napi_throw_error(env, NULL, "CarbonC failed to read arguments");
+        goto fail;
+    }
+
+    if (argc >= 1 && !carbon_node_is_undefined(env, args[0])) {
+        if (!carbon_node_get_string(
+                    env,
+                    args[0],
+                    "schema_json must be a string",
+                    &schema_json,
+                    &schema_json_length)) {
+            goto fail;
+        }
+        owns_schema_json = true;
+    } else {
+        schema_json = const_cast<char *>("{}");
+        schema_json_length = 2;
+    }
+
+    status = carbon_schema_metadata(schema_json, schema_json_length, &out, &error);
+    if (status != CARBON_STATUS_OK) {
+        napi_throw_range_error(
+                env,
+                NULL,
+                error.data == NULL ? carbon_status_message(status) : error.data);
+        goto fail;
+    }
+
+    if (napi_create_string_utf8(env, out.data == NULL ? "" : out.data, out.length, &value) != napi_ok) {
+        napi_throw_error(env, NULL, "CarbonC failed to allocate schema metadata string");
+        goto fail;
+    }
+
+    if (owns_schema_json) {
+        free(schema_json);
+    }
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+    return value;
+
+fail:
+    if (owns_schema_json) {
+        free(schema_json);
+    }
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+    return carbon_node_null(env);
+}
+
 napi_value carbon_node_init(napi_env env, napi_value exports) {
     napi_property_descriptor descriptors[] = {
         {"version", NULL, carbon_node_version, NULL, NULL, NULL, napi_default, NULL},
@@ -392,11 +456,13 @@ napi_value carbon_node_init(napi_env env, napi_value exports) {
         {"statusMessage", NULL, carbon_node_status_message, NULL, NULL, NULL, napi_default, NULL},
         {"compileQuery", NULL, carbon_node_compile_query, NULL, NULL, NULL, napi_default, NULL},
         {"normalizeAllowlistSql", NULL, carbon_node_normalize_allowlist_sql, NULL, NULL, NULL, napi_default, NULL},
+        {"schemaMetadata", NULL, carbon_node_schema_metadata, NULL, NULL, NULL, napi_default, NULL},
         {"hello_world", NULL, carbon_node_hello_world, NULL, NULL, NULL, napi_default, NULL},
         {"status_code", NULL, carbon_node_status_code, NULL, NULL, NULL, napi_default, NULL},
         {"status_message", NULL, carbon_node_status_message, NULL, NULL, NULL, napi_default, NULL},
         {"compile_query", NULL, carbon_node_compile_query, NULL, NULL, NULL, napi_default, NULL},
         {"normalize_allowlist_sql", NULL, carbon_node_normalize_allowlist_sql, NULL, NULL, NULL, napi_default, NULL},
+        {"schema_metadata", NULL, carbon_node_schema_metadata, NULL, NULL, NULL, napi_default, NULL},
     };
 
     if (napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors) != napi_ok) {

@@ -142,6 +142,68 @@ static void test_allowlist_normalizer(void) {
     carbon_buffer_free(&error);
 }
 
+static void test_schema_metadata_normalizer(void) {
+    const char schema[] =
+            "{\"C6\":{\"TABLES\":{"
+            "\"actor\":{"
+            "\"PRIMARY\":[\"actor.actor_id\"],"
+            "\"COLUMNS\":{\"actor.actor_id\":\"actor_id\","
+            "\"actor.first_name\":\"first_name\","
+            "\"last_name\":\"actor.last_name\"}"
+            "},"
+            "\"film_actor\":[\"film_actor.actor_id\",\"film_id\"],"
+            "\"public.accounts\":{"
+            "\"PRIMARY_SHORT\":[\"account_id\"],"
+            "\"COLUMNS\":[\"public.accounts.account_id\",\"email\"]"
+            "}"
+            "}}}";
+    carbon_buffer out;
+    carbon_buffer error;
+
+    assert(carbon_schema_metadata(schema, sizeof(schema) - 1, &out, &error) == CARBON_STATUS_OK);
+    assert_buffer_equals(&out,
+                         "{\"tables\":["
+                         "{\"name\":\"actor\","
+                         "\"columns\":["
+                         "{\"name\":\"actor_id\",\"qualified\":\"actor.actor_id\"},"
+                         "{\"name\":\"first_name\",\"qualified\":\"actor.first_name\"},"
+                         "{\"name\":\"last_name\",\"qualified\":\"actor.last_name\"}"
+                         "],\"primary\":[\"actor_id\"]},"
+                         "{\"name\":\"film_actor\","
+                         "\"columns\":["
+                         "{\"name\":\"actor_id\",\"qualified\":\"film_actor.actor_id\"},"
+                         "{\"name\":\"film_id\",\"qualified\":\"film_actor.film_id\"}"
+                         "],\"primary\":[]},"
+                         "{\"name\":\"public.accounts\","
+                         "\"columns\":["
+                         "{\"name\":\"account_id\",\"qualified\":\"public.accounts.account_id\"},"
+                         "{\"name\":\"email\",\"qualified\":\"public.accounts.email\"}"
+                         "],\"primary\":[\"account_id\"]}"
+                         "]}");
+    assert_buffer_equals(&error, "");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+
+    assert(carbon_schema_metadata("{}", 2, &out, &error) == CARBON_STATUS_OK);
+    assert_buffer_equals(&out, "{\"tables\":[]}");
+    assert_buffer_equals(&error, "");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+}
+
+static void test_schema_metadata_rejects_invalid_columns(void) {
+    const char schema[] =
+            "{\"TABLES\":{\"actor\":{\"COLUMNS\":[\"actor_id\",\"actor_id\"]}}}";
+    carbon_buffer out;
+    carbon_buffer error;
+
+    assert(carbon_schema_metadata(schema, sizeof(schema) - 1, &out, &error) == CARBON_STATUS_INVALID_QUERY);
+    assert(out.data == NULL);
+    assert_buffer_equals(&error, "invalid query");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+}
+
 static void test_multiple_where_uses_and(void) {
     carbon_context *context = carbon_context_new();
     const char query[] =
@@ -1149,6 +1211,8 @@ int main(void) {
     test_postgresql_select_string_param();
     test_identifier_rejection();
     test_allowlist_normalizer();
+    test_schema_metadata_normalizer();
+    test_schema_metadata_rejects_invalid_columns();
     test_multiple_where_uses_and();
     test_postgresql_insert_write_returning();
     test_postgresql_multi_row_insert_write_returning();

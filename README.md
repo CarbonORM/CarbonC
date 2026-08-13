@@ -11,7 +11,7 @@ The C layer should own:
 - SQL generation
 - bind-parameter extraction
 - allowlist normalization
-- schema-diff and schema-introspection normalization
+- schema metadata, diff, and introspection normalization
 
 The language bindings should own:
 
@@ -58,6 +58,8 @@ SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? 
 
 Supported in this slice:
 
+- schema metadata normalization into deterministic JSON for generated binding
+  types
 - `FROM` / legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
 - `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
@@ -143,11 +145,30 @@ Primary entrypoints:
 - `carbon_status_code()`
 - `carbon_status_message()`
 - `carbon_compile_query()`
+- `carbon_schema_metadata()`
 - `carbon_compile_result_free()`
 - `carbon_normalize_allowlist_sql()`
 
 All buffers returned by CarbonC are owned by the caller and must be released
 with `carbon_buffer_free()` or `carbon_compile_result_free()`.
+
+`carbon_schema_metadata()` returns a canonical JSON shape that package-level
+generators can turn into native models or types:
+
+```json
+{
+  "tables": [
+    {
+      "name": "actor",
+      "columns": [
+        {"name": "actor_id", "qualified": "actor.actor_id"},
+        {"name": "first_name", "qualified": "actor.first_name"}
+      ],
+      "primary": ["actor_id"]
+    }
+  ]
+}
+```
 
 ## Build And Test
 
@@ -177,6 +198,11 @@ result = carbon.compile_query(
     }),
     dialect="mysql",
 )
+metadata_json = carbon.schema_metadata(json.dumps({
+    "TABLES": {
+        "actor": {"COLUMNS": {"actor.actor_id": "actor_id"}}
+    }
+}))
 ```
 
 Build and smoke-test it from the repository root:
@@ -201,6 +227,11 @@ $result = carbon_compile_query(
     ]),
     "mysql"
 );
+$metadataJson = carbon_schema_metadata(json_encode([
+    "TABLES" => [
+        "actor" => ["COLUMNS" => ["actor.actor_id" => "actor_id"]],
+    ],
+]));
 ```
 
 Build and smoke-test it from the repository root:
@@ -213,7 +244,7 @@ php -d extension=bindings/php/modules/carbon.so examples/php/index.php
 
 The extension exposes `carbon_version()`, `carbon_hello_world()`,
 `carbon_status_code()`, `carbon_status_message()`, `carbon_compile_query()`,
-and `carbon_normalize_allowlist_sql()`.
+`carbon_schema_metadata()`, and `carbon_normalize_allowlist_sql()`.
 
 ## Node Binding
 
@@ -232,6 +263,11 @@ const result = carbon.compileQuery(
   }),
   'mysql'
 );
+const metadataJson = carbon.schemaMetadata(JSON.stringify({
+  TABLES: {
+    actor: {COLUMNS: {'actor.actor_id': 'actor_id'}},
+  },
+}));
 ```
 
 Build and smoke-test it from the repository root:
@@ -243,8 +279,8 @@ node examples/node/index.js
 ```
 
 The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
-`statusCode()`, `compileQuery()`, and `normalizeAllowlistSql()`, plus
-snake_case aliases for the multiword functions.
+`statusCode()`, `compileQuery()`, `schemaMetadata()`, and
+`normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
 
 ## Ruby Binding
 
@@ -264,6 +300,11 @@ result = CarbonC.compile_query(
   }),
   'mysql'
 )
+metadata_json = CarbonC.schema_metadata(JSON.generate({
+  'TABLES' => {
+    'actor' => {'COLUMNS' => {'actor.actor_id' => 'actor_id'}}
+  }
+}))
 ```
 
 Build and smoke-test it from the repository root:
@@ -275,13 +316,13 @@ ruby examples/ruby/example.rb
 ```
 
 The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
-`CarbonC.status_code`, `CarbonC.status_message`, `CarbonC.compile_query`, and
-`CarbonC.normalize_allowlist_sql`.
+`CarbonC.status_code`, `CarbonC.status_message`, `CarbonC.compile_query`,
+`CarbonC.schema_metadata`, and `CarbonC.normalize_allowlist_sql`.
 
 ## Next Milestones
 
-1. Expand schema validation to generated type metadata and binding-friendly
-   diagnostic paths.
-2. Add package-level ergonomics for each binding without moving DB execution
+1. Generate package-native type/model surfaces from normalized schema metadata.
+2. Expand schema validation to binding-friendly diagnostic paths.
+3. Add package-level ergonomics for each binding without moving DB execution
    into C.
-3. Add structured diagnostic paths for binding-friendly errors.
+4. Add structured diagnostic paths for binding-friendly errors.

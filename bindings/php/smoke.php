@@ -44,6 +44,22 @@ carbon_assert(
     $result['allowlist_key'] === 'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? LIMIT ?',
     'unexpected allowlist: ' . $result['allowlist_key']
 );
+$metadata = json_decode(carbon_schema_metadata(json_encode($schema)), true);
+carbon_assert(
+    $metadata === [
+        'tables' => [
+            [
+                'name' => 'actor',
+                'columns' => [
+                    ['name' => 'actor_id', 'qualified' => 'actor.actor_id'],
+                    ['name' => 'first_name', 'qualified' => 'actor.first_name'],
+                ],
+                'primary' => [],
+            ],
+        ],
+    ],
+    'unexpected metadata: ' . json_encode($metadata)
+);
 
 $rejected = carbon_compile_query(
     json_encode(['FROM' => 'actor', 'SELECT' => ['actor.last_name']]),

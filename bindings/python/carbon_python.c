@@ -133,6 +133,38 @@ static PyObject *carbon_py_normalize_allowlist_sql(PyObject *self, PyObject *arg
     return result;
 }
 
+static PyObject *carbon_py_schema_metadata(PyObject *self, PyObject *args) {
+    const char *schema_json = "{}";
+    Py_ssize_t schema_json_length = 2;
+    carbon_buffer out;
+    carbon_buffer error;
+    carbon_status status;
+    PyObject *result;
+
+    (void) self;
+    if (!PyArg_ParseTuple(args, "|s#:schema_metadata", &schema_json, &schema_json_length)) {
+        return NULL;
+    }
+
+    status = carbon_schema_metadata(schema_json, (size_t) schema_json_length, &out, &error);
+    if (status != CARBON_STATUS_OK) {
+        PyObject *message = PyUnicode_FromString(error.data == NULL ? carbon_status_message(status) : error.data);
+        carbon_buffer_free(&out);
+        carbon_buffer_free(&error);
+        if (message == NULL) {
+            return NULL;
+        }
+        PyErr_SetObject(PyExc_ValueError, message);
+        Py_DECREF(message);
+        return NULL;
+    }
+
+    result = PyUnicode_FromStringAndSize(out.data == NULL ? "" : out.data, (Py_ssize_t) out.length);
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+    return result;
+}
+
 static PyMethodDef carbon_methods[] = {
         {"version", carbon_py_version, METH_NOARGS, "Return the CarbonC version."},
         {"hello_world", carbon_py_hello_world, METH_NOARGS, "Return the CarbonC smoke-test message."},
@@ -142,6 +174,8 @@ static PyMethodDef carbon_methods[] = {
          "Compile canonical C6 JSON into SQL, params JSON, allowlist key, and diagnostics."},
         {"normalize_allowlist_sql", carbon_py_normalize_allowlist_sql, METH_VARARGS,
          "Normalize generated SQL into a CarbonORM allowlist key."},
+        {"schema_metadata", carbon_py_schema_metadata, METH_VARARGS,
+         "Normalize C6 schema metadata into JSON for generated binding types."},
         {NULL, NULL, 0, NULL}
 };
 

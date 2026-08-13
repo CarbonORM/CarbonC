@@ -33,3 +33,4 @@ end
 puts result.fetch('sql')
 puts result.fetch('params_json')
 puts result.fetch('allowlist_key')
+puts CarbonC.schema_metadata(JSON.generate(schema))

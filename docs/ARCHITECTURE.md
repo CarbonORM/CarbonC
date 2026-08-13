@@ -26,8 +26,8 @@ Bindings own runtime integration:
 
 The initial Python, PHP, Node, and Ruby bindings are intentionally thin: they
 call the C compiler, return SQL, params JSON, allowlist key, numeric status,
-stable status code, and error fields, and leave DB execution to the language
-package layer.
+stable status code, error fields, and normalized schema metadata, and leave DB
+execution and native type generation to the language package layer.
 
 This keeps the C ABI stable and keeps each language package idiomatic.
 
@@ -39,6 +39,8 @@ native binding object
   -> CarbonC compile/validate function
   -> SQL + params + allowlist key + status/status_code diagnostics
   -> native driver executes prepared statement
+
+schema JSON -> CarbonC schema metadata normalizer -> native type generator
 ```
 
 The first implementation uses JSON because every target language can produce
@@ -60,6 +62,8 @@ later without changing the higher-level contract.
 
 The initial compiler supports:
 
+- schema metadata normalization into deterministic JSON for generated binding
+  types
 - `dialect`: `mysql`, `postgresql`, or `postgres`
 - `FROM` or legacy `table`
 - `SELECT` references, `AS`, `DISTINCT`, and function tuples
@@ -96,6 +100,11 @@ JOIN value remains the `ON` clause.
 Unsupported query shapes return `CARBON_STATUS_UNSUPPORTED_QUERY` rather than
 silently compiling weaker SQL.
 
+`carbon_schema_metadata()` returns a stable `{"tables":[...]}` JSON document
+with ordered table names, ordered `columns` entries (`name` plus `qualified`),
+and `primary` short-column names. Bindings can parse that shape to generate
+language-native models without duplicating C6 schema interpretation.
+
 PostgreSQL write support covers simple insert/update/delete forms, multi-row
 `INSERT ... RETURNING *`, and schema-derived `ON CONFLICT` targets in this
 slice. PostgreSQL `INNER` joined updates compile to `UPDATE ... FROM`, and
@@ -123,6 +132,7 @@ syntax-only behavior so language bindings can adopt the validator incrementally.
 
 CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
-wrappers. The next implementation step is to expand those fixtures to generated
-type metadata, binding-friendly diagnostic paths, schema-aware write
-normalization edge cases, and package-level ergonomics.
+wrappers. The next implementation step is to turn normalized schema metadata
+into package-native type/model surfaces, add binding-friendly diagnostic paths,
+cover schema-aware write normalization edge cases, and improve package-level
+ergonomics.

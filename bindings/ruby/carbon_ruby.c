@@ -124,6 +124,44 @@ static VALUE carbon_ruby_normalize_allowlist_sql(VALUE self, VALUE sql_value) {
     return normalized;
 }
 
+static VALUE carbon_ruby_schema_metadata(int argc, VALUE *argv, VALUE self) {
+    VALUE schema_json_value;
+    carbon_buffer out;
+    carbon_buffer error;
+    carbon_status status;
+    VALUE metadata;
+
+    (void) self;
+
+    rb_scan_args(argc, argv, "01", &schema_json_value);
+    if (NIL_P(schema_json_value)) {
+        schema_json_value = rb_str_new_cstr("{}");
+    } else {
+        Check_Type(schema_json_value, T_STRING);
+    }
+
+    carbon_buffer_init(&out);
+    carbon_buffer_init(&error);
+    status = carbon_schema_metadata(
+            RSTRING_PTR(schema_json_value),
+            (size_t) RSTRING_LEN(schema_json_value),
+            &out,
+            &error);
+    if (status != CARBON_STATUS_OK) {
+        VALUE exception = rb_exc_new2(
+                rb_eArgError,
+                error.data == NULL ? carbon_status_message(status) : error.data);
+        carbon_buffer_free(&out);
+        carbon_buffer_free(&error);
+        rb_exc_raise(exception);
+    }
+
+    metadata = carbon_ruby_buffer_to_string(&out);
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+    return metadata;
+}
+
 void Init_carbon(void) {
     carbon_ruby_module = rb_define_module("CarbonC");
     rb_define_singleton_method(carbon_ruby_module, "version", carbon_ruby_version, 0);
@@ -136,4 +174,5 @@ void Init_carbon(void) {
             "normalize_allowlist_sql",
             carbon_ruby_normalize_allowlist_sql,
             1);
+    rb_define_singleton_method(carbon_ruby_module, "schema_metadata", carbon_ruby_schema_metadata, -1);
 }

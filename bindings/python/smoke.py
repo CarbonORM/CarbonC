@@ -33,6 +33,19 @@ def main() -> None:
         "SELECT actor.actor_id, actor.first_name FROM `actor` "
         "WHERE (actor.actor_id) > ? LIMIT ?"
     )
+    metadata = json.loads(carbon.schema_metadata(json.dumps(schema)))
+    assert metadata == {
+        "tables": [
+            {
+                "name": "actor",
+                "columns": [
+                    {"name": "actor_id", "qualified": "actor.actor_id"},
+                    {"name": "first_name", "qualified": "actor.first_name"},
+                ],
+                "primary": [],
+            }
+        ]
+    }, metadata
 
     rejected = carbon.compile_query(
         json.dumps({"FROM": "actor", "SELECT": ["actor.last_name"]}),
