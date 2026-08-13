@@ -39,8 +39,9 @@ optional query-builder facades, CarbonNode-compatible `C6C` token constants, C
 `CARBON_DIALECT_*` macros, context-based local/server execution envelopes, and
 typed source generators for Python dataclasses, TypeScript interfaces, PHP model
 classes, and Ruby Struct models. Generated model sources expose table,
-field-name, and qualified-column constants so query authors do not hand-type
-schema identifiers. DB execution remains outside CarbonC.
+field-name, and qualified-column constants plus routeable model `Get` helpers
+so query authors do not hand-type schema identifiers or manually attach the
+model table. DB execution remains outside CarbonC.
 
 The preferred package-level runtime contract is a complete native query payload
 object/array/hash keyed by generated constants. Fluent builders are secondary

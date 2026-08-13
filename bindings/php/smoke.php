@@ -498,6 +498,8 @@ carbon_assert(strpos($models, "public const PRIMARY = ['actor_id'];") !== false,
 carbon_assert(strpos($models, "public const DB_TYPES = ['actor_id' => 'smallint', 'first_name' => 'varchar'];") !== false, 'expected generated DB type metadata');
 carbon_assert(strpos($models, "public const NULLABLE = ['actor_id' => false, 'first_name' => false];") !== false, 'expected generated nullable metadata');
 carbon_assert(strpos($models, "self::FIELD_ACTOR_ID => self::ACTOR_ID") !== false, 'expected generated COLUMNS to use constants');
+carbon_assert(strpos($models, 'public static function GetPayload(array $query = []): array') !== false, 'expected generated GetPayload method');
+carbon_assert(strpos($models, 'public static function Get(array $query = [], $schema = null') !== false, 'expected generated Get method');
 carbon_assert(strpos($models, '/** @var int */') !== false, 'expected generated int docblock');
 carbon_assert(strpos($models, '/** @var string */') !== false, 'expected generated string docblock');
 carbon_assert(strpos($models, 'public $actor_id;') !== false, 'expected generated actor_id property');
@@ -545,14 +547,15 @@ carbon_assert(
     carbon_model_values(Actor::class, [Actor::FIELD_FIRST_NAME => 'ALICE']) === ['actor.first_name' => 'ALICE'],
     'unexpected model values payload'
 );
-$getPayload = carbon_model_get_payload(Actor::class, [
+$getQuery = [
     C6C::SELECT => [Actor::ACTOR_ID],
     C6C::WHERE => [
         Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
     ],
     C6C::PAGINATION => [C6C::LIMIT => 500],
     'cacheResults' => false,
-]);
+];
+$getPayload = Actor::GetPayload($getQuery);
 carbon_assert(
     $getPayload === [
         'SELECT' => ['actor.actor_id'],
@@ -568,8 +571,7 @@ carbon_assert(
         === ['target' => 'server', 'reason' => 'mobile_offload'],
     'unexpected mobile route'
 );
-$getRequest = carbon_model_get_request(
-    Actor::class,
+$getRequest = Actor::Get(
     $getPayload,
     $schema,
     CarbonDialect::MYSQL,

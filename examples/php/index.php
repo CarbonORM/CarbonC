@@ -48,16 +48,19 @@ if (!is_string($globalModelsEval)) {
 }
 eval($globalModelsEval);
 
-$query = [
-    C6C::FROM => Actor::TABLE,
-    C6C::SELECT => [Actor::ACTOR_ID, Actor::FIRST_NAME],
-    C6C::WHERE => [
-        Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
+$getRequest = Actor::Get(
+    [
+        C6C::SELECT => [Actor::ACTOR_ID, Actor::FIRST_NAME],
+        C6C::WHERE => [
+            Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
+        ],
+        C6C::PAGINATION => [C6C::LIMIT => 5],
     ],
-    C6C::PAGINATION => [C6C::LIMIT => 5],
-];
+    $schema,
+    CarbonDialect::MYSQL
+);
 
-$result = carbon_compile_query_result($query, $schema, CarbonDialect::MYSQL);
+$result = carbon_compile_query_result($getRequest['query'], $getRequest['schema'], $getRequest['dialect']);
 
 if ($result['status'] !== 0) {
     fwrite(STDERR, $result['error'] . PHP_EOL);

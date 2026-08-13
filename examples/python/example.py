@@ -38,19 +38,22 @@ generated_models: dict[str, object] = {}
 exec(carbon_codegen.schema_models(schema), generated_models)
 Actor = generated_models["Actor"]
 
-query = {
-    carbon_codegen.C6C.FROM: Actor.TABLE,
-    carbon_codegen.C6C.SELECT: [Actor.ACTOR_ID, Actor.FIRST_NAME],
-    carbon_codegen.C6C.WHERE: {
-        Actor.ACTOR_ID: carbon_codegen.op(carbon_codegen.C6C.GREATER_THAN, 10),
+get_request = Actor.Get(
+    {
+        carbon_codegen.C6C.SELECT: [Actor.ACTOR_ID, Actor.FIRST_NAME],
+        carbon_codegen.C6C.WHERE: {
+            Actor.ACTOR_ID: carbon_codegen.op(carbon_codegen.C6C.GREATER_THAN, 10),
+        },
+        carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 5},
     },
-    carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 5},
-}
-
-result = carbon_codegen.compile_query_result(
-    query,
     schema=schema,
     dialect=carbon_codegen.CarbonDialect.MYSQL,
+)
+
+result = carbon_codegen.compile_query_result(
+    get_request["query"],
+    schema=get_request["schema"],
+    dialect=get_request["dialect"],
 )
 
 if result["status"] != 0:

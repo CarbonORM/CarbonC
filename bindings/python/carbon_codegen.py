@@ -879,6 +879,7 @@ def schema_models(schema: Any = None) -> str:
     metadata = json.loads(carbon.schema_metadata(_schema_json(schema)))
     used_classes: set[str] = set()
     lines = [
+        "import carbon_codegen as _carbon_codegen",
         "from dataclasses import dataclass",
         "from typing import Any, Dict, Optional",
         "",
@@ -943,7 +944,19 @@ def schema_models(schema: Any = None) -> str:
             {field: nullable for field, _, _, _, _, nullable, _, _ in fields if nullable is not None},
         )
         lines.append("    NULLABLE = __carbon_nullable__")
+        lines.append("")
+        lines.append("    @classmethod")
+        lines.append("    def GetPayload(cls, query=None):")
+        lines.append("        return _carbon_codegen.model_get_payload(cls, query)")
+        lines.append("")
+        lines.append("    @classmethod")
+        lines.append("    def Get(cls, query=None, **options):")
+        lines.append("        return _carbon_codegen.model_get_request(cls, query, **options)")
+        lines.append("")
+        lines.append("    get_payload = GetPayload")
+        lines.append("    get = Get")
         if fields:
+            lines.append("")
             for field, _, _, python_type, _, _, _, _ in fields:
                 lines.append(f"    {field}: {python_type} = None")
         lines.append("")

@@ -466,6 +466,7 @@ def main() -> None:
         ]
     }, metadata
     models = carbon_codegen.schema_models(schema)
+    assert "import carbon_codegen as _carbon_codegen" in models, models
     assert "class Actor:" in models, models
     assert "TABLE = 'actor'" in models, models
     assert "FIELD_ACTOR_ID = 'actor_id'" in models, models
@@ -480,6 +481,8 @@ def main() -> None:
     assert "'actor_id': 'smallint'" in models, models
     assert "__carbon_nullable__ = {" in models, models
     assert "'actor_id': False" in models, models
+    assert "def GetPayload(cls, query=None):" in models, models
+    assert "def Get(cls, query=None, **options):" in models, models
     assert "actor_id: int = None" in models, models
     assert "first_name: str = None" in models, models
     generated: dict[str, object] = {}
@@ -524,17 +527,15 @@ def main() -> None:
     assert carbon_codegen.model_values(actor_model, {actor_model.FIELD_FIRST_NAME: "ALICE"}) == {
         "actor.first_name": "ALICE",
     }
-    get_payload = carbon_codegen.model_get_payload(
-        actor_model,
-        {
-            carbon_codegen.C6C.SELECT: [actor_model.ACTOR_ID],
-            carbon_codegen.C6C.WHERE: {
-                actor_model.ACTOR_ID: carbon_codegen.op(carbon_codegen.C6C.GREATER_THAN, 10),
-            },
-            carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 500},
-            "cacheResults": False,
+    get_query = {
+        carbon_codegen.C6C.SELECT: [actor_model.ACTOR_ID],
+        carbon_codegen.C6C.WHERE: {
+            actor_model.ACTOR_ID: carbon_codegen.op(carbon_codegen.C6C.GREATER_THAN, 10),
         },
-    )
+        carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 500},
+        "cacheResults": False,
+    }
+    get_payload = actor_model.GetPayload(get_query)
     assert get_payload == {
         "SELECT": ["actor.actor_id"],
         "WHERE": {"actor.actor_id": [">", 10]},
@@ -547,8 +548,7 @@ def main() -> None:
         context={"deviceClass": "mobile"},
         policy={"serverOnMobile": True},
     ) == {"target": "server", "reason": "mobile_offload"}
-    get_request = carbon_codegen.model_get_request(
-        actor_model,
+    get_request = actor_model.Get(
         get_payload,
         schema=schema,
         dialect=carbon_codegen.CarbonDialect.MYSQL,

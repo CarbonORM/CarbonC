@@ -476,6 +476,8 @@ raise "unexpected model source: #{models}" unless models.include?('TYPES = {')
 raise "unexpected model source: #{models}" unless models.include?('"actor_id" => :integer')
 raise "unexpected model source: #{models}" unless models.include?('NULLABLE = {')
 raise "unexpected model source: #{models}" unless models.include?('"actor_id" => false')
+raise "unexpected model source: #{models}" unless models.include?('def Actor.GetPayload(query_payload = nil)')
+raise "unexpected model source: #{models}" unless models.include?('def Actor.Get(query_payload = nil, **options)')
 eval(models)
 raise 'unexpected model table' unless CarbonC.model_table(CarbonModels::Actor) == 'actor'
 raise 'unexpected generated TABLE constant' unless CarbonModels::Actor::TABLE == 'actor'
@@ -518,8 +520,7 @@ model_values = CarbonC.model_values(
   CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'
 )
 raise "unexpected model values payload: #{model_values.inspect}" unless model_values == {'actor.first_name' => 'ALICE'}
-get_payload = CarbonC.model_get_payload(
-  CarbonModels::Actor,
+get_payload = CarbonModels::Actor.GetPayload(
   CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
   CarbonC::C6C::WHERE => {
     CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
@@ -541,8 +542,7 @@ mobile_route = CarbonC.route_query(
   policy: {'serverOnMobile' => true}
 )
 raise "unexpected mobile route: #{mobile_route.inspect}" unless mobile_route == {'target' => 'server', 'reason' => 'mobile_offload'}
-get_request = CarbonC.model_get_request(
-  CarbonModels::Actor,
+get_request = CarbonModels::Actor.Get(
   get_payload,
   schema: schema,
   dialect: CarbonC::Dialect::MYSQL,

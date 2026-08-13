@@ -550,6 +550,28 @@ function modelGetRequest(model, queryValue, options = {}) {
   return request;
 }
 
+function modelApi(model) {
+  const table = modelTable(model);
+  const fields = model && (model.fields || model.FIELDS || {});
+  const columns = model && (model.columns || model.COLUMNS || {});
+  const api = {
+    ...model,
+    table,
+    TABLE: table,
+    fields,
+    FIELDS: fields,
+    columns,
+    COLUMNS: columns,
+    GetPayload(queryValue) {
+      return modelGetPayload(model, queryValue);
+    },
+    Get(queryValue, options) {
+      return modelGetRequest(model, queryValue, options);
+    },
+  };
+  return Object.freeze(api);
+}
+
 function subselectOperand(query) {
   if (Array.isArray(query)
     && query.length === 2
@@ -916,8 +938,14 @@ function schemaModels(schema) {
   const metadata = JSON.parse(native.schemaMetadata(schemaJson(schema)));
   const usedTypes = new Set();
   const lines = [];
+  const tables = metadata.tables || [];
 
-  for (const table of metadata.tables || []) {
+  if (tables.length > 0) {
+    lines.push("import * as carbon from '@carbonorm/carbonc';");
+    lines.push('');
+  }
+
+  for (const table of tables) {
     const name = typeName(table.name || '', usedTypes);
     lines.push(`export interface ${name} {`);
     for (const column of table.columns || []) {
@@ -958,6 +986,25 @@ function schemaModels(schema) {
     }
     lines.push('  },');
     lines.push('} as const;');
+    lines.push('');
+    lines.push(`export const ${name} = Object.freeze({`);
+    lines.push(`  table: ${name}Table,`);
+    lines.push(`  TABLE: ${name}Table,`);
+    lines.push(`  primary: ${JSON.stringify(table.primary || [])},`);
+    lines.push(`  PRIMARY: ${JSON.stringify(table.primary || [])},`);
+    lines.push(`  fields: ${name}Fields,`);
+    lines.push(`  FIELDS: ${name}Fields,`);
+    lines.push(`  columns: ${name}Columns,`);
+    lines.push(`  COLUMNS: ${name}Columns,`);
+    lines.push(`  dbTypes: ${name}Meta.dbTypes,`);
+    lines.push(`  nullable: ${name}Meta.nullable,`);
+    lines.push('  GetPayload(query = {}) {');
+    lines.push(`    return carbon.modelGetPayload(${name}Meta, query);`);
+    lines.push('  },');
+    lines.push('  Get(query = {}, options = {}) {');
+    lines.push(`    return carbon.modelGetRequest(${name}Meta, query, options);`);
+    lines.push('  },');
+    lines.push('});');
     lines.push('');
   }
 
@@ -1052,6 +1099,8 @@ native.modelGetPayload = modelGetPayload;
 native.model_get_payload = modelGetPayload;
 native.modelGetRequest = modelGetRequest;
 native.model_get_request = modelGetRequest;
+native.modelApi = modelApi;
+native.model_api = modelApi;
 native.modelReplace = modelReplace;
 native.model_replace = modelReplace;
 native.modelUpdate = modelUpdate;

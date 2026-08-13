@@ -723,6 +723,12 @@ module CarbonC
           lines << "#{base_indent}  #{JSON.generate(field)} => #{column.fetch('nullable') ? 'true' : 'false'},"
         end
         lines << "#{base_indent}}.freeze"
+        lines << "#{base_indent}def #{class_name}.GetPayload(query_payload = nil)"
+        lines << "#{base_indent}  CarbonC.model_get_payload(self, query_payload)"
+        lines << "#{base_indent}end"
+        lines << "#{base_indent}def #{class_name}.Get(query_payload = nil, **options)"
+        lines << "#{base_indent}  CarbonC.model_get_request(self, query_payload, **options)"
+        lines << "#{base_indent}end"
         lines << ''
       end
 

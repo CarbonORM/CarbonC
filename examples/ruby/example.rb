@@ -37,16 +37,23 @@ schema = {
 
 eval(CarbonC.schema_models(schema))
 
-query = {
-  CarbonC::C6C::FROM => CarbonModels::Actor::TABLE,
-  CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID, CarbonModels::Actor::FIRST_NAME],
-  CarbonC::C6C::WHERE => {
-    CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+get_request = CarbonModels::Actor.Get(
+  {
+    CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID, CarbonModels::Actor::FIRST_NAME],
+    CarbonC::C6C::WHERE => {
+      CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+    },
+    CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 5}
   },
-  CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 5}
-}
+  schema: schema,
+  dialect: CarbonC::Dialect::MYSQL
+)
 
-result = CarbonC.compile_query_result(query, schema, CarbonC::Dialect::MYSQL)
+result = CarbonC.compile_query_result(
+  get_request.fetch('query'),
+  get_request.fetch('schema'),
+  get_request.fetch('dialect')
+)
 
 if result.fetch('status') != 0
   warn result.fetch('error')

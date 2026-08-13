@@ -54,16 +54,15 @@ needed, and return a deterministic route decision such as
 server executor:
 
 ```js
-const getPayload = carbon.modelGetPayload(ActorMeta, {
+const Actor = carbon.modelApi(ActorMeta);
+const request = Actor.Get({
   [carbon.C6C.SELECT]: [ActorColumns.actor_id],
   [carbon.C6C.WHERE]: {
     [ActorColumns.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
   },
   [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 500},
   cacheResults: false,
-});
-
-const request = carbon.modelGetRequest(ActorMeta, getPayload, {
+}, {
   schema,
   dialect: carbon.CarbonDialect.MYSQL,
   context: {deviceClass: 'mobile'},
@@ -344,8 +343,7 @@ typed_result = carbon_codegen.compile_query_result(
     schema=schema,
     dialect=carbon_codegen.CarbonDialect.MYSQL,
 )
-get_payload = carbon_codegen.model_get_payload(
-    Actor,
+get_request = Actor.Get(
     {
         carbon_codegen.C6C.SELECT: [Actor.ACTOR_ID],
         carbon_codegen.C6C.WHERE: {
@@ -354,10 +352,6 @@ get_payload = carbon_codegen.model_get_payload(
         carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 500},
         "cacheResults": False,
     },
-)
-get_request = carbon_codegen.model_get_request(
-    Actor,
-    get_payload,
     schema=schema,
     dialect=carbon_codegen.CarbonDialect.MYSQL,
     context={"deviceClass": "mobile"},
@@ -401,7 +395,9 @@ metadata into Python annotations such as
 `int`, `float`, `str`, `bool`, `bytes`, `Dict[str, Any]`, and `Optional[...]`,
 includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field constants such as
 `Actor.FIELD_ACTOR_ID`, direct column constants such as `Actor.ACTOR_ID`, and
-retains `__carbon_db_types__` / `__carbon_nullable__` metadata. Runtime helpers
+retains `__carbon_db_types__` / `__carbon_nullable__` metadata. Generated
+classes also expose `Get()` / `GetPayload()` delegates for routeable model
+requests. Runtime helpers
 such as `model_query()`, `model_select()`, and `model_column()` consume that
 generated metadata to build schema-backed `Query` payloads. Model write helpers
 such as `model_insert()`, `model_replace()`, `model_update()`,
@@ -467,17 +463,15 @@ $query = [
     C6C::PAGINATION => [C6C::LIMIT => 5],
 ];
 $typedResult = carbon_compile_query_result($query, $schema, CarbonDialect::MYSQL);
-$getPayload = carbon_model_get_payload(Actor::class, [
-    C6C::SELECT => [Actor::ACTOR_ID],
-    C6C::WHERE => [
-        Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
+$getRequest = Actor::Get(
+    [
+        C6C::SELECT => [Actor::ACTOR_ID],
+        C6C::WHERE => [
+            Actor::ACTOR_ID => carbon_op(C6C::GREATER_THAN, 10),
+        ],
+        C6C::PAGINATION => [C6C::LIMIT => 500],
+        "cacheResults" => false,
     ],
-    C6C::PAGINATION => [C6C::LIMIT => 500],
-    "cacheResults" => false,
-]);
-$getRequest = carbon_model_get_request(
-    Actor::class,
-    $getPayload,
     $schema,
     CarbonDialect::MYSQL,
     ["deviceClass" => "mobile"],
@@ -517,7 +511,9 @@ raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
 class source keeps properties untyped for runtime compatibility, adds PHPDoc type
 annotations, and includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field
 constants such as `Actor::FIELD_ACTOR_ID`, direct column constants such as
-`Actor::ACTOR_ID`, `DB_TYPES`, and `NULLABLE`. Runtime helpers such as
+`Actor::ACTOR_ID`, `DB_TYPES`, and `NULLABLE`. Generated classes also expose
+static `Get()` / `GetPayload()` delegates for routeable model requests. Runtime
+helpers such as
 `carbon_model_query()`, `carbon_model_select()`, and `carbon_model_column()`
 consume generated class constants or metadata arrays to build schema-backed
 `CarbonQuery` payloads. Model write helpers such as `carbon_model_insert()`,
@@ -588,7 +584,8 @@ const schema = {
 };
 const metadata = JSON.parse(carbon.schemaMetadata(JSON.stringify(schema)));
 const typeSource = carbon.schemaModels(schema);
-// The generated TypeScript module exports the same ActorTable/ActorColumns shape.
+// The generated TypeScript module exports the same ActorTable/ActorColumns shape,
+// plus an Actor object with Get/GetPayload delegates.
 const actorMetadata = metadata.tables[0];
 const ActorTable = actorMetadata.name;
 const ActorFields = Object.freeze(Object.fromEntries(
@@ -598,6 +595,7 @@ const ActorColumns = Object.freeze(Object.fromEntries(
   actorMetadata.columns.map((column) => [column.name, column.qualified])
 ));
 const ActorMeta = {table: ActorTable, fields: ActorFields, columns: ActorColumns};
+const Actor = carbon.modelApi(ActorMeta);
 
 const query = {
   [carbon.C6C.FROM]: ActorTable,
@@ -612,15 +610,14 @@ const typedResult = carbon.compileQueryResult(
   schema,
   carbon.CarbonDialect.MYSQL,
 );
-const getPayload = carbon.modelGetPayload(ActorMeta, {
-  [carbon.C6C.SELECT]: [ActorColumns.actor_id],
+const getRequest = Actor.Get({
+  [carbon.C6C.SELECT]: [Actor.COLUMNS.actor_id],
   [carbon.C6C.WHERE]: {
-    [ActorColumns.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
+    [Actor.COLUMNS.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
   },
   [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 500},
   cacheResults: false,
-});
-const getRequest = carbon.modelGetRequest(ActorMeta, getPayload, {
+}, {
   schema,
   dialect: carbon.CarbonDialect.MYSQL,
   context: {deviceClass: 'mobile'},
@@ -659,8 +656,9 @@ helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
 plus decoded JavaScript `params` and `diagnostics` values. The generated
 TypeScript source maps DB metadata into primitive field types, exports
 `ActorTable`, `ActorFields`, and `ActorColumns` constants beside each interface,
-and adds `fields`, `dbTypes`, and `nullable` metadata to the generated `*Meta`
-object. Runtime helpers such as `modelQuery()`, `modelSelect()`, and
+adds `fields`, `dbTypes`, and `nullable` metadata to the generated `*Meta`
+object, and exports an `Actor` model object with `Get()` / `GetPayload()`
+delegates. Runtime helpers such as `modelApi()`, `modelQuery()`, `modelSelect()`, and
 `modelColumn()` consume generated `*Meta` objects to build schema-backed
 `CarbonQuery` payloads. Model write helpers such as `modelInsert()`,
 `modelReplace()`, `modelUpdate()`, `modelUpsert()`, and `modelDoNothing()`
@@ -686,7 +684,7 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `call()`, `alias()`, `distinct()`, `between()`, `inList()`, `existsSpec()`,
 `exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
 `forceIndex()`, `useIndex()`, `ignoreIndex()`, `modelQuery()`, `modelSelect()`,
-`modelColumn()`, `modelGetPayload()`, `modelGetRequest()`, `routeQuery()`,
+`modelColumn()`, `modelApi()`, `modelGetPayload()`, `modelGetRequest()`, `routeQuery()`,
 `queryExecutionRequest()`, `modelInsert()`, `modelReplace()`, `modelUpdate()`,
 `modelUpsert()`, `modelDoNothing()`, `schemaMetadata()`, `schemaModels()`, and
 `normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
@@ -739,18 +737,15 @@ query = {
   CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 5}
 }
 typed_result = CarbonC.compile_query_result(query, schema, CarbonC::Dialect::MYSQL)
-get_payload = CarbonC.model_get_payload(
-  CarbonModels::Actor,
-  CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
-  CarbonC::C6C::WHERE => {
-    CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+get_request = CarbonModels::Actor.Get(
+  {
+    CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
+    CarbonC::C6C::WHERE => {
+      CarbonModels::Actor::ACTOR_ID => CarbonC.op(CarbonC::C6C::GREATER_THAN, 10)
+    },
+    CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 500},
+    'cacheResults' => false
   },
-  CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 500},
-  'cacheResults' => false
-)
-get_request = CarbonC.model_get_request(
-  CarbonModels::Actor,
-  get_payload,
   schema: schema,
   dialect: CarbonC::Dialect::MYSQL,
   context: {'deviceClass' => 'mobile'},
@@ -790,7 +785,8 @@ result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
 Struct source includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field constants
 such as `CarbonModels::Actor::FIELD_ACTOR_ID`, direct column constants such as
 `CarbonModels::Actor::ACTOR_ID`, plus `TYPES` and `NULLABLE` metadata constants
-for runtime consumers. Runtime helpers such as `CarbonC.model_query`,
+for runtime consumers. Generated Struct classes also expose `Get` / `GetPayload`
+delegates for routeable model requests. Runtime helpers such as `CarbonC.model_query`,
 `CarbonC.model_select`, and `CarbonC.model_column` consume generated constants
 or metadata hashes to build schema-backed `CarbonC::Query` payloads. Model write
 helpers such as `CarbonC.model_insert`, `CarbonC.model_replace`,

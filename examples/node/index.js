@@ -36,26 +36,28 @@ const schema = {
 
 const metadata = JSON.parse(carbon.schemaMetadata(JSON.stringify(schema)));
 const actorMetadata = metadata.tables[0];
-const Actor = Object.freeze({
-  TABLE: actorMetadata.name,
-  FIELDS: Object.freeze(Object.fromEntries(
+const Actor = carbon.modelApi({
+  table: actorMetadata.name,
+  fields: Object.freeze(Object.fromEntries(
     actorMetadata.columns.map((column) => [column.name, column.name])
   )),
-  COLUMNS: Object.freeze(Object.fromEntries(
+  columns: Object.freeze(Object.fromEntries(
     actorMetadata.columns.map((column) => [column.name, column.qualified])
   )),
 });
 
-const query = {
-  [carbon.C6C.FROM]: Actor.TABLE,
+const getRequest = Actor.Get({
   [carbon.C6C.SELECT]: [Actor.COLUMNS.actor_id, Actor.COLUMNS.first_name],
   [carbon.C6C.WHERE]: {
     [Actor.COLUMNS.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
   },
   [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 5},
-};
+}, {
+  schema,
+  dialect: carbon.CarbonDialect.MYSQL,
+});
 
-const result = carbon.compileQueryResult(query, schema, carbon.CarbonDialect.MYSQL);
+const result = carbon.compileQueryResult(getRequest.query, getRequest.schema, getRequest.dialect);
 
 if (result.status !== 0) {
   console.error(result.error);

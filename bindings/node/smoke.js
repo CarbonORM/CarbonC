@@ -425,6 +425,7 @@ assert.strictEqual(
   '{"tables":[]}'
 );
 const modelSource = carbon.schemaModels(schema);
+assert(modelSource.includes("import * as carbon from '@carbonorm/carbonc';"));
 assert(modelSource.includes('export interface Actor'));
 assert(modelSource.includes('actor_id: number;'));
 assert(modelSource.includes('first_name: string;'));
@@ -442,6 +443,9 @@ assert(modelSource.includes('dbTypes: {'));
 assert(modelSource.includes('actor_id: "smallint",'));
 assert(modelSource.includes('nullable: {'));
 assert(modelSource.includes('actor_id: false,'));
+assert(modelSource.includes('export const Actor = Object.freeze({'));
+assert(modelSource.includes('GetPayload(query = {}) {'));
+assert(modelSource.includes('Get(query = {}, options = {}) {'));
 const actorMeta = {
   table: 'actor',
   fields: {
@@ -453,7 +457,11 @@ const actorMeta = {
     first_name: 'actor.first_name',
   },
 };
+const Actor = carbon.modelApi(actorMeta);
 assert.strictEqual(carbon.modelTable(actorMeta), 'actor');
+assert.strictEqual(Actor.TABLE, 'actor');
+assert.strictEqual(Actor.FIELDS.first_name, 'first_name');
+assert.strictEqual(Actor.COLUMNS.first_name, 'actor.first_name');
 assert.strictEqual(carbon.modelColumn(actorMeta, actorMeta.fields.first_name), 'actor.first_name');
 assert.deepStrictEqual(carbon.modelSelect(actorMeta).toPayload(), {
   FROM: 'actor',
@@ -479,10 +487,10 @@ assert.deepStrictEqual(modelBuilt.params, [0]);
 assert.deepStrictEqual(carbon.modelValues(actorMeta, {[actorMeta.fields.first_name]: 'ALICE'}), {
   'actor.first_name': 'ALICE',
 });
-const getPayload = carbon.modelGetPayload(actorMeta, {
-  [carbon.C6C.SELECT]: [actorMeta.columns.actor_id],
+const getPayload = Actor.GetPayload({
+  [carbon.C6C.SELECT]: [Actor.COLUMNS.actor_id],
   [carbon.C6C.WHERE]: {
-    [actorMeta.columns.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
+    [Actor.COLUMNS.actor_id]: carbon.op(carbon.C6C.GREATER_THAN, 10),
   },
   [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 500},
   cacheResults: false,
@@ -498,7 +506,7 @@ assert.deepStrictEqual(
   carbon.routeQuery(getPayload, {deviceClass: 'mobile'}, {serverOnMobile: true}),
   {target: 'server', reason: 'mobile_offload'}
 );
-const getRequest = carbon.modelGetRequest(actorMeta, getPayload, {
+const getRequest = Actor.Get(getPayload, {
   schema,
   dialect: carbon.CarbonDialect.MYSQL,
   context: {canRunLocal: false},

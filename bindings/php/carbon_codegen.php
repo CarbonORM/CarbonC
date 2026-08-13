@@ -1179,6 +1179,16 @@ if (!function_exists('carbon_schema_models')) {
                 $lines[] = '        self::' . $fieldConstants[$property] . ' => ' . carbon_codegen_string_literal($columnName) . ',';
             }
             $lines[] = '    ];';
+            $lines[] = '';
+            $lines[] = '    public static function GetPayload(array $query = []): array';
+            $lines[] = '    {';
+            $lines[] = '        return \\carbon_model_get_payload(self::class, $query);';
+            $lines[] = '    }';
+            $lines[] = '';
+            $lines[] = '    public static function Get(array $query = [], $schema = null, string $dialect = \\CarbonDialect::MYSQL, ?array $context = null, ?array $policy = null): array';
+            $lines[] = '    {';
+            $lines[] = '        return \\carbon_model_get_request(self::class, $query, $schema, $dialect, $context, $policy);';
+            $lines[] = '    }';
             if ($columns !== []) {
                 $lines[] = '';
                 foreach (array_keys($columns) as $property) {
