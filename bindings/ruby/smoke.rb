@@ -116,6 +116,55 @@ unless grouped.fetch('sql') == 'SELECT DISTINCT actor.first_name, COUNT(actor.ac
   raise "unexpected grouped sql: #{grouped.fetch('sql')}"
 end
 raise "unexpected grouped params: #{grouped.fetch('params').inspect}" unless grouped.fetch('params') == [1]
+inserted = CarbonC.query('actor')
+                  .insert({'actor.first_name' => 'ALICE'})
+                  .compile(schema, 'mysql')
+raise "unexpected insert compile status: #{inserted.inspect}" unless inserted.fetch('status') == 0
+unless inserted.fetch('sql') == 'INSERT INTO `actor` (`first_name`) VALUES (?)'
+  raise "unexpected insert sql: #{inserted.fetch('sql')}"
+end
+raise "unexpected insert params: #{inserted.fetch('params').inspect}" unless inserted.fetch('params') == ['ALICE']
+replace_payload = CarbonC.query('actor').replace({'actor.first_name' => 'BOB'}).to_payload
+expected_replace_payload = {
+  'FROM' => 'actor',
+  'REPLACE' => {'actor.first_name' => 'BOB'}
+}
+unless replace_payload == expected_replace_payload
+  raise "unexpected replace builder payload: #{replace_payload.inspect}"
+end
+updated = CarbonC.query('actor')
+                 .update({'actor.first_name' => 'BOB'})
+                 .where({'actor.actor_id' => 1})
+                 .compile(schema, 'mysql')
+unless updated.fetch('sql') == 'UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) = ?'
+  raise "unexpected update sql: #{updated.fetch('sql')}"
+end
+raise "unexpected update params: #{updated.fetch('params').inspect}" unless updated.fetch('params') == ['BOB', 1]
+deleted = CarbonC.query('actor')
+                 .delete
+                 .where({'actor.actor_id' => 1})
+                 .compile(schema, 'mysql')
+unless deleted.fetch('sql') == 'DELETE `actor` FROM `actor` WHERE (actor.actor_id) = ?'
+  raise "unexpected delete sql: #{deleted.fetch('sql')}"
+end
+raise "unexpected delete params: #{deleted.fetch('params').inspect}" unless deleted.fetch('params') == [1]
+upserted = CarbonC.query('actor')
+                  .insert({'actor.actor_id' => 1, 'actor.first_name' => 'ALICE'})
+                  .upsert(['first_name'])
+                  .compile(schema, 'mysql')
+unless upserted.fetch('sql') == 'INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)'
+  raise "unexpected upsert sql: #{upserted.fetch('sql')}"
+end
+raise "unexpected upsert params: #{upserted.fetch('params').inspect}" unless upserted.fetch('params') == [1, 'ALICE']
+do_nothing_payload = CarbonC.query('actor').insert({'actor.actor_id' => 1}).do_nothing.to_payload
+expected_do_nothing_payload = {
+  'FROM' => 'actor',
+  'INSERT' => {'actor.actor_id' => 1},
+  'UPDATE' => []
+}
+unless do_nothing_payload == expected_do_nothing_payload
+  raise "unexpected do-nothing builder payload: #{do_nothing_payload.inspect}"
+end
 metadata = JSON.parse(CarbonC.schema_metadata(JSON.generate(schema)))
 expected_metadata = {
   'tables' => [

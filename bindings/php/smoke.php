@@ -129,6 +129,57 @@ carbon_assert(
     'unexpected grouped sql: ' . $grouped['sql']
 );
 carbon_assert($grouped['params'] === [1], 'unexpected grouped params: ' . json_encode($grouped['params']));
+$inserted = carbon_query('actor')
+    ->insert(['actor.first_name' => 'ALICE'])
+    ->compile($schema, 'mysql');
+carbon_assert($inserted['status'] === 0, 'unexpected insert compile status: ' . json_encode($inserted));
+carbon_assert(
+    $inserted['sql'] === 'INSERT INTO `actor` (`first_name`) VALUES (?)',
+    'unexpected insert sql: ' . $inserted['sql']
+);
+carbon_assert($inserted['params'] === ['ALICE'], 'unexpected insert params: ' . json_encode($inserted['params']));
+carbon_assert(
+    carbon_query('actor')->replace(['actor.first_name' => 'BOB'])->toPayload() === [
+        'FROM' => 'actor',
+        'REPLACE' => ['actor.first_name' => 'BOB'],
+    ],
+    'unexpected replace builder payload'
+);
+$updated = carbon_query('actor')
+    ->update(['actor.first_name' => 'BOB'])
+    ->where(['actor.actor_id' => 1])
+    ->compile($schema, 'mysql');
+carbon_assert(
+    $updated['sql'] === 'UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) = ?',
+    'unexpected update sql: ' . $updated['sql']
+);
+carbon_assert($updated['params'] === ['BOB', 1], 'unexpected update params: ' . json_encode($updated['params']));
+$deleted = carbon_query('actor')
+    ->delete()
+    ->where(['actor.actor_id' => 1])
+    ->compile($schema, 'mysql');
+carbon_assert(
+    $deleted['sql'] === 'DELETE `actor` FROM `actor` WHERE (actor.actor_id) = ?',
+    'unexpected delete sql: ' . $deleted['sql']
+);
+carbon_assert($deleted['params'] === [1], 'unexpected delete params: ' . json_encode($deleted['params']));
+$upserted = carbon_query('actor')
+    ->insert(['actor.actor_id' => 1, 'actor.first_name' => 'ALICE'])
+    ->upsert(['first_name'])
+    ->compile($schema, 'mysql');
+carbon_assert(
+    $upserted['sql'] === 'INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)',
+    'unexpected upsert sql: ' . $upserted['sql']
+);
+carbon_assert($upserted['params'] === [1, 'ALICE'], 'unexpected upsert params: ' . json_encode($upserted['params']));
+carbon_assert(
+    carbon_query('actor')->insert(['actor.actor_id' => 1])->doNothing()->toPayload() === [
+        'FROM' => 'actor',
+        'INSERT' => ['actor.actor_id' => 1],
+        'UPDATE' => [],
+    ],
+    'unexpected do-nothing builder payload'
+);
 $metadata = json_decode(carbon_schema_metadata(json_encode($schema)), true);
 carbon_assert(
     $metadata === [

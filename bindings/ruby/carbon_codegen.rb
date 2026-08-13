@@ -54,6 +54,36 @@ module CarbonC
       self
     end
 
+    def insert(values)
+      @payload['INSERT'] = copy_payload_value(values)
+      self
+    end
+
+    def replace(values)
+      @payload['REPLACE'] = copy_payload_value(values)
+      self
+    end
+
+    def update(values)
+      @payload['UPDATE'] = values.dup
+      self
+    end
+
+    def delete(enabled = true)
+      @payload['DELETE'] = enabled
+      self
+    end
+
+    def upsert(columns)
+      @payload['UPDATE'] = columns.dup
+      self
+    end
+
+    def do_nothing
+      @payload['UPDATE'] = []
+      self
+    end
+
     def limit(value)
       pagination['LIMIT'] = value
       self
@@ -85,6 +115,17 @@ module CarbonC
       raise TypeError, 'PAGINATION must be a Hash' unless @payload['PAGINATION'].is_a?(Hash)
 
       @payload['PAGINATION']
+    end
+
+    def copy_payload_value(value)
+      case value
+      when Array
+        value.map { |item| item.is_a?(Hash) ? item.dup : item }
+      when Hash
+        value.dup
+      else
+        value
+      end
     end
   end
 

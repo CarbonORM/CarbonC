@@ -116,6 +116,48 @@ assert.strictEqual(
   'SELECT DISTINCT actor.first_name, COUNT(actor.actor_id) AS cnt FROM `actor` GROUP BY actor.first_name HAVING ((cnt) > ?) LIMIT 5, 5'
 );
 assert.deepStrictEqual(grouped.params, [1]);
+const inserted = carbon.query('actor')
+  .insert({'actor.first_name': 'ALICE'})
+  .compile(schema, 'mysql');
+assert.strictEqual(inserted.status, 0, JSON.stringify(inserted));
+assert.strictEqual(inserted.sql, 'INSERT INTO `actor` (`first_name`) VALUES (?)');
+assert.deepStrictEqual(inserted.params, ['ALICE']);
+assert.deepStrictEqual(
+  carbon.query('actor').replace({'actor.first_name': 'BOB'}).toPayload(),
+  {
+    FROM: 'actor',
+    REPLACE: {'actor.first_name': 'BOB'},
+  }
+);
+const updated = carbon.query('actor')
+  .update({'actor.first_name': 'BOB'})
+  .where({'actor.actor_id': 1})
+  .compile(schema, 'mysql');
+assert.strictEqual(updated.sql, 'UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) = ?');
+assert.deepStrictEqual(updated.params, ['BOB', 1]);
+const deleted = carbon.query('actor')
+  .delete()
+  .where({'actor.actor_id': 1})
+  .compile(schema, 'mysql');
+assert.strictEqual(deleted.sql, 'DELETE `actor` FROM `actor` WHERE (actor.actor_id) = ?');
+assert.deepStrictEqual(deleted.params, [1]);
+const upserted = carbon.query('actor')
+  .insert({'actor.actor_id': 1, 'actor.first_name': 'ALICE'})
+  .upsert(['first_name'])
+  .compile(schema, 'mysql');
+assert.strictEqual(
+  upserted.sql,
+  'INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)'
+);
+assert.deepStrictEqual(upserted.params, [1, 'ALICE']);
+assert.deepStrictEqual(
+  carbon.query('actor').insert({'actor.actor_id': 1}).doNothing().toPayload(),
+  {
+    FROM: 'actor',
+    INSERT: {'actor.actor_id': 1},
+    UPDATE: [],
+  }
+);
 assert.deepStrictEqual(JSON.parse(carbon.schemaMetadata(JSON.stringify(schema))), {
   tables: [
     {

@@ -117,6 +117,50 @@ def main() -> None:
         "GROUP BY actor.first_name HAVING ((cnt) > ?) LIMIT 5, 5"
     ), grouped
     assert grouped["params"] == [1], grouped
+    inserted = (
+        carbon_codegen.query("actor")
+        .insert({"actor.first_name": "ALICE"})
+        .compile(schema=schema, dialect="mysql")
+    )
+    assert inserted["status"] == 0, inserted
+    assert inserted["sql"] == "INSERT INTO `actor` (`first_name`) VALUES (?)", inserted
+    assert inserted["params"] == ["ALICE"], inserted
+    assert carbon_codegen.query("actor").replace({"actor.first_name": "BOB"}).to_payload() == {
+        "FROM": "actor",
+        "REPLACE": {"actor.first_name": "BOB"},
+    }
+    updated = (
+        carbon_codegen.query("actor")
+        .update({"actor.first_name": "BOB"})
+        .where({"actor.actor_id": 1})
+        .compile(schema=schema, dialect="mysql")
+    )
+    assert updated["sql"] == "UPDATE `actor` SET `first_name` = ? WHERE (actor.actor_id) = ?", updated
+    assert updated["params"] == ["BOB", 1], updated
+    deleted = (
+        carbon_codegen.query("actor")
+        .delete()
+        .where({"actor.actor_id": 1})
+        .compile(schema=schema, dialect="mysql")
+    )
+    assert deleted["sql"] == "DELETE `actor` FROM `actor` WHERE (actor.actor_id) = ?", deleted
+    assert deleted["params"] == [1], deleted
+    upserted = (
+        carbon_codegen.query("actor")
+        .insert({"actor.actor_id": 1, "actor.first_name": "ALICE"})
+        .upsert(["first_name"])
+        .compile(schema=schema, dialect="mysql")
+    )
+    assert upserted["sql"] == (
+        "INSERT INTO `actor` (`actor_id`, `first_name`) VALUES (?, ?) "
+        "ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`)"
+    ), upserted
+    assert upserted["params"] == [1, "ALICE"], upserted
+    assert carbon_codegen.query("actor").insert({"actor.actor_id": 1}).do_nothing().to_payload() == {
+        "FROM": "actor",
+        "INSERT": {"actor.actor_id": 1},
+        "UPDATE": [],
+    }
     metadata = json.loads(carbon.schema_metadata(json.dumps(schema)))
     assert metadata == {
         "tables": [

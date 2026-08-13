@@ -102,6 +102,30 @@ class Query:
         self._payload["HAVING"] = dict(conditions)
         return self
 
+    def insert(self, values: Any) -> "Query":
+        self._payload["INSERT"] = self._copy_payload_value(values)
+        return self
+
+    def replace(self, values: Any) -> "Query":
+        self._payload["REPLACE"] = self._copy_payload_value(values)
+        return self
+
+    def update(self, values: Mapping[str, Any]) -> "Query":
+        self._payload["UPDATE"] = dict(values)
+        return self
+
+    def delete(self, enabled: bool = True) -> "Query":
+        self._payload["DELETE"] = enabled
+        return self
+
+    def upsert(self, columns: Sequence[Any]) -> "Query":
+        self._payload["UPDATE"] = list(columns)
+        return self
+
+    def do_nothing(self) -> "Query":
+        self._payload["UPDATE"] = []
+        return self
+
     def limit(self, value: int) -> "Query":
         self._pagination()["LIMIT"] = value
         return self
@@ -129,6 +153,14 @@ class Query:
         if not isinstance(pagination, dict):
             raise TypeError("PAGINATION must be a mapping")
         return pagination
+
+    @staticmethod
+    def _copy_payload_value(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return dict(value)
+        if isinstance(value, (list, tuple)):
+            return [dict(item) if isinstance(item, Mapping) else item for item in value]
+        return value
 
 
 def query(table: Any = None) -> Query:

@@ -75,6 +75,21 @@ function compileQueryResult(query, schema, dialect = 'mysql') {
   return adaptCompileResult(compileQueryValue(query, schema, dialect));
 }
 
+function copyPayloadValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (item !== null && !Array.isArray(item) && typeof item === 'object') {
+        return {...item};
+      }
+      return item;
+    });
+  }
+  if (value !== null && typeof value === 'object') {
+    return {...value};
+  }
+  return value;
+}
+
 class CarbonQuery {
   constructor(table) {
     this.payload = {};
@@ -132,6 +147,36 @@ class CarbonQuery {
 
   having(conditions) {
     this.payload.HAVING = {...conditions};
+    return this;
+  }
+
+  insert(values) {
+    this.payload.INSERT = copyPayloadValue(values);
+    return this;
+  }
+
+  replace(values) {
+    this.payload.REPLACE = copyPayloadValue(values);
+    return this;
+  }
+
+  update(values) {
+    this.payload.UPDATE = {...values};
+    return this;
+  }
+
+  delete(enabled = true) {
+    this.payload.DELETE = enabled;
+    return this;
+  }
+
+  upsert(columns) {
+    this.payload.UPDATE = [...columns];
+    return this;
+  }
+
+  doNothing() {
+    this.payload.UPDATE = [];
     return this;
   }
 

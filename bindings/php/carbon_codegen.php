@@ -132,6 +132,42 @@ if (!function_exists('carbon_schema_models')) {
                 return $this;
             }
 
+            public function insert($values): self
+            {
+                $this->payload['INSERT'] = $values;
+                return $this;
+            }
+
+            public function replace($values): self
+            {
+                $this->payload['REPLACE'] = $values;
+                return $this;
+            }
+
+            public function update(array $values): self
+            {
+                $this->payload['UPDATE'] = $values;
+                return $this;
+            }
+
+            public function delete(bool $enabled = true): self
+            {
+                $this->payload['DELETE'] = $enabled;
+                return $this;
+            }
+
+            public function upsert(array $columns): self
+            {
+                $this->payload['UPDATE'] = array_values($columns);
+                return $this;
+            }
+
+            public function doNothing(): self
+            {
+                $this->payload['UPDATE'] = [];
+                return $this;
+            }
+
             public function limit(int $value): self
             {
                 $pagination =& $this->pagination();
