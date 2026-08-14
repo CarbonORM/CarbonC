@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","SELECT":["actor.actor_id","fa.film_id"],"JOIN":{"INNER":{"film_actor fa":{"fa.actor_id":["=","actor.actor_id"]}}},"INDEX_HINTS":{"film_actor fa":{"USE INDEX":["idx_film_actor_actor_id"]},"actor":{"IGNORE INDEX":"idx_actor_last_name"}},"PAGINATION":{"LIMIT":5}}
+-- sql
+SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) ON ((fa.actor_id) = actor.actor_id) LIMIT 5
+-- params
+[]
+-- allowlist
+SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) ON ((fa.actor_id) = actor.actor_id) LIMIT ?

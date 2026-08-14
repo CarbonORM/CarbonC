@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","DELETE":true,"WHERE":{"actor.actor_id":[">",100]}}
+-- sql
+DELETE `actor` FROM `actor` WHERE (actor.actor_id) > ?
+-- params
+[100]
+-- allowlist
+DELETE `actor` FROM `actor` WHERE (actor.actor_id) > ?

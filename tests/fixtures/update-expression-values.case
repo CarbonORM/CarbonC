@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","UPDATE":{"actor.first_name":["CONCAT",["LIT","Mr. "],"actor.last_name"],"actor.last_name":["CALL","COALESCE",["LIT","UNKNOWN"],"actor.last_name"]},"WHERE":{"actor.actor_id":["=",7]}}
+-- sql
+UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name), `last_name` = COALESCE(?, actor.last_name) WHERE (actor.actor_id) = ?
+-- params
+["Mr. ","UNKNOWN",7]
+-- allowlist
+UPDATE `actor` SET `first_name` = CONCAT(?, actor.last_name), `last_name` = COALESCE(?, actor.last_name) WHERE (actor.actor_id) = ?

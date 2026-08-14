@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","DB":"billing","cacheResults":false,"actor.first_name":"ALICE","last_name":"ONE"}
+-- sql
+INSERT INTO `actor` (`first_name`, `last_name`) VALUES (?, ?)
+-- params
+["ALICE","ONE"]
+-- allowlist
+INSERT INTO `actor` (`first_name`, `last_name`) VALUES (? ×2) ×*

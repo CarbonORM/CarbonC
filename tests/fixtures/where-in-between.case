@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","SELECT":["actor.actor_id","actor.first_name"],"WHERE":{"actor.first_name":["LIKE",["LIT","A%"]],"actor.last_name":["NOT_IN",[["LIT","SMITH"],["LIT","DOE"]]],"0":{"actor.actor_id":["IN",[1,2,3]]},"1":{"actor.actor_id":["BETWEEN",[5,10]]}}}
+-- sql
+SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.first_name) LIKE ? AND ( actor.last_name NOT IN (?, ?) ) AND ( actor.actor_id IN (?, ?, ?) ) AND (actor.actor_id) BETWEEN ? AND ? LIMIT 100
+-- params
+["A%","SMITH","DOE",1,2,3,5,10]
+-- allowlist
+SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.first_name) LIKE ? AND ( actor.last_name NOT IN (? ×*) ) AND ( actor.actor_id IN (? ×*) ) AND (actor.actor_id) BETWEEN ? AND ? LIMIT ?

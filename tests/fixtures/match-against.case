@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","SELECT":["actor.actor_id"],"WHERE":{"actor.first_name":["MATCH_AGAINST",[["LIT","alpha beta"],"BOOLEAN"]]},"PAGINATION":{"LIMIT":10}}
+-- sql
+SELECT actor.actor_id FROM `actor` WHERE (MATCH(actor.first_name) AGAINST(? IN BOOLEAN MODE)) LIMIT 10
+-- params
+["alpha beta"]
+-- allowlist
+SELECT actor.actor_id FROM `actor` WHERE (MATCH(actor.first_name) AGAINST(? IN BOOLEAN MODE)) LIMIT ?

@@ -1,0 +1,8 @@
+-- query
+{"FROM":"property_units","SELECT":["property_units.unit_id"],"WHERE":{"NOT_EXISTS":[["property_units.parcel_id",{"SUBSELECT":{"SELECT":["parcel_sales.parcel_id"],"FROM":"parcel_sales","WHERE":{"parcel_sales.sale_price":[">",1000000]}}}]]}}
+-- sql
+SELECT property_units.unit_id FROM `property_units` WHERE NOT EXISTS (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ? AND (parcel_sales.parcel_id) = property_units.parcel_id) LIMIT 100
+-- params
+[1000000]
+-- allowlist
+SELECT property_units.unit_id FROM `property_units` WHERE NOT EXISTS (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ? AND (parcel_sales.parcel_id) = property_units.parcel_id) LIMIT ?

@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","SELECT":[["AS",["CALL","COALESCE",["LIT","UNKNOWN"],"actor.first_name"],"display_name"]],"PAGINATION":{"LIMIT":1}}
+-- sql
+SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT 1
+-- params
+["UNKNOWN"]
+-- allowlist
+SELECT COALESCE(?, actor.first_name) AS display_name FROM `actor` LIMIT ?

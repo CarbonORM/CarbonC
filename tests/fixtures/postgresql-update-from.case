@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","UPDATE":{"actor.first_name":"ALICE"},"JOIN":{"INNER":{"film_actor fa":{"fa.actor_id":["=","actor.actor_id"]}}},"WHERE":{"actor.actor_id":[">",100]}}
+-- sql
+UPDATE "actor" SET "first_name" = $1 FROM "film_actor" AS "fa" WHERE ((fa.actor_id) = actor.actor_id) AND ((actor.actor_id) > $2)
+-- params
+["ALICE",100]
+-- allowlist
+UPDATE "actor" SET "first_name" = $1 FROM "film_actor" AS "fa" WHERE ((fa.actor_id) = actor.actor_id) AND ((actor.actor_id) > $2)

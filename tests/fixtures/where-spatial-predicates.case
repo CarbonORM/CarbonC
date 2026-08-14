@@ -1,0 +1,8 @@
+-- query
+{"FROM":"property_units","SELECT":["property_units.unit_id"],"WHERE":{"MBRContains":[["ST_GeomFromText",["LIT","POLYGON((39.5185659 -105.0142915,39.5401859 -105.0142915,39.5401859 -104.9862115,39.5185659 -104.9862115,39.5185659 -105.0142915))"],4326],"property_units.location"],"OR":[{"ST_Within":["property_units.location",["ST_GeomFromText",["LIT","POLYGON((0 0,1 0,1 1,0 1,0 0))"],4326]]},["ST_Contains","property_units.envelope","property_units.location"]]},"PAGINATION":{"LIMIT":10}}
+-- sql
+SELECT property_units.unit_id FROM `property_units` WHERE MBRCONTAINS(ST_GEOMFROMTEXT(?, 4326), property_units.location) AND (ST_WITHIN(property_units.location, ST_GEOMFROMTEXT(?, 4326)) OR ST_CONTAINS(property_units.envelope, property_units.location)) LIMIT 10
+-- params
+["POLYGON((39.5185659 -105.0142915,39.5401859 -105.0142915,39.5401859 -104.9862115,39.5185659 -104.9862115,39.5185659 -105.0142915))","POLYGON((0 0,1 0,1 1,0 1,0 0))"]
+-- allowlist
+SELECT property_units.unit_id FROM `property_units` WHERE MBRCONTAINS(ST_GEOMFROMTEXT(?, 4326), property_units.location) AND (ST_WITHIN(property_units.location, ST_GEOMFROMTEXT(?, 4326)) OR ST_CONTAINS(property_units.envelope, property_units.location)) LIMIT ?

@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","SELECT":["actor.actor_id","fa_recent.actor_id"],"JOIN":{"INNER":{"{\"SUBSELECT\":{\"FROM\":\"film_actor\",\"SELECT\":[\"film_actor.actor_id\"],\"WHERE\":{\"film_actor.film_id\":[\">\",10]},\"LIMIT\":1},\"AS\":\"fa_recent\"}":{"fa_recent.actor_id":["=","actor.actor_id"]}}},"WHERE":{"actor.actor_id":[">",100]}}
+-- sql
+SELECT actor.actor_id, fa_recent.actor_id FROM `actor` INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` WHERE (film_actor.film_id) > ? LIMIT 1) AS `fa_recent` ON ((fa_recent.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT 100
+-- params
+[10,100]
+-- allowlist
+SELECT actor.actor_id, fa_recent.actor_id FROM `actor` INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` WHERE (film_actor.film_id) > ? LIMIT ?) AS `fa_recent` ON ((fa_recent.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT ?

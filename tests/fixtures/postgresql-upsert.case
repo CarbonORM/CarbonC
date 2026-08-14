@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","INSERT":{"actor.actor_id":1,"actor.first_name":"ALICE","actor.last_name":"SMITH"},"UPDATE":["first_name","last_name"]}
+-- sql
+INSERT INTO "actor" ("actor_id", "first_name", "last_name") VALUES ($1, $2, $3) ON CONFLICT ("actor_id") DO UPDATE SET "first_name" = EXCLUDED."first_name", "last_name" = EXCLUDED."last_name" RETURNING *
+-- params
+[1,"ALICE","SMITH"]
+-- allowlist
+INSERT INTO "actor" ("actor_id", "first_name", "last_name") VALUES ($1, $2, $3) ON CONFLICT ("actor_id") DO UPDATE SET "first_name" = EXCLUDED."first_name", "last_name" = EXCLUDED."last_name" RETURNING *

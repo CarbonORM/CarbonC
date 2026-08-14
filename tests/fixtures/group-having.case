@@ -1,0 +1,8 @@
+-- query
+{"FROM":"actor","SELECT":[["DISTINCT","actor.first_name"],["AS",["COUNT","actor.actor_id"],"cnt"]],"GROUP_BY":"actor.first_name","HAVING":{"cnt":[">",1]}}
+-- sql
+SELECT DISTINCT actor.first_name, COUNT(actor.actor_id) AS cnt FROM `actor` GROUP BY actor.first_name HAVING ((cnt) > ?) LIMIT 100
+-- params
+[1]
+-- allowlist
+SELECT DISTINCT actor.first_name, COUNT(actor.actor_id) AS cnt FROM `actor` GROUP BY actor.first_name HAVING ((cnt) > ?) LIMIT ?

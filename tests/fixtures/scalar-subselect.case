@@ -1,0 +1,8 @@
+-- query
+{"FROM":"property_units","SELECT":["property_units.unit_id",["AS",["SUBSELECT",{"SELECT":[["COUNT","parcel_sales.parcel_id"]],"FROM":"parcel_sales","WHERE":{"parcel_sales.sale_price":[">",0]}}],"sale_count"]],"WHERE":{"property_units.unit_id":["IN",["SUBSELECT",{"SELECT":["parcel_sales.parcel_id"],"FROM":"parcel_sales","WHERE":{"parcel_sales.sale_price":[">",5000]}}]]}}
+-- sql
+SELECT property_units.unit_id, (SELECT COUNT(parcel_sales.parcel_id) FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ?) AS sale_count FROM `property_units` WHERE ( property_units.unit_id IN (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ?) ) LIMIT 100
+-- params
+[0,5000]
+-- allowlist
+SELECT property_units.unit_id, (SELECT COUNT(parcel_sales.parcel_id) FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ?) AS sale_count FROM `property_units` WHERE ( property_units.unit_id IN (SELECT parcel_sales.parcel_id FROM `parcel_sales` WHERE (parcel_sales.sale_price) > ?) ) LIMIT ?
