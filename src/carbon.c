@@ -7563,6 +7563,2374 @@ fail:
     return status;
 }
 
+typedef enum carbon_model_language {
+    CARBON_MODEL_LANGUAGE_PYTHON,
+    CARBON_MODEL_LANGUAGE_TYPESCRIPT,
+    CARBON_MODEL_LANGUAGE_PHP,
+    CARBON_MODEL_LANGUAGE_RUBY
+} carbon_model_language;
+
+typedef struct carbon_model_column {
+    char *name;
+    char *qualified;
+    char *db_type;
+    int has_db_type;
+    int nullable;
+    int has_nullable;
+} carbon_model_column;
+
+typedef struct carbon_model_table {
+    char *name;
+    carbon_model_column *columns;
+    size_t column_count;
+    size_t column_capacity;
+    char **primary;
+    size_t primary_count;
+    size_t primary_capacity;
+} carbon_model_table;
+
+typedef struct carbon_model_schema {
+    carbon_model_table *tables;
+    size_t table_count;
+    size_t table_capacity;
+} carbon_model_schema;
+
+typedef struct carbon_name_set {
+    char **items;
+    size_t count;
+    size_t capacity;
+} carbon_name_set;
+
+static void carbon_name_set_free(carbon_name_set *set) {
+    size_t index;
+
+    if (set == NULL) {
+        return;
+    }
+    for (index = 0; index < set->count; ++index) {
+        free(set->items[index]);
+    }
+    free(set->items);
+    memset(set, 0, sizeof(*set));
+}
+
+static int carbon_name_set_contains(const carbon_name_set *set, const char *value) {
+    size_t index;
+
+    for (index = 0; set != NULL && index < set->count; ++index) {
+        if (strcmp(set->items[index], value) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int carbon_name_set_reserve(carbon_name_set *set) {
+    char **next;
+    size_t capacity;
+
+    if (set->count < set->capacity) {
+        return 1;
+    }
+    capacity = set->capacity == 0 ? 8 : set->capacity * 2;
+    next = (char **) realloc(set->items, capacity * sizeof(*set->items));
+    if (next == NULL) {
+        return 0;
+    }
+    memset(next + set->capacity, 0, (capacity - set->capacity) * sizeof(*set->items));
+    set->items = next;
+    set->capacity = capacity;
+    return 1;
+}
+
+static int carbon_name_set_add_copy(carbon_name_set *set, const char *value) {
+    char *copy;
+
+    if (!carbon_name_set_reserve(set)) {
+        return 0;
+    }
+    copy = carbon_strndup_local(value, strlen(value));
+    if (copy == NULL) {
+        return 0;
+    }
+    set->items[set->count++] = copy;
+    return 1;
+}
+
+static carbon_status carbon_codegen_claim_name(
+        const char *name,
+        carbon_name_set *used,
+        char **out) {
+    char *candidate = NULL;
+
+    *out = NULL;
+    if (carbon_name_set_contains(used, name)) {
+        return CARBON_STATUS_INVALID_QUERY;
+    }
+    candidate = carbon_strndup_local(name, strlen(name));
+    if (candidate == NULL) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    if (!carbon_name_set_add_copy(used, candidate)) {
+        free(candidate);
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    *out = candidate;
+    return CARBON_STATUS_OK;
+}
+
+static void carbon_model_column_free(carbon_model_column *column) {
+    if (column == NULL) {
+        return;
+    }
+    free(column->name);
+    free(column->qualified);
+    free(column->db_type);
+    memset(column, 0, sizeof(*column));
+}
+
+static void carbon_model_table_free(carbon_model_table *table) {
+    size_t index;
+
+    if (table == NULL) {
+        return;
+    }
+    free(table->name);
+    for (index = 0; index < table->column_count; ++index) {
+        carbon_model_column_free(&table->columns[index]);
+    }
+    free(table->columns);
+    for (index = 0; index < table->primary_count; ++index) {
+        free(table->primary[index]);
+    }
+    free(table->primary);
+    memset(table, 0, sizeof(*table));
+}
+
+static void carbon_model_schema_free(carbon_model_schema *schema) {
+    size_t index;
+
+    if (schema == NULL) {
+        return;
+    }
+    for (index = 0; index < schema->table_count; ++index) {
+        carbon_model_table_free(&schema->tables[index]);
+    }
+    free(schema->tables);
+    memset(schema, 0, sizeof(*schema));
+}
+
+static int carbon_model_schema_reserve_tables(carbon_model_schema *schema) {
+    carbon_model_table *next;
+    size_t capacity;
+
+    if (schema->table_count < schema->table_capacity) {
+        return 1;
+    }
+    capacity = schema->table_capacity == 0 ? 4 : schema->table_capacity * 2;
+    next = (carbon_model_table *) realloc(schema->tables, capacity * sizeof(*schema->tables));
+    if (next == NULL) {
+        return 0;
+    }
+    memset(next + schema->table_capacity, 0, (capacity - schema->table_capacity) * sizeof(*schema->tables));
+    schema->tables = next;
+    schema->table_capacity = capacity;
+    return 1;
+}
+
+static int carbon_model_table_reserve_columns(carbon_model_table *table) {
+    carbon_model_column *next;
+    size_t capacity;
+
+    if (table->column_count < table->column_capacity) {
+        return 1;
+    }
+    capacity = table->column_capacity == 0 ? 8 : table->column_capacity * 2;
+    next = (carbon_model_column *) realloc(table->columns, capacity * sizeof(*table->columns));
+    if (next == NULL) {
+        return 0;
+    }
+    memset(next + table->column_capacity, 0, (capacity - table->column_capacity) * sizeof(*table->columns));
+    table->columns = next;
+    table->column_capacity = capacity;
+    return 1;
+}
+
+static int carbon_model_table_reserve_primary(carbon_model_table *table) {
+    char **next;
+    size_t capacity;
+
+    if (table->primary_count < table->primary_capacity) {
+        return 1;
+    }
+    capacity = table->primary_capacity == 0 ? 2 : table->primary_capacity * 2;
+    next = (char **) realloc(table->primary, capacity * sizeof(*table->primary));
+    if (next == NULL) {
+        return 0;
+    }
+    memset(next + table->primary_capacity, 0, (capacity - table->primary_capacity) * sizeof(*table->primary));
+    table->primary = next;
+    table->primary_capacity = capacity;
+    return 1;
+}
+
+static carbon_status carbon_model_copy_string_property(
+        carbon_json_span object,
+        const char *name,
+        char **out,
+        int required) {
+    carbon_json_span value;
+    int found;
+
+    *out = NULL;
+    found = carbon_object_get_property(object, name, &value);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        if (!required) {
+            return CARBON_STATUS_OK;
+        }
+        *out = carbon_strndup_local("", 0);
+        return *out == NULL ? CARBON_STATUS_OUT_OF_MEMORY : CARBON_STATUS_OK;
+    }
+    *out = carbon_span_string_copy(value);
+    return *out == NULL ? CARBON_STATUS_INVALID_JSON : CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_model_parse_column(
+        carbon_json_span column_span,
+        carbon_model_column *column) {
+    carbon_json_span nullable_span;
+    int found;
+    carbon_status status;
+
+    memset(column, 0, sizeof(*column));
+    column_span = carbon_trim_span(column_span);
+    if (!carbon_span_starts_with(column_span, '{')) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    status = carbon_model_copy_string_property(column_span, "name", &column->name, 1);
+    if (status != CARBON_STATUS_OK) {
+        goto fail;
+    }
+    status = carbon_model_copy_string_property(column_span, "qualified", &column->qualified, 1);
+    if (status != CARBON_STATUS_OK) {
+        goto fail;
+    }
+    status = carbon_model_copy_string_property(column_span, "db_type", &column->db_type, 0);
+    if (status != CARBON_STATUS_OK) {
+        goto fail;
+    }
+    column->has_db_type = column->db_type != NULL;
+    found = carbon_object_get_property(column_span, "nullable", &nullable_span);
+    if (found < 0) {
+        status = CARBON_STATUS_INVALID_JSON;
+        goto fail;
+    }
+    if (found > 0) {
+        if (!carbon_span_bool_value(nullable_span, &column->nullable)) {
+            status = CARBON_STATUS_INVALID_JSON;
+            goto fail;
+        }
+        column->has_nullable = 1;
+    }
+    return CARBON_STATUS_OK;
+
+fail:
+    carbon_model_column_free(column);
+    return status;
+}
+
+static carbon_status carbon_model_parse_columns(
+        carbon_json_span table_span,
+        carbon_model_table *table) {
+    carbon_json_span columns_span;
+    const char *cursor = NULL;
+    carbon_json_span column_span;
+    int found;
+    int next;
+
+    found = carbon_object_get_property(table_span, "columns", &columns_span);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_OK;
+    }
+    columns_span = carbon_trim_span(columns_span);
+    if (!carbon_span_starts_with(columns_span, '[')) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    while ((next = carbon_array_next(columns_span, &cursor, &column_span)) == 1) {
+        carbon_model_column column;
+        carbon_status status = carbon_model_parse_column(column_span, &column);
+
+        if (status != CARBON_STATUS_OK) {
+            return status;
+        }
+        if (!carbon_model_table_reserve_columns(table)) {
+            carbon_model_column_free(&column);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        table->columns[table->column_count++] = column;
+    }
+    return next < 0 ? CARBON_STATUS_INVALID_JSON : CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_model_parse_primary(
+        carbon_json_span table_span,
+        carbon_model_table *table) {
+    carbon_json_span primary_span;
+    const char *cursor = NULL;
+    carbon_json_span item;
+    int found;
+    int next;
+
+    found = carbon_object_get_property(table_span, "primary", &primary_span);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_OK;
+    }
+    primary_span = carbon_trim_span(primary_span);
+    if (!carbon_span_starts_with(primary_span, '[')) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    while ((next = carbon_array_next(primary_span, &cursor, &item)) == 1) {
+        char *column = carbon_span_string_copy(item);
+
+        if (column == NULL) {
+            return CARBON_STATUS_INVALID_JSON;
+        }
+        if (!carbon_model_table_reserve_primary(table)) {
+            free(column);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        table->primary[table->primary_count++] = column;
+    }
+    return next < 0 ? CARBON_STATUS_INVALID_JSON : CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_model_schema_parse_metadata(
+        carbon_json_span metadata,
+        carbon_model_schema *schema) {
+    carbon_json_span tables_span;
+    const char *cursor = NULL;
+    carbon_json_span table_span;
+    int found;
+    int next;
+
+    memset(schema, 0, sizeof(*schema));
+    metadata = carbon_trim_span(metadata);
+    if (!carbon_span_starts_with(metadata, '{')) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    found = carbon_object_get_property(metadata, "tables", &tables_span);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_OK;
+    }
+    tables_span = carbon_trim_span(tables_span);
+    if (!carbon_span_starts_with(tables_span, '[')) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    while ((next = carbon_array_next(tables_span, &cursor, &table_span)) == 1) {
+        carbon_model_table table;
+        carbon_status status;
+
+        memset(&table, 0, sizeof(table));
+        table_span = carbon_trim_span(table_span);
+        if (!carbon_span_starts_with(table_span, '{')) {
+            return CARBON_STATUS_INVALID_JSON;
+        }
+        status = carbon_model_copy_string_property(table_span, "name", &table.name, 1);
+        if (status == CARBON_STATUS_OK) {
+            status = carbon_model_parse_columns(table_span, &table);
+        }
+        if (status == CARBON_STATUS_OK) {
+            status = carbon_model_parse_primary(table_span, &table);
+        }
+        if (status != CARBON_STATUS_OK) {
+            carbon_model_table_free(&table);
+            return status;
+        }
+        if (!carbon_model_schema_reserve_tables(schema)) {
+            carbon_model_table_free(&table);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        schema->tables[schema->table_count++] = table;
+    }
+    return next < 0 ? CARBON_STATUS_INVALID_JSON : CARBON_STATUS_OK;
+}
+
+static carbon_status carbon_model_schema_load(
+        const char *schema_json,
+        size_t schema_json_length,
+        carbon_model_schema *schema,
+        carbon_buffer *error) {
+    carbon_buffer metadata;
+    carbon_buffer metadata_error;
+    carbon_status status;
+    carbon_json_span span;
+
+    status = carbon_schema_metadata(schema_json, schema_json_length, &metadata, &metadata_error);
+    if (status != CARBON_STATUS_OK) {
+        if (error != NULL) {
+            carbon_buffer_set(error, metadata_error.data == NULL ? carbon_status_message(status) : metadata_error.data);
+        }
+        carbon_buffer_free(&metadata);
+        carbon_buffer_free(&metadata_error);
+        return status;
+    }
+    span.start = metadata.data == NULL ? "" : metadata.data;
+    span.end = span.start + metadata.length;
+    status = carbon_model_schema_parse_metadata(span, schema);
+    carbon_buffer_free(&metadata);
+    carbon_buffer_free(&metadata_error);
+    return status;
+}
+
+static int carbon_codegen_append_single_quoted(carbon_string_builder *builder, const char *value) {
+    const unsigned char *cursor = (const unsigned char *) (value == NULL ? "" : value);
+
+    if (!carbon_builder_append_char(builder, '\'')) {
+        return 0;
+    }
+    while (*cursor != '\0') {
+        unsigned char ch = *cursor++;
+
+        switch (ch) {
+            case '\\':
+                if (!carbon_builder_append(builder, "\\\\")) return 0;
+                break;
+            case '\'':
+                if (!carbon_builder_append(builder, "\\'")) return 0;
+                break;
+            case '\n':
+                if (!carbon_builder_append(builder, "\\n")) return 0;
+                break;
+            case '\r':
+                if (!carbon_builder_append(builder, "\\r")) return 0;
+                break;
+            case '\t':
+                if (!carbon_builder_append(builder, "\\t")) return 0;
+                break;
+            default:
+                if (ch < 0x20) {
+                    if (!carbon_builder_append_format(builder, "\\x%02x", (unsigned int) ch)) {
+                        return 0;
+                    }
+                } else if (!carbon_builder_append_char(builder, (char) ch)) {
+                    return 0;
+                }
+                break;
+        }
+    }
+    return carbon_builder_append_char(builder, '\'');
+}
+
+static int carbon_codegen_append_indent(carbon_string_builder *builder, size_t spaces) {
+    size_t index;
+
+    for (index = 0; index < spaces; ++index) {
+        if (!carbon_builder_append_char(builder, ' ')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int carbon_codegen_append_line(carbon_string_builder *builder, const char *line) {
+    return carbon_builder_append(builder, line) && carbon_builder_append_char(builder, '\n');
+}
+
+static char *carbon_codegen_pascal_base(const char *value) {
+    carbon_string_builder builder = {0};
+    const unsigned char *cursor = (const unsigned char *) (value == NULL ? "" : value);
+    int part_start = 1;
+
+    while (*cursor != '\0') {
+        unsigned char ch = *cursor++;
+
+        if (isalnum(ch)) {
+            if (!carbon_builder_append_char(&builder, (char) (part_start ? toupper(ch) : ch))) {
+                carbon_builder_free(&builder);
+                return NULL;
+            }
+            part_start = 0;
+        } else {
+            part_start = 1;
+        }
+    }
+    if (builder.length == 0 && !carbon_builder_append(&builder, "CarbonModel")) {
+        carbon_builder_free(&builder);
+        return NULL;
+    }
+    if (builder.data != NULL && isdigit((unsigned char) builder.data[0])) {
+        char *copy = builder.data;
+
+        builder.data = NULL;
+        builder.length = 0;
+        builder.capacity = 0;
+        if (!carbon_builder_append(&builder, "Carbon") || !carbon_builder_append(&builder, copy)) {
+            free(copy);
+            carbon_builder_free(&builder);
+            return NULL;
+        }
+        free(copy);
+    }
+    return builder.data;
+}
+
+static char *carbon_codegen_field_base(const char *value) {
+    carbon_string_builder builder = {0};
+    const unsigned char *cursor = (const unsigned char *) (value == NULL ? "" : value);
+    const char *start;
+    const char *end;
+    char *copy;
+
+    while (*cursor != '\0') {
+        unsigned char ch = *cursor++;
+
+        if (isalnum(ch) || ch == '_') {
+            if (!carbon_builder_append_char(&builder, (char) ch)) {
+                carbon_builder_free(&builder);
+                return NULL;
+            }
+        } else if (!carbon_builder_append_char(&builder, '_')) {
+            carbon_builder_free(&builder);
+            return NULL;
+        }
+    }
+    start = builder.data == NULL ? "" : builder.data;
+    end = start + builder.length;
+    while (start < end && *start == '_') {
+        ++start;
+    }
+    while (end > start && end[-1] == '_') {
+        --end;
+    }
+    if (start == end) {
+        carbon_builder_free(&builder);
+        return carbon_strndup_local("field", 5);
+    }
+    copy = carbon_strndup_local(start, (size_t) (end - start));
+    carbon_builder_free(&builder);
+    if (copy == NULL) {
+        return NULL;
+    }
+    if (isdigit((unsigned char) copy[0])) {
+        char *prefixed;
+        size_t length = strlen(copy);
+
+        prefixed = (char *) malloc(length + 2);
+        if (prefixed == NULL) {
+            free(copy);
+            return NULL;
+        }
+        prefixed[0] = '_';
+        memcpy(prefixed + 1, copy, length + 1);
+        free(copy);
+        copy = prefixed;
+    }
+    return copy;
+}
+
+static char *carbon_codegen_constant_base(const char *value) {
+    char *copy = carbon_codegen_field_base(value);
+    char *cursor;
+
+    if (copy == NULL) {
+        return NULL;
+    }
+    for (cursor = copy; *cursor != '\0'; ++cursor) {
+        *cursor = (char) toupper((unsigned char) *cursor);
+    }
+    if (copy[0] == '_') {
+        char *prefixed;
+        size_t length = strlen(copy);
+
+        prefixed = (char *) malloc(length + strlen("COLUMN") + 1);
+        if (prefixed == NULL) {
+            free(copy);
+            return NULL;
+        }
+        strcpy(prefixed, "COLUMN");
+        strcat(prefixed, copy);
+        free(copy);
+        copy = prefixed;
+    }
+    return copy;
+}
+
+static int carbon_codegen_string_in_list(const char *value, const char *const *items, size_t count, int insensitive) {
+    size_t index;
+
+    for (index = 0; index < count; ++index) {
+        if (insensitive ? carbon_ascii_case_equals(value, items[index]) : strcmp(value, items[index]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int carbon_codegen_python_keyword(const char *value) {
+    static const char *const keywords[] = {
+            "False", "None", "True", "and", "as", "assert", "async", "await",
+            "break", "class", "continue", "def", "del", "elif", "else", "except",
+            "finally", "for", "from", "global", "if", "import", "in", "is",
+            "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try",
+            "while", "with", "yield"
+    };
+    return carbon_codegen_string_in_list(value, keywords, sizeof(keywords) / sizeof(keywords[0]), 0);
+}
+
+static int carbon_codegen_ts_reserved(const char *value) {
+    static const char *const reserved[] = {
+            "class", "const", "enum", "export", "function", "import", "interface", "let", "type"
+    };
+    return carbon_codegen_string_in_list(value, reserved, sizeof(reserved) / sizeof(reserved[0]), 1);
+}
+
+static int carbon_codegen_php_class_reserved(const char *value) {
+    static const char *const reserved[] = {"class", "interface", "trait", "enum"};
+    return carbon_codegen_string_in_list(value, reserved, sizeof(reserved) / sizeof(reserved[0]), 1);
+}
+
+static int carbon_codegen_ruby_field_reserved(const char *value) {
+    static const char *const reserved[] = {"class", "module", "def", "end"};
+    return carbon_codegen_string_in_list(value, reserved, sizeof(reserved) / sizeof(reserved[0]), 0);
+}
+
+static int carbon_codegen_model_constant_reserved(const char *value) {
+    static const char *const reserved[] = {
+            "TABLE", "PRIMARY", "FIELDS", "COLUMNS", "COLUMN_NAMES", "DB_TYPES", "NULLABLE"
+    };
+    return carbon_codegen_string_in_list(value, reserved, sizeof(reserved) / sizeof(reserved[0]), 0);
+}
+
+static carbon_status carbon_codegen_class_name(
+        const char *table_name,
+        carbon_name_set *used,
+        carbon_model_language language,
+        char **out) {
+    char *base = carbon_codegen_pascal_base(table_name);
+    carbon_status status;
+
+    if (base == NULL) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    if ((language == CARBON_MODEL_LANGUAGE_PYTHON && carbon_codegen_python_keyword(base))
+        || (language == CARBON_MODEL_LANGUAGE_TYPESCRIPT && carbon_codegen_ts_reserved(base))
+        || (language == CARBON_MODEL_LANGUAGE_PHP && carbon_codegen_php_class_reserved(base))) {
+        char *with_suffix;
+        size_t length = strlen(base);
+
+        with_suffix = (char *) malloc(length + strlen("Model") + 1);
+        if (with_suffix == NULL) {
+            free(base);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        strcpy(with_suffix, base);
+        strcat(with_suffix, "Model");
+        free(base);
+        base = with_suffix;
+    }
+    status = carbon_codegen_claim_name(base, used, out);
+    free(base);
+    return status;
+}
+
+static carbon_status carbon_codegen_field_name(
+        const char *column_name,
+        carbon_name_set *used,
+        carbon_model_language language,
+        char **out) {
+    char *base = carbon_codegen_field_base(column_name);
+    carbon_status status;
+
+    if (base == NULL) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    if ((language == CARBON_MODEL_LANGUAGE_PYTHON && carbon_codegen_python_keyword(base))
+        || (language == CARBON_MODEL_LANGUAGE_RUBY && carbon_codegen_ruby_field_reserved(base))) {
+        char *with_suffix;
+        size_t length = strlen(base);
+
+        with_suffix = (char *) malloc(length + 2);
+        if (with_suffix == NULL) {
+            free(base);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        strcpy(with_suffix, base);
+        strcat(with_suffix, "_");
+        free(base);
+        base = with_suffix;
+    }
+    status = carbon_codegen_claim_name(base, used, out);
+    free(base);
+    return status;
+}
+
+static carbon_status carbon_codegen_constant_name(
+        const char *name,
+        carbon_name_set *used,
+        char **out) {
+    char *base = carbon_codegen_constant_base(name);
+    carbon_status status;
+
+    if (base == NULL) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    if (carbon_codegen_model_constant_reserved(base)) {
+        char *with_suffix;
+        size_t length = strlen(base);
+
+        with_suffix = (char *) malloc(length + strlen("_COLUMN") + 1);
+        if (with_suffix == NULL) {
+            free(base);
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+        strcpy(with_suffix, base);
+        strcat(with_suffix, "_COLUMN");
+        free(base);
+        base = with_suffix;
+    }
+    status = carbon_codegen_claim_name(base, used, out);
+    free(base);
+    return status;
+}
+
+static carbon_status carbon_codegen_seed_model_constants(carbon_name_set *used) {
+    static const char *const reserved[] = {
+            "TABLE", "PRIMARY", "FIELDS", "COLUMNS", "COLUMN_NAMES", "DB_TYPES", "NULLABLE"
+    };
+    size_t index;
+
+    for (index = 0; index < sizeof(reserved) / sizeof(reserved[0]); ++index) {
+        if (!carbon_name_set_add_copy(used, reserved[index])) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+    }
+    return CARBON_STATUS_OK;
+}
+
+static char *carbon_codegen_type_base(const carbon_model_column *column) {
+    const char *value = column->has_db_type && column->db_type != NULL ? column->db_type : "";
+    const char *start = value;
+    const char *end = value + strlen(value);
+    char *copy;
+    char *cursor;
+
+    while (start < end && isspace((unsigned char) *start)) {
+        ++start;
+    }
+    while (end > start && isspace((unsigned char) end[-1])) {
+        --end;
+    }
+    for (cursor = (char *) start; cursor < end; ++cursor) {
+        if (*cursor == '(') {
+            end = cursor;
+            break;
+        }
+    }
+    copy = carbon_strndup_local(start, (size_t) (end - start));
+    if (copy == NULL) {
+        return NULL;
+    }
+    for (cursor = copy; *cursor != '\0'; ++cursor) {
+        *cursor = (char) tolower((unsigned char) *cursor);
+    }
+    return copy;
+}
+
+static int carbon_codegen_type_matches(const char *type, const char *const *values, size_t count) {
+    return carbon_codegen_string_in_list(type, values, count, 0);
+}
+
+static const char *carbon_codegen_python_type(const carbon_model_column *column, char *type) {
+    static const char *const ints[] = {"tinyint", "smallint", "mediumint", "int", "integer", "bigint", "year"};
+    static const char *const floats[] = {"decimal", "dec", "numeric", "float", "double", "real"};
+    static const char *const bools[] = {"boolean", "bool"};
+    static const char *const bytes[] = {"binary", "varbinary", "blob", "tinyblob", "mediumblob", "longblob"};
+    static const char *const objects[] = {"json", "geometry", "point", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection"};
+    const char *base = "str";
+
+    if (type[0] == '\0') {
+        return "Any";
+    }
+    if (carbon_codegen_type_matches(type, ints, sizeof(ints) / sizeof(ints[0]))) {
+        base = "int";
+    } else if (carbon_codegen_type_matches(type, floats, sizeof(floats) / sizeof(floats[0]))) {
+        base = "float";
+    } else if (carbon_codegen_type_matches(type, bools, sizeof(bools) / sizeof(bools[0]))) {
+        base = "bool";
+    } else if (carbon_codegen_type_matches(type, bytes, sizeof(bytes) / sizeof(bytes[0]))) {
+        base = "bytes";
+    } else if (carbon_codegen_type_matches(type, objects, sizeof(objects) / sizeof(objects[0]))) {
+        base = "Dict[str, Any]";
+    }
+    if (column->has_nullable && column->nullable && strcmp(base, "Any") != 0) {
+        if (strcmp(base, "int") == 0) return "Optional[int]";
+        if (strcmp(base, "float") == 0) return "Optional[float]";
+        if (strcmp(base, "bool") == 0) return "Optional[bool]";
+        if (strcmp(base, "bytes") == 0) return "Optional[bytes]";
+        if (strcmp(base, "Dict[str, Any]") == 0) return "Optional[Dict[str, Any]]";
+        return "Optional[str]";
+    }
+    return base;
+}
+
+static const char *carbon_codegen_php_type(const carbon_model_column *column, char *type) {
+    static const char *const ints[] = {"tinyint", "smallint", "mediumint", "int", "integer", "bigint", "year"};
+    static const char *const floats[] = {"decimal", "dec", "numeric", "float", "double", "real"};
+    static const char *const bools[] = {"boolean", "bool"};
+    static const char *const arrays[] = {"json", "geometry", "point", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection"};
+    const char *base = "string";
+
+    if (type[0] == '\0') {
+        return "mixed";
+    }
+    if (carbon_codegen_type_matches(type, ints, sizeof(ints) / sizeof(ints[0]))) {
+        base = "int";
+    } else if (carbon_codegen_type_matches(type, floats, sizeof(floats) / sizeof(floats[0]))) {
+        base = "float";
+    } else if (carbon_codegen_type_matches(type, bools, sizeof(bools) / sizeof(bools[0]))) {
+        base = "bool";
+    } else if (carbon_codegen_type_matches(type, arrays, sizeof(arrays) / sizeof(arrays[0]))) {
+        base = "array";
+    }
+    if (column->has_nullable && column->nullable && strcmp(base, "mixed") != 0) {
+        if (strcmp(base, "int") == 0) return "int|null";
+        if (strcmp(base, "float") == 0) return "float|null";
+        if (strcmp(base, "bool") == 0) return "bool|null";
+        if (strcmp(base, "array") == 0) return "array|null";
+        return "string|null";
+    }
+    return base;
+}
+
+static const char *carbon_codegen_ruby_type(char *type) {
+    static const char *const ints[] = {"tinyint", "smallint", "mediumint", "int", "integer", "bigint", "year"};
+    static const char *const floats[] = {"decimal", "dec", "numeric", "float", "double", "real"};
+    static const char *const bools[] = {"boolean", "bool"};
+    static const char *const binaries[] = {"binary", "varbinary", "blob", "tinyblob", "mediumblob", "longblob"};
+    static const char *const objects[] = {"json", "geometry", "point", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection"};
+
+    if (carbon_codegen_type_matches(type, ints, sizeof(ints) / sizeof(ints[0]))) return "integer";
+    if (carbon_codegen_type_matches(type, floats, sizeof(floats) / sizeof(floats[0]))) return "float";
+    if (carbon_codegen_type_matches(type, bools, sizeof(bools) / sizeof(bools[0]))) return "boolean";
+    if (carbon_codegen_type_matches(type, binaries, sizeof(binaries) / sizeof(binaries[0]))) return "binary";
+    if (carbon_codegen_type_matches(type, objects, sizeof(objects) / sizeof(objects[0]))) return "object";
+    return type[0] == '\0' ? "any" : "string";
+}
+
+static const char *carbon_codegen_ts_type(const carbon_model_column *column, char *type) {
+    static const char *const numbers[] = {
+            "tinyint", "smallint", "mediumint", "int", "integer", "bigint",
+            "decimal", "dec", "numeric", "float", "double", "real", "year"
+    };
+    static const char *const bools[] = {"boolean", "bool"};
+    static const char *const dates[] = {"date", "datetime", "timestamp", "time"};
+    static const char *const binaries[] = {"binary", "varbinary", "blob", "tinyblob", "mediumblob", "longblob"};
+    static const char *const objects[] = {"json", "geometry", "point", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection"};
+
+    if (carbon_codegen_type_matches(type, numbers, sizeof(numbers) / sizeof(numbers[0]))) {
+        return column->has_nullable && column->nullable ? "number | null" : "number";
+    }
+    if (carbon_codegen_type_matches(type, bools, sizeof(bools) / sizeof(bools[0]))) {
+        return column->has_nullable && column->nullable ? "boolean | null" : "boolean";
+    }
+    if (carbon_codegen_type_matches(type, dates, sizeof(dates) / sizeof(dates[0]))) {
+        return column->has_nullable && column->nullable
+               ? "Date | number | string | null"
+               : "Date | number | string";
+    }
+    if (carbon_codegen_type_matches(type, binaries, sizeof(binaries) / sizeof(binaries[0]))) {
+        return column->has_nullable && column->nullable ? "Buffer | string | null" : "Buffer | string";
+    }
+    if (carbon_codegen_type_matches(type, objects, sizeof(objects) / sizeof(objects[0]))) {
+        return column->has_nullable && column->nullable
+               ? "Record<string, unknown> | null"
+               : "Record<string, unknown>";
+    }
+    if (type[0] == '\0') {
+        return column->has_nullable && column->nullable ? "unknown | null" : "unknown";
+    }
+    return column->has_nullable && column->nullable ? "string | null" : "string";
+}
+
+static int carbon_codegen_ts_identifier_valid(const char *value) {
+    const unsigned char *cursor = (const unsigned char *) (value == NULL ? "" : value);
+
+    if (!(isalpha(*cursor) || *cursor == '_' || *cursor == '$')) {
+        return 0;
+    }
+    ++cursor;
+    while (*cursor != '\0') {
+        if (!(isalnum(*cursor) || *cursor == '_' || *cursor == '$')) {
+            return 0;
+        }
+        ++cursor;
+    }
+    return !carbon_codegen_ts_reserved(value);
+}
+
+static int carbon_codegen_append_ts_property(carbon_string_builder *out, const char *name) {
+    return carbon_codegen_ts_identifier_valid(name)
+           ? carbon_builder_append(out, name)
+           : carbon_builder_append_json_string(out, name);
+}
+
+static int carbon_codegen_append_python_tuple(carbon_string_builder *out, char **values, size_t count) {
+    size_t index;
+
+    if (count == 0) {
+        return carbon_builder_append(out, "()");
+    }
+    if (!carbon_builder_append_char(out, '(')) {
+        return 0;
+    }
+    for (index = 0; index < count; ++index) {
+        if (index > 0 && !carbon_builder_append(out, ", ")) {
+            return 0;
+        }
+        if (!carbon_codegen_append_single_quoted(out, values[index])) {
+            return 0;
+        }
+    }
+    if (count == 1 && !carbon_builder_append_char(out, ',')) {
+        return 0;
+    }
+    return carbon_builder_append_char(out, ')');
+}
+
+static int carbon_codegen_append_python_constant_tuple(
+        carbon_string_builder *out,
+        char **values,
+        size_t count) {
+    size_t index;
+
+    if (count == 0) {
+        return carbon_builder_append(out, "()");
+    }
+    if (!carbon_builder_append_char(out, '(')) {
+        return 0;
+    }
+    for (index = 0; index < count; ++index) {
+        if (index > 0 && !carbon_builder_append(out, ", ")) {
+            return 0;
+        }
+        if (!carbon_builder_append(out, values[index])) {
+            return 0;
+        }
+    }
+    if (count == 1 && !carbon_builder_append_char(out, ',')) {
+        return 0;
+    }
+    return carbon_builder_append_char(out, ')');
+}
+
+static carbon_status carbon_codegen_generate_python(
+        const carbon_model_schema *schema,
+        carbon_string_builder *out) {
+    carbon_name_set used_classes = {0};
+    size_t table_index;
+    carbon_status status = CARBON_STATUS_OK;
+
+    if (!carbon_codegen_append_line(out, "import carbon_codegen as _carbon_codegen")
+        || !carbon_codegen_append_line(out, "from dataclasses import dataclass")
+        || !carbon_codegen_append_line(out, "from typing import Any, Dict, Optional")
+        || !carbon_codegen_append_line(out, "")) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+
+    for (table_index = 0; table_index < schema->table_count; ++table_index) {
+        const carbon_model_table *table = &schema->tables[table_index];
+        carbon_name_set used_fields = {0};
+        carbon_name_set used_constants = {0};
+        char *class_name = NULL;
+        char **fields = NULL;
+        char **field_constants = NULL;
+        char **column_constants = NULL;
+        char **python_types = NULL;
+        size_t column_index;
+
+        status = carbon_codegen_class_name(
+                table->name == NULL ? "" : table->name,
+                &used_classes,
+                CARBON_MODEL_LANGUAGE_PYTHON,
+                &class_name);
+        if (status != CARBON_STATUS_OK) {
+            goto python_table_cleanup;
+        }
+        status = carbon_codegen_seed_model_constants(&used_constants);
+        if (status != CARBON_STATUS_OK) {
+            goto python_table_cleanup;
+        }
+        fields = (char **) calloc(table->column_count, sizeof(*fields));
+        field_constants = (char **) calloc(table->column_count, sizeof(*field_constants));
+        column_constants = (char **) calloc(table->column_count, sizeof(*column_constants));
+        python_types = (char **) calloc(table->column_count, sizeof(*python_types));
+        if ((table->column_count > 0)
+            && (fields == NULL || field_constants == NULL || column_constants == NULL || python_types == NULL)) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            char *type_base;
+
+            status = carbon_codegen_field_name(
+                    table->columns[column_index].name,
+                    &used_fields,
+                    CARBON_MODEL_LANGUAGE_PYTHON,
+                    &fields[column_index]);
+            if (status == CARBON_STATUS_OK) {
+                carbon_string_builder field_constant_base = {0};
+
+                if (!carbon_builder_append(&field_constant_base, "FIELD_")
+                    || !carbon_builder_append(&field_constant_base, fields[column_index])) {
+                    carbon_builder_free(&field_constant_base);
+                    status = CARBON_STATUS_OUT_OF_MEMORY;
+                    goto python_table_cleanup;
+                }
+                status = carbon_codegen_constant_name(
+                        field_constant_base.data,
+                        &used_constants,
+                        &field_constants[column_index]);
+                carbon_builder_free(&field_constant_base);
+            }
+            if (status == CARBON_STATUS_OK) {
+                status = carbon_codegen_constant_name(
+                        fields[column_index],
+                        &used_constants,
+                        &column_constants[column_index]);
+            }
+            if (status != CARBON_STATUS_OK) {
+                goto python_table_cleanup;
+            }
+            type_base = carbon_codegen_type_base(&table->columns[column_index]);
+            if (type_base == NULL) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto python_table_cleanup;
+            }
+            python_types[column_index] = carbon_strndup_local(
+                    carbon_codegen_python_type(&table->columns[column_index], type_base),
+                    strlen(carbon_codegen_python_type(&table->columns[column_index], type_base)));
+            free(type_base);
+            if (python_types[column_index] == NULL) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto python_table_cleanup;
+            }
+        }
+
+        if (!carbon_codegen_append_line(out, "@dataclass")
+            || !carbon_builder_append(out, "class ")
+            || !carbon_builder_append(out, class_name)
+            || !carbon_codegen_append_line(out, ":")
+            || !carbon_builder_append(out, "    TABLE = ")
+            || !carbon_codegen_append_single_quoted(out, table->name)
+            || !carbon_builder_append_char(out, '\n')
+            || !carbon_codegen_append_line(out, "    __carbon_table__ = TABLE")
+            || !carbon_builder_append(out, "    PRIMARY = ")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        if (!carbon_codegen_append_python_tuple(out, table->primary, table->primary_count)
+            || !carbon_builder_append_char(out, '\n')
+            || !carbon_codegen_append_line(out, "    __carbon_primary__ = PRIMARY")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "    ")
+                || !carbon_builder_append(out, field_constants[column_index])
+                || !carbon_builder_append(out, " = ")
+                || !carbon_codegen_append_single_quoted(out, table->columns[column_index].name)
+                || !carbon_builder_append_char(out, '\n')) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto python_table_cleanup;
+            }
+        }
+        if (!carbon_builder_append(out, "    FIELDS = ")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        if (!carbon_codegen_append_python_constant_tuple(out, field_constants, table->column_count)
+            || !carbon_builder_append_char(out, '\n')) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "    ")
+                || !carbon_builder_append(out, column_constants[column_index])
+                || !carbon_builder_append(out, " = ")
+                || !carbon_codegen_append_single_quoted(out, table->columns[column_index].qualified)
+                || !carbon_builder_append_char(out, '\n')) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto python_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "    __carbon_columns__ = {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "        ")
+                || !carbon_builder_append(out, field_constants[column_index])
+                || !carbon_builder_append(out, ": ")
+                || !carbon_builder_append(out, column_constants[column_index])
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto python_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "    }")
+            || !carbon_codegen_append_line(out, "    COLUMNS = __carbon_columns__")
+            || !carbon_codegen_append_line(out, "    __carbon_column_names__ = {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "        ")
+                || !carbon_builder_append(out, field_constants[column_index])
+                || !carbon_builder_append(out, ": ")
+                || !carbon_codegen_append_single_quoted(out, table->columns[column_index].name)
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto python_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "    }")
+            || !carbon_codegen_append_line(out, "    COLUMN_NAMES = __carbon_column_names__")
+            || !carbon_codegen_append_line(out, "    __carbon_db_types__ = {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!table->columns[column_index].has_db_type) {
+                continue;
+            }
+            if (!carbon_builder_append(out, "        ")
+                || !carbon_codegen_append_single_quoted(out, fields[column_index])
+                || !carbon_builder_append(out, ": ")
+                || !carbon_codegen_append_single_quoted(out, table->columns[column_index].db_type)
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto python_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "    }")
+            || !carbon_codegen_append_line(out, "    DB_TYPES = __carbon_db_types__")
+            || !carbon_codegen_append_line(out, "    __carbon_nullable__ = {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!table->columns[column_index].has_nullable) {
+                continue;
+            }
+            if (!carbon_builder_append(out, "        ")
+                || !carbon_codegen_append_single_quoted(out, fields[column_index])
+                || !carbon_builder_append(out, table->columns[column_index].nullable ? ": True,\n" : ": False,\n")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto python_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "    }")
+            || !carbon_codegen_append_line(out, "    NULLABLE = __carbon_nullable__")
+            || !carbon_codegen_append_line(out, "")
+            || !carbon_codegen_append_line(out, "    @classmethod")
+            || !carbon_codegen_append_line(out, "    def GetPayload(cls, query=None):")
+            || !carbon_codegen_append_line(out, "        return _carbon_codegen.model_get_payload(cls, query)")
+            || !carbon_codegen_append_line(out, "")
+            || !carbon_codegen_append_line(out, "    @classmethod")
+            || !carbon_codegen_append_line(out, "    def Get(cls, query=None, **options):")
+            || !carbon_codegen_append_line(out, "        return _carbon_codegen.model_get_request(cls, query, **options)")
+            || !carbon_codegen_append_line(out, "")
+            || !carbon_codegen_append_line(out, "    get_payload = GetPayload")
+            || !carbon_codegen_append_line(out, "    get = Get")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        if (table->column_count > 0 && !carbon_codegen_append_line(out, "")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "    ")
+                || !carbon_builder_append(out, fields[column_index])
+                || !carbon_builder_append(out, ": ")
+                || !carbon_builder_append(out, python_types[column_index])
+                || !carbon_codegen_append_line(out, " = None")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto python_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto python_table_cleanup;
+        }
+
+python_table_cleanup:
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            free(fields == NULL ? NULL : fields[column_index]);
+            free(field_constants == NULL ? NULL : field_constants[column_index]);
+            free(column_constants == NULL ? NULL : column_constants[column_index]);
+            free(python_types == NULL ? NULL : python_types[column_index]);
+        }
+        free(fields);
+        free(field_constants);
+        free(column_constants);
+        free(python_types);
+        free(class_name);
+        carbon_name_set_free(&used_fields);
+        carbon_name_set_free(&used_constants);
+        if (status != CARBON_STATUS_OK) {
+            break;
+        }
+    }
+    carbon_name_set_free(&used_classes);
+    return status;
+}
+
+static int carbon_codegen_append_json_array_strings(
+        carbon_string_builder *out,
+        char **values,
+        size_t count) {
+    size_t index;
+
+    if (!carbon_builder_append_char(out, '[')) {
+        return 0;
+    }
+    for (index = 0; index < count; ++index) {
+        if (index > 0 && !carbon_builder_append_char(out, ',')) {
+            return 0;
+        }
+        if (!carbon_builder_append_json_string(out, values[index])) {
+            return 0;
+        }
+    }
+    return carbon_builder_append_char(out, ']');
+}
+
+static int carbon_codegen_append_ts_array_strings(
+        carbon_string_builder *out,
+        char **values,
+        size_t count) {
+    size_t index;
+
+    if (!carbon_builder_append_char(out, '[')) {
+        return 0;
+    }
+    for (index = 0; index < count; ++index) {
+        if (index > 0 && !carbon_builder_append(out, ", ")) {
+            return 0;
+        }
+        if (!carbon_builder_append_json_string(out, values[index])) {
+            return 0;
+        }
+    }
+    return carbon_builder_append_char(out, ']');
+}
+
+static carbon_status carbon_codegen_generate_typescript(
+        const carbon_model_schema *schema,
+        carbon_string_builder *out) {
+    carbon_name_set used_types = {0};
+    size_t table_index;
+    carbon_status status = CARBON_STATUS_OK;
+
+    if (schema->table_count == 0) {
+        carbon_name_set_free(&used_types);
+        return CARBON_STATUS_OK;
+    }
+    if (!carbon_codegen_append_line(out, "import * as carbon from '@carbonorm/carbonc';")
+        || !carbon_codegen_append_line(out, "")) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    for (table_index = 0; table_index < schema->table_count; ++table_index) {
+        const carbon_model_table *table = &schema->tables[table_index];
+        char *type_name = NULL;
+        size_t column_index;
+
+        status = carbon_codegen_class_name(table->name, &used_types, CARBON_MODEL_LANGUAGE_TYPESCRIPT, &type_name);
+        if (status != CARBON_STATUS_OK) {
+            goto ts_table_cleanup;
+        }
+        if (!carbon_builder_append(out, "export interface ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, " {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ts_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            char *type_base = carbon_codegen_type_base(&table->columns[column_index]);
+            const char *type_name_value;
+
+            if (type_base == NULL) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ts_table_cleanup;
+            }
+            type_name_value = carbon_codegen_ts_type(&table->columns[column_index], type_base);
+            if (!carbon_builder_append(out, "  ")
+                || !carbon_codegen_append_ts_property(out, table->columns[column_index].name)
+                || !carbon_builder_append(out, ": ")
+                || !carbon_builder_append(out, type_name_value)
+                || !carbon_codegen_append_line(out, ";")) {
+                free(type_base);
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ts_table_cleanup;
+            }
+            free(type_base);
+        }
+        if (!carbon_codegen_append_line(out, "}")
+            || !carbon_codegen_append_line(out, "")
+            || !carbon_builder_append(out, "export const ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_builder_append(out, "Table = ")
+            || !carbon_builder_append_json_string(out, table->name)
+            || !carbon_codegen_append_line(out, " as const;")
+            || !carbon_builder_append(out, "export const ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Fields = {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ts_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "  ")
+                || !carbon_codegen_append_ts_property(out, table->columns[column_index].name)
+                || !carbon_builder_append(out, ": ")
+                || !carbon_builder_append_json_string(out, table->columns[column_index].name)
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ts_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "} as const;")
+            || !carbon_codegen_append_line(out, "")
+            || !carbon_builder_append(out, "export const ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Columns = {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ts_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "  ")
+                || !carbon_codegen_append_ts_property(out, table->columns[column_index].name)
+                || !carbon_builder_append(out, ": ")
+                || !carbon_builder_append_json_string(out, table->columns[column_index].qualified)
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ts_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "} as const;")
+            || !carbon_codegen_append_line(out, "")
+            || !carbon_builder_append(out, "export const ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Meta = {")
+            || !carbon_builder_append(out, "  table: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Table,")
+            || !carbon_builder_append(out, "  primary: ")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ts_table_cleanup;
+        }
+        if (!carbon_codegen_append_ts_array_strings(out, table->primary, table->primary_count)
+            || !carbon_codegen_append_line(out, ",")
+            || !carbon_builder_append(out, "  fields: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Fields,")
+            || !carbon_builder_append(out, "  columns: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Columns,")
+            || !carbon_codegen_append_line(out, "  dbTypes: {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ts_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!table->columns[column_index].has_db_type) {
+                continue;
+            }
+            if (!carbon_builder_append(out, "    ")
+                || !carbon_codegen_append_ts_property(out, table->columns[column_index].name)
+                || !carbon_builder_append(out, ": ")
+                || !carbon_builder_append_json_string(out, table->columns[column_index].db_type)
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ts_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "  },")
+            || !carbon_codegen_append_line(out, "  nullable: {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ts_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!table->columns[column_index].has_nullable) {
+                continue;
+            }
+            if (!carbon_builder_append(out, "    ")
+                || !carbon_codegen_append_ts_property(out, table->columns[column_index].name)
+                || !carbon_builder_append(out, table->columns[column_index].nullable ? ": true,\n" : ": false,\n")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ts_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "  },")
+            || !carbon_codegen_append_line(out, "} as const;")
+            || !carbon_codegen_append_line(out, "")
+            || !carbon_builder_append(out, "export const ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, " = Object.freeze({")
+            || !carbon_builder_append(out, "  table: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Table,")
+            || !carbon_builder_append(out, "  TABLE: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Table,")
+            || !carbon_builder_append(out, "  primary: ")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ts_table_cleanup;
+        }
+        if (!carbon_codegen_append_ts_array_strings(out, table->primary, table->primary_count)
+            || !carbon_codegen_append_line(out, ",")
+            || !carbon_builder_append(out, "  PRIMARY: ")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ts_table_cleanup;
+        }
+        if (!carbon_codegen_append_ts_array_strings(out, table->primary, table->primary_count)
+            || !carbon_codegen_append_line(out, ",")
+            || !carbon_builder_append(out, "  fields: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Fields,")
+            || !carbon_builder_append(out, "  FIELDS: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Fields,")
+            || !carbon_builder_append(out, "  columns: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Columns,")
+            || !carbon_builder_append(out, "  COLUMNS: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Columns,")
+            || !carbon_builder_append(out, "  dbTypes: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Meta.dbTypes,")
+            || !carbon_builder_append(out, "  nullable: ")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Meta.nullable,")
+            || !carbon_codegen_append_line(out, "  GetPayload(query = {}) {")
+            || !carbon_builder_append(out, "    return carbon.modelGetPayload(")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Meta, query);")
+            || !carbon_codegen_append_line(out, "  },")
+            || !carbon_codegen_append_line(out, "  Get(query = {}, options = {}) {")
+            || !carbon_builder_append(out, "    return carbon.modelGetRequest(")
+            || !carbon_builder_append(out, type_name)
+            || !carbon_codegen_append_line(out, "Meta, query, options);")
+            || !carbon_codegen_append_line(out, "  },")
+            || !carbon_codegen_append_line(out, "});")
+            || !carbon_codegen_append_line(out, "")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ts_table_cleanup;
+        }
+
+ts_table_cleanup:
+        free(type_name);
+        if (status != CARBON_STATUS_OK) {
+            break;
+        }
+    }
+    carbon_name_set_free(&used_types);
+    return status;
+}
+
+static int carbon_codegen_append_php_array_strings(
+        carbon_string_builder *out,
+        char **values,
+        size_t count) {
+    size_t index;
+
+    if (!carbon_builder_append_char(out, '[')) {
+        return 0;
+    }
+    for (index = 0; index < count; ++index) {
+        if (index > 0 && !carbon_builder_append(out, ", ")) {
+            return 0;
+        }
+        if (!carbon_codegen_append_single_quoted(out, values[index])) {
+            return 0;
+        }
+    }
+    return carbon_builder_append_char(out, ']');
+}
+
+static int carbon_codegen_php_namespace_valid(const char *namespace_name) {
+    const char *cursor = namespace_name;
+    int segment_start = 1;
+
+    if (namespace_name == NULL || *namespace_name == '\0') {
+        return 1;
+    }
+    while (*cursor != '\0') {
+        unsigned char ch = (unsigned char) *cursor;
+
+        if (segment_start) {
+            if (!(isalpha(ch) || ch == '_')) {
+                return 0;
+            }
+            segment_start = 0;
+        } else if (ch == '\\') {
+            segment_start = 1;
+        } else if (!(isalnum(ch) || ch == '_')) {
+            return 0;
+        }
+        ++cursor;
+    }
+    return !segment_start;
+}
+
+static carbon_status carbon_codegen_generate_php(
+        const carbon_model_schema *schema,
+        const char *namespace_name,
+        carbon_string_builder *out) {
+    carbon_name_set used_classes = {0};
+    size_t table_index;
+    carbon_status status = CARBON_STATUS_OK;
+
+    if (!carbon_codegen_php_namespace_valid(namespace_name)) {
+        return CARBON_STATUS_INVALID_ARGUMENT;
+    }
+    if (!carbon_codegen_append_line(out, "<?php")
+        || !carbon_codegen_append_line(out, "")) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    if (namespace_name != NULL && namespace_name[0] != '\0') {
+        if (!carbon_builder_append(out, "namespace ")
+            || !carbon_builder_append(out, namespace_name)
+            || !carbon_codegen_append_line(out, ";")
+            || !carbon_codegen_append_line(out, "")) {
+            return CARBON_STATUS_OUT_OF_MEMORY;
+        }
+    }
+    for (table_index = 0; table_index < schema->table_count; ++table_index) {
+        const carbon_model_table *table = &schema->tables[table_index];
+        carbon_name_set used_properties = {0};
+        carbon_name_set used_constants = {0};
+        char *class_name = NULL;
+        char **properties = NULL;
+        char **field_constants = NULL;
+        char **column_constants = NULL;
+        char **property_types = NULL;
+        size_t column_index;
+
+        status = carbon_codegen_class_name(table->name, &used_classes, CARBON_MODEL_LANGUAGE_PHP, &class_name);
+        if (status != CARBON_STATUS_OK) {
+            goto php_table_cleanup;
+        }
+        status = carbon_codegen_seed_model_constants(&used_constants);
+        if (status != CARBON_STATUS_OK) {
+            goto php_table_cleanup;
+        }
+        properties = (char **) calloc(table->column_count, sizeof(*properties));
+        field_constants = (char **) calloc(table->column_count, sizeof(*field_constants));
+        column_constants = (char **) calloc(table->column_count, sizeof(*column_constants));
+        property_types = (char **) calloc(table->column_count, sizeof(*property_types));
+        if (table->column_count > 0
+            && (properties == NULL || field_constants == NULL || column_constants == NULL || property_types == NULL)) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            char *type_base;
+
+            status = carbon_codegen_field_name(
+                    table->columns[column_index].name,
+                    &used_properties,
+                    CARBON_MODEL_LANGUAGE_PHP,
+                    &properties[column_index]);
+            if (status == CARBON_STATUS_OK) {
+                carbon_string_builder field_constant_base = {0};
+
+                if (!carbon_builder_append(&field_constant_base, "FIELD_")
+                    || !carbon_builder_append(&field_constant_base, properties[column_index])) {
+                    carbon_builder_free(&field_constant_base);
+                    status = CARBON_STATUS_OUT_OF_MEMORY;
+                    goto php_table_cleanup;
+                }
+                status = carbon_codegen_constant_name(field_constant_base.data, &used_constants, &field_constants[column_index]);
+                carbon_builder_free(&field_constant_base);
+            }
+            if (status == CARBON_STATUS_OK) {
+                status = carbon_codegen_constant_name(properties[column_index], &used_constants, &column_constants[column_index]);
+            }
+            if (status != CARBON_STATUS_OK) {
+                goto php_table_cleanup;
+            }
+            type_base = carbon_codegen_type_base(&table->columns[column_index]);
+            if (type_base == NULL) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto php_table_cleanup;
+            }
+            property_types[column_index] = carbon_strndup_local(
+                    carbon_codegen_php_type(&table->columns[column_index], type_base),
+                    strlen(carbon_codegen_php_type(&table->columns[column_index], type_base)));
+            free(type_base);
+            if (property_types[column_index] == NULL) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto php_table_cleanup;
+            }
+        }
+
+        if (!carbon_builder_append(out, "final class ")
+            || !carbon_builder_append(out, class_name)
+            || !carbon_codegen_append_line(out, "")
+            || !carbon_codegen_append_line(out, "{")
+            || !carbon_builder_append(out, "    public const TABLE = ")
+            || !carbon_codegen_append_single_quoted(out, table->name)
+            || !carbon_codegen_append_line(out, ";")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "    public const ")
+                || !carbon_builder_append(out, field_constants[column_index])
+                || !carbon_builder_append(out, " = ")
+                || !carbon_codegen_append_single_quoted(out, table->columns[column_index].name)
+                || !carbon_codegen_append_line(out, ";")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto php_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "    public const FIELDS = [")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "        self::")
+                || !carbon_builder_append(out, field_constants[column_index])
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto php_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "    ];")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "    public const ")
+                || !carbon_builder_append(out, column_constants[column_index])
+                || !carbon_builder_append(out, " = ")
+                || !carbon_codegen_append_single_quoted(out, table->columns[column_index].qualified)
+                || !carbon_codegen_append_line(out, ";")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto php_table_cleanup;
+            }
+        }
+        if (!carbon_builder_append(out, "    public const PRIMARY = ")
+            || !carbon_codegen_append_php_array_strings(out, table->primary, table->primary_count)
+            || !carbon_codegen_append_line(out, ";")
+            || !carbon_builder_append(out, "    public const DB_TYPES = [")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+        {
+            int wrote = 0;
+            for (column_index = 0; column_index < table->column_count; ++column_index) {
+                if (!table->columns[column_index].has_db_type) {
+                    continue;
+                }
+                if (wrote && !carbon_builder_append(out, ", ")) {
+                    status = CARBON_STATUS_OUT_OF_MEMORY;
+                    goto php_table_cleanup;
+                }
+                if (!carbon_codegen_append_single_quoted(out, properties[column_index])
+                    || !carbon_builder_append(out, " => ")
+                    || !carbon_codegen_append_single_quoted(out, table->columns[column_index].db_type)) {
+                    status = CARBON_STATUS_OUT_OF_MEMORY;
+                    goto php_table_cleanup;
+                }
+                wrote = 1;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "];")
+            || !carbon_builder_append(out, "    public const NULLABLE = [")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+        {
+            int wrote = 0;
+            for (column_index = 0; column_index < table->column_count; ++column_index) {
+                if (!table->columns[column_index].has_nullable) {
+                    continue;
+                }
+                if (wrote && !carbon_builder_append(out, ", ")) {
+                    status = CARBON_STATUS_OUT_OF_MEMORY;
+                    goto php_table_cleanup;
+                }
+                if (!carbon_codegen_append_single_quoted(out, properties[column_index])
+                    || !carbon_builder_append(out, table->columns[column_index].nullable ? " => true" : " => false")) {
+                    status = CARBON_STATUS_OUT_OF_MEMORY;
+                    goto php_table_cleanup;
+                }
+                wrote = 1;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "];")
+            || !carbon_codegen_append_line(out, "    public const COLUMNS = [")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "        self::")
+                || !carbon_builder_append(out, field_constants[column_index])
+                || !carbon_builder_append(out, " => self::")
+                || !carbon_builder_append(out, column_constants[column_index])
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto php_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "    ];")
+            || !carbon_codegen_append_line(out, "    public const COLUMN_NAMES = [")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "        self::")
+                || !carbon_builder_append(out, field_constants[column_index])
+                || !carbon_builder_append(out, " => ")
+                || !carbon_codegen_append_single_quoted(out, table->columns[column_index].name)
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto php_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "    ];")
+            || !carbon_codegen_append_line(out, "")
+            || !carbon_codegen_append_line(out, "    public static function GetPayload(array $query = []): array")
+            || !carbon_codegen_append_line(out, "    {")
+            || !carbon_codegen_append_line(out, "        return \\carbon_model_get_payload(self::class, $query);")
+            || !carbon_codegen_append_line(out, "    }")
+            || !carbon_codegen_append_line(out, "")
+            || !carbon_codegen_append_line(out, "    public static function Get(array $query = [], $schema = null, string $dialect = \\CarbonDialect::MYSQL): array")
+            || !carbon_codegen_append_line(out, "    {")
+            || !carbon_codegen_append_line(out, "        return \\carbon_model_get_request(self::class, $query, $schema, $dialect);")
+            || !carbon_codegen_append_line(out, "    }")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+        if (table->column_count > 0 && !carbon_codegen_append_line(out, "")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_builder_append(out, "    /** @var ")
+                || !carbon_builder_append(out, property_types[column_index])
+                || !carbon_codegen_append_line(out, " */")
+                || !carbon_builder_append(out, "    public $")
+                || !carbon_builder_append(out, properties[column_index])
+                || !carbon_codegen_append_line(out, ";")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto php_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "}")
+            || !carbon_codegen_append_line(out, "")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto php_table_cleanup;
+        }
+
+php_table_cleanup:
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            free(properties == NULL ? NULL : properties[column_index]);
+            free(field_constants == NULL ? NULL : field_constants[column_index]);
+            free(column_constants == NULL ? NULL : column_constants[column_index]);
+            free(property_types == NULL ? NULL : property_types[column_index]);
+        }
+        free(properties);
+        free(field_constants);
+        free(column_constants);
+        free(property_types);
+        free(class_name);
+        carbon_name_set_free(&used_properties);
+        carbon_name_set_free(&used_constants);
+        if (status != CARBON_STATUS_OK) {
+            break;
+        }
+    }
+    carbon_name_set_free(&used_classes);
+    return status;
+}
+
+static int carbon_codegen_ruby_module_valid(const char *module_name) {
+    const char *cursor = module_name;
+    int segment_start = 1;
+    int colon_count = 0;
+
+    if (module_name == NULL || *module_name == '\0') {
+        return 0;
+    }
+    while (*cursor != '\0') {
+        unsigned char ch = (unsigned char) *cursor;
+
+        if (segment_start) {
+            if (!isupper(ch)) {
+                return 0;
+            }
+            segment_start = 0;
+            colon_count = 0;
+        } else if (ch == ':') {
+            ++colon_count;
+            if (colon_count > 2) {
+                return 0;
+            }
+            if (colon_count == 2) {
+                segment_start = 1;
+                colon_count = 0;
+            }
+        } else {
+            if (colon_count != 0 || !(isalnum(ch) || ch == '_')) {
+                return 0;
+            }
+        }
+        ++cursor;
+    }
+    return !segment_start && colon_count == 0;
+}
+
+static carbon_status carbon_codegen_generate_ruby(
+        const carbon_model_schema *schema,
+        const char *module_name,
+        carbon_string_builder *out) {
+    carbon_name_set used_classes = {0};
+    char *module_copy = NULL;
+    char *segment_start;
+    char **module_parts = NULL;
+    size_t module_count = 0;
+    size_t module_capacity = 0;
+    size_t table_index;
+    carbon_status status = CARBON_STATUS_OK;
+
+    if (module_name == NULL || module_name[0] == '\0') {
+        module_name = "CarbonModels";
+    }
+    if (!carbon_codegen_ruby_module_valid(module_name)) {
+        return CARBON_STATUS_INVALID_ARGUMENT;
+    }
+    module_copy = carbon_strndup_local(module_name, strlen(module_name));
+    if (module_copy == NULL) {
+        return CARBON_STATUS_OUT_OF_MEMORY;
+    }
+    segment_start = module_copy;
+    while (*segment_start != '\0') {
+        char *delimiter = strstr(segment_start, "::");
+
+        if (delimiter != NULL) {
+            *delimiter = '\0';
+        }
+        if (module_count == module_capacity) {
+            char **next;
+            module_capacity = module_capacity == 0 ? 2 : module_capacity * 2;
+            next = (char **) realloc(module_parts, module_capacity * sizeof(*module_parts));
+            if (next == NULL) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_cleanup;
+            }
+            module_parts = next;
+        }
+        module_parts[module_count++] = segment_start;
+        if (delimiter == NULL) {
+            break;
+        }
+        segment_start = delimiter + 2;
+    }
+    for (table_index = 0; table_index < module_count; ++table_index) {
+        if (!carbon_codegen_append_indent(out, table_index * 2)
+            || !carbon_builder_append(out, "module ")
+            || !carbon_codegen_append_line(out, module_parts[table_index])) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_cleanup;
+        }
+    }
+    for (table_index = 0; table_index < schema->table_count; ++table_index) {
+        const carbon_model_table *table = &schema->tables[table_index];
+        size_t base_indent = module_count * 2;
+        carbon_name_set used_fields = {0};
+        carbon_name_set used_constants = {0};
+        char *class_name = NULL;
+        char **fields = NULL;
+        char **field_constants = NULL;
+        char **column_constants = NULL;
+        size_t column_index;
+
+        status = carbon_codegen_class_name(table->name, &used_classes, CARBON_MODEL_LANGUAGE_RUBY, &class_name);
+        if (status != CARBON_STATUS_OK) {
+            goto ruby_table_cleanup;
+        }
+        status = carbon_codegen_seed_model_constants(&used_constants);
+        if (status != CARBON_STATUS_OK) {
+            goto ruby_table_cleanup;
+        }
+        fields = (char **) calloc(table->column_count, sizeof(*fields));
+        field_constants = (char **) calloc(table->column_count, sizeof(*field_constants));
+        column_constants = (char **) calloc(table->column_count, sizeof(*column_constants));
+        if (table->column_count > 0 && (fields == NULL || field_constants == NULL || column_constants == NULL)) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            status = carbon_codegen_field_name(
+                    table->columns[column_index].name,
+                    &used_fields,
+                    CARBON_MODEL_LANGUAGE_RUBY,
+                    &fields[column_index]);
+            if (status == CARBON_STATUS_OK) {
+                carbon_string_builder field_constant_base = {0};
+
+                if (!carbon_builder_append(&field_constant_base, "FIELD_")
+                    || !carbon_builder_append(&field_constant_base, fields[column_index])) {
+                    carbon_builder_free(&field_constant_base);
+                    status = CARBON_STATUS_OUT_OF_MEMORY;
+                    goto ruby_table_cleanup;
+                }
+                status = carbon_codegen_constant_name(field_constant_base.data, &used_constants, &field_constants[column_index]);
+                carbon_builder_free(&field_constant_base);
+            }
+            if (status == CARBON_STATUS_OK) {
+                status = carbon_codegen_constant_name(fields[column_index], &used_constants, &column_constants[column_index]);
+            }
+            if (status != CARBON_STATUS_OK) {
+                goto ruby_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_indent(out, base_indent)) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+        if (table->column_count == 0) {
+            if (!carbon_builder_append(out, class_name)
+                || !carbon_codegen_append_line(out, " = Class.new")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+        } else {
+            if (!carbon_builder_append(out, class_name)
+                || !carbon_builder_append(out, " = Struct.new(")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+            for (column_index = 0; column_index < table->column_count; ++column_index) {
+                if (column_index > 0 && !carbon_builder_append(out, ", ")) {
+                    status = CARBON_STATUS_OUT_OF_MEMORY;
+                    goto ruby_table_cleanup;
+                }
+                if (!carbon_builder_append_char(out, ':')
+                    || !carbon_builder_append(out, fields[column_index])) {
+                    status = CARBON_STATUS_OUT_OF_MEMORY;
+                    goto ruby_table_cleanup;
+                }
+            }
+            if (!carbon_codegen_append_line(out, ", keyword_init: true)")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_indent(out, base_indent)
+            || !carbon_builder_append(out, class_name)
+            || !carbon_builder_append(out, "::TABLE = ")
+            || !carbon_builder_append_json_string(out, table->name)
+            || !carbon_builder_append_char(out, '\n')
+            || !carbon_codegen_append_indent(out, base_indent)
+            || !carbon_builder_append(out, class_name)
+            || !carbon_builder_append(out, "::PRIMARY = ")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+        if (!carbon_codegen_append_json_array_strings(out, table->primary, table->primary_count)
+            || !carbon_codegen_append_line(out, ".freeze")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_codegen_append_indent(out, base_indent)
+                || !carbon_builder_append(out, class_name)
+                || !carbon_builder_append(out, "::")
+                || !carbon_builder_append(out, field_constants[column_index])
+                || !carbon_builder_append(out, " = ")
+                || !carbon_builder_append_json_string(out, table->columns[column_index].name)
+                || !carbon_builder_append_char(out, '\n')) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_indent(out, base_indent)
+            || !carbon_builder_append(out, class_name)
+            || !carbon_builder_append(out, "::FIELDS = [")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (column_index > 0 && !carbon_builder_append(out, ", ")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+            if (!carbon_builder_append(out, class_name)
+                || !carbon_builder_append(out, "::")
+                || !carbon_builder_append(out, field_constants[column_index])) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_line(out, "].freeze")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_codegen_append_indent(out, base_indent)
+                || !carbon_builder_append(out, class_name)
+                || !carbon_builder_append(out, "::")
+                || !carbon_builder_append(out, column_constants[column_index])
+                || !carbon_builder_append(out, " = ")
+                || !carbon_builder_append_json_string(out, table->columns[column_index].qualified)
+                || !carbon_builder_append_char(out, '\n')) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_indent(out, base_indent)
+            || !carbon_builder_append(out, class_name)
+            || !carbon_codegen_append_line(out, "::COLUMNS = {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_codegen_append_indent(out, base_indent + 2)
+                || !carbon_builder_append(out, class_name)
+                || !carbon_builder_append(out, "::")
+                || !carbon_builder_append(out, field_constants[column_index])
+                || !carbon_builder_append(out, " => ")
+                || !carbon_builder_append(out, class_name)
+                || !carbon_builder_append(out, "::")
+                || !carbon_builder_append(out, column_constants[column_index])
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_indent(out, base_indent)
+            || !carbon_codegen_append_line(out, "}.freeze")
+            || !carbon_codegen_append_indent(out, base_indent)
+            || !carbon_builder_append(out, class_name)
+            || !carbon_codegen_append_line(out, "::COLUMN_NAMES = {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!carbon_codegen_append_indent(out, base_indent + 2)
+                || !carbon_builder_append(out, class_name)
+                || !carbon_builder_append(out, "::")
+                || !carbon_builder_append(out, field_constants[column_index])
+                || !carbon_builder_append(out, " => ")
+                || !carbon_builder_append_json_string(out, table->columns[column_index].name)
+                || !carbon_codegen_append_line(out, ",")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_indent(out, base_indent)
+            || !carbon_codegen_append_line(out, "}.freeze")
+            || !carbon_codegen_append_indent(out, base_indent)
+            || !carbon_builder_append(out, class_name)
+            || !carbon_codegen_append_line(out, "::TYPES = {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            char *type_base;
+
+            if (!table->columns[column_index].has_db_type) {
+                continue;
+            }
+            type_base = carbon_codegen_type_base(&table->columns[column_index]);
+            if (type_base == NULL) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+            if (!carbon_codegen_append_indent(out, base_indent + 2)
+                || !carbon_builder_append_json_string(out, fields[column_index])
+                || !carbon_builder_append(out, " => :")
+                || !carbon_builder_append(out, carbon_codegen_ruby_type(type_base))
+                || !carbon_codegen_append_line(out, ",")) {
+                free(type_base);
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+            free(type_base);
+        }
+        if (!carbon_codegen_append_indent(out, base_indent)
+            || !carbon_codegen_append_line(out, "}.freeze")
+            || !carbon_codegen_append_indent(out, base_indent)
+            || !carbon_builder_append(out, class_name)
+            || !carbon_codegen_append_line(out, "::NULLABLE = {")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            if (!table->columns[column_index].has_nullable) {
+                continue;
+            }
+            if (!carbon_codegen_append_indent(out, base_indent + 2)
+                || !carbon_builder_append_json_string(out, fields[column_index])
+                || !carbon_builder_append(out, table->columns[column_index].nullable ? " => true,\n" : " => false,\n")) {
+                status = CARBON_STATUS_OUT_OF_MEMORY;
+                goto ruby_table_cleanup;
+            }
+        }
+        if (!carbon_codegen_append_indent(out, base_indent)
+            || !carbon_codegen_append_line(out, "}.freeze")
+            || !carbon_codegen_append_indent(out, base_indent)
+            || !carbon_builder_append(out, "def ")
+            || !carbon_builder_append(out, class_name)
+            || !carbon_codegen_append_line(out, ".GetPayload(query_payload = nil)")
+            || !carbon_codegen_append_indent(out, base_indent + 2)
+            || !carbon_codegen_append_line(out, "CarbonC.model_get_payload(self, query_payload)")
+            || !carbon_codegen_append_indent(out, base_indent)
+            || !carbon_codegen_append_line(out, "end")
+            || !carbon_codegen_append_indent(out, base_indent)
+            || !carbon_builder_append(out, "def ")
+            || !carbon_builder_append(out, class_name)
+            || !carbon_codegen_append_line(out, ".Get(query_payload = nil, **options)")
+            || !carbon_codegen_append_indent(out, base_indent + 2)
+            || !carbon_codegen_append_line(out, "CarbonC.model_get_request(self, query_payload, **options)")
+            || !carbon_codegen_append_indent(out, base_indent)
+            || !carbon_codegen_append_line(out, "end")
+            || !carbon_codegen_append_line(out, "")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_table_cleanup;
+        }
+
+ruby_table_cleanup:
+        for (column_index = 0; column_index < table->column_count; ++column_index) {
+            free(fields == NULL ? NULL : fields[column_index]);
+            free(field_constants == NULL ? NULL : field_constants[column_index]);
+            free(column_constants == NULL ? NULL : column_constants[column_index]);
+        }
+        free(fields);
+        free(field_constants);
+        free(column_constants);
+        free(class_name);
+        carbon_name_set_free(&used_fields);
+        carbon_name_set_free(&used_constants);
+        if (status != CARBON_STATUS_OK) {
+            goto ruby_cleanup;
+        }
+    }
+    for (table_index = module_count; table_index > 0; --table_index) {
+        if (!carbon_codegen_append_indent(out, (table_index - 1) * 2)
+            || !carbon_codegen_append_line(out, "end")) {
+            status = CARBON_STATUS_OUT_OF_MEMORY;
+            goto ruby_cleanup;
+        }
+    }
+
+ruby_cleanup:
+    free(module_parts);
+    free(module_copy);
+    carbon_name_set_free(&used_classes);
+    return status;
+}
+
+static carbon_status carbon_codegen_parse_language(
+        const char *language,
+        carbon_model_language *kind) {
+    if (language == NULL || *language == '\0') {
+        return CARBON_STATUS_INVALID_ARGUMENT;
+    }
+    if (carbon_ascii_case_equals(language, "python") || carbon_ascii_case_equals(language, "py")) {
+        *kind = CARBON_MODEL_LANGUAGE_PYTHON;
+        return CARBON_STATUS_OK;
+    }
+    if (carbon_ascii_case_equals(language, "typescript")
+        || carbon_ascii_case_equals(language, "ts")
+        || carbon_ascii_case_equals(language, "javascript")
+        || carbon_ascii_case_equals(language, "js")
+        || carbon_ascii_case_equals(language, "node")) {
+        *kind = CARBON_MODEL_LANGUAGE_TYPESCRIPT;
+        return CARBON_STATUS_OK;
+    }
+    if (carbon_ascii_case_equals(language, "php")) {
+        *kind = CARBON_MODEL_LANGUAGE_PHP;
+        return CARBON_STATUS_OK;
+    }
+    if (carbon_ascii_case_equals(language, "ruby") || carbon_ascii_case_equals(language, "rb")) {
+        *kind = CARBON_MODEL_LANGUAGE_RUBY;
+        return CARBON_STATUS_OK;
+    }
+    return CARBON_STATUS_INVALID_ARGUMENT;
+}
+
+static carbon_status carbon_codegen_options_copy_string(
+        const char *options_json,
+        size_t options_json_length,
+        const char *const *names,
+        size_t name_count,
+        char **out) {
+    carbon_json_span options;
+    carbon_json_span value;
+    int found;
+
+    *out = NULL;
+    if (options_json == NULL || options_json_length == 0) {
+        return CARBON_STATUS_OK;
+    }
+    options.start = options_json;
+    options.end = options_json + options_json_length;
+    options = carbon_trim_span(options);
+    if (options.start == options.end) {
+        return CARBON_STATUS_OK;
+    }
+    if (!carbon_span_starts_with(options, '{')) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    found = carbon_object_get_any(options, names, name_count, &value);
+    if (found < 0) {
+        return CARBON_STATUS_INVALID_JSON;
+    }
+    if (found == 0) {
+        return CARBON_STATUS_OK;
+    }
+    *out = carbon_span_string_copy(value);
+    return *out == NULL ? CARBON_STATUS_INVALID_JSON : CARBON_STATUS_OK;
+}
+
+carbon_status carbon_schema_model_source(
+        const char *schema_json,
+        size_t schema_json_length,
+        const char *language,
+        const char *options_json,
+        size_t options_json_length,
+        carbon_buffer *out,
+        carbon_buffer *error) {
+    static const char *const namespace_names[] = {"namespace", "php_namespace"};
+    static const char *const module_names[] = {"module_name", "moduleName", "module"};
+    carbon_model_language kind;
+    carbon_model_schema schema = {0};
+    carbon_string_builder source = {0};
+    char *namespace_name = NULL;
+    char *module_name = NULL;
+    carbon_status status;
+
+    if (out == NULL) {
+        if (error != NULL) {
+            carbon_buffer_init(error);
+            carbon_buffer_set(error, "schema model source output buffer is required");
+        }
+        return CARBON_STATUS_INVALID_ARGUMENT;
+    }
+    carbon_buffer_init(out);
+    if (error != NULL) {
+        carbon_buffer_init(error);
+    }
+    if (schema_json == NULL && schema_json_length > 0) {
+        status = CARBON_STATUS_INVALID_ARGUMENT;
+        goto fail;
+    }
+    status = carbon_codegen_parse_language(language, &kind);
+    if (status != CARBON_STATUS_OK) {
+        goto fail;
+    }
+    if (options_json == NULL && options_json_length > 0) {
+        status = CARBON_STATUS_INVALID_ARGUMENT;
+        goto fail;
+    }
+    status = carbon_codegen_options_copy_string(
+            options_json,
+            options_json_length,
+            namespace_names,
+            sizeof(namespace_names) / sizeof(namespace_names[0]),
+            &namespace_name);
+    if (status != CARBON_STATUS_OK) {
+        goto fail;
+    }
+    status = carbon_codegen_options_copy_string(
+            options_json,
+            options_json_length,
+            module_names,
+            sizeof(module_names) / sizeof(module_names[0]),
+            &module_name);
+    if (status != CARBON_STATUS_OK) {
+        goto fail;
+    }
+    status = carbon_model_schema_load(
+            schema_json == NULL ? "{}" : schema_json,
+            schema_json == NULL ? 2 : schema_json_length,
+            &schema,
+            error);
+    if (status != CARBON_STATUS_OK) {
+        goto fail_no_error_override;
+    }
+    switch (kind) {
+        case CARBON_MODEL_LANGUAGE_PYTHON:
+            status = carbon_codegen_generate_python(&schema, &source);
+            break;
+        case CARBON_MODEL_LANGUAGE_TYPESCRIPT:
+            status = carbon_codegen_generate_typescript(&schema, &source);
+            break;
+        case CARBON_MODEL_LANGUAGE_PHP:
+            status = carbon_codegen_generate_php(&schema, namespace_name, &source);
+            break;
+        case CARBON_MODEL_LANGUAGE_RUBY:
+            status = carbon_codegen_generate_ruby(&schema, module_name, &source);
+            break;
+    }
+    if (status != CARBON_STATUS_OK) {
+        goto fail;
+    }
+    if (!carbon_buffer_take_builder(out, &source)) {
+        status = CARBON_STATUS_OUT_OF_MEMORY;
+        goto fail;
+    }
+    if (error != NULL) {
+        carbon_buffer_set(error, "");
+    }
+    free(namespace_name);
+    free(module_name);
+    carbon_model_schema_free(&schema);
+    return CARBON_STATUS_OK;
+
+fail:
+    if (error != NULL) {
+        switch (status) {
+            case CARBON_STATUS_INVALID_ARGUMENT:
+                carbon_buffer_set(error, "schema model source language or options are invalid");
+                break;
+            case CARBON_STATUS_INVALID_JSON:
+                carbon_buffer_set(error, "schema model source options or metadata JSON is invalid");
+                break;
+            case CARBON_STATUS_INVALID_QUERY:
+                carbon_buffer_set(error, "schema model source generated name conflict; use schema overrides or generate conflicting databases in separate namespaces/modules");
+                break;
+            default:
+                carbon_buffer_set(error, carbon_status_message(status));
+                break;
+        }
+    }
+fail_no_error_override:
+    carbon_builder_free(&source);
+    carbon_model_schema_free(&schema);
+    free(namespace_name);
+    free(module_name);
+    carbon_buffer_free(out);
+    return status;
+}
+
 static int carbon_append_collapsed_space(carbon_string_builder *builder, const char *sql) {
     int wrote_space = 0;
 

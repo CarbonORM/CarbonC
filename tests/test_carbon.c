@@ -19,6 +19,15 @@ static void assert_buffer_equals(const carbon_buffer *buffer, const char *expect
     assert(buffer->length == strlen(expected));
 }
 
+static void assert_buffer_contains(const carbon_buffer *buffer, const char *expected) {
+    assert(buffer != NULL);
+    assert(buffer->data != NULL);
+    if (strstr(buffer->data, expected) == NULL) {
+        fprintf(stderr, "expected substring: %s\nactual:   %s\n", expected, buffer->data);
+    }
+    assert(strstr(buffer->data, expected) != NULL);
+}
+
 static void assert_compile_diagnostics_equals(const carbon_compile_result *result, const char *expected) {
     carbon_buffer diagnostics;
     carbon_buffer error;
@@ -399,6 +408,149 @@ static void test_schema_from_dump_rejects_conflicting_implicit_tables(void) {
     assert(carbon_schema_from_dump(dump, sizeof(dump) - 1, &out, &error) == CARBON_STATUS_INVALID_QUERY);
     assert(out.data == NULL);
     assert_buffer_equals(&error, "schema dump contains unsupported or conflicting CREATE TABLE metadata");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+}
+
+static void test_schema_model_source_generators(void) {
+    const char schema[] =
+            "{\"TABLES\":{\"actor\":{"
+            "\"PRIMARY_SHORT\":[\"actor_id\"],"
+            "\"COLUMNS\":{"
+            "\"actor.actor_id\":\"actor_id\","
+            "\"actor.first_name\":\"first_name\""
+            "},"
+            "\"TYPE_VALIDATION\":{"
+            "\"actor.actor_id\":{\"COLUMN_NAME\":\"actor_id\","
+            "\"MYSQL_TYPE\":\"smallint\",\"NOT_NULL\":true},"
+            "\"actor.first_name\":{\"COLUMN_NAME\":\"first_name\","
+            "\"MYSQL_TYPE\":\"varchar\",\"MAX_LENGTH\":\"45\","
+            "\"NOT_NULL\":true}"
+            "}"
+            "}}}";
+    const char php_options[] = "{\"namespace\":\"CarbonORM\\\\Generated\"}";
+    const char ruby_options[] = "{\"module_name\":\"CarbonModels\"}";
+    const char bad_ruby_options[] = "{\"module_name\":\"carbonModels\"}";
+    const char class_conflict_schema[] =
+            "{\"TABLES\":{"
+            "\"foo_bar\":{\"COLUMNS\":{\"foo_bar.id\":\"id\"}},"
+            "\"foo__bar\":{\"COLUMNS\":{\"foo__bar.id\":\"id\"}}"
+            "}}";
+    const char constant_conflict_schema[] =
+            "{\"TABLES\":{\"actor\":{"
+            "\"COLUMNS\":{"
+            "\"actor.table\":\"table\","
+            "\"actor.table_column\":\"table_column\""
+            "}"
+            "}}}";
+    carbon_buffer out;
+    carbon_buffer error;
+
+    assert(carbon_schema_model_source(
+            schema,
+            sizeof(schema) - 1,
+            "python",
+            NULL,
+            0,
+            &out,
+            &error) == CARBON_STATUS_OK);
+    assert_buffer_contains(&out, "import carbon_codegen as _carbon_codegen");
+    assert_buffer_contains(&out, "class Actor:");
+    assert_buffer_contains(&out, "FIELD_ACTOR_ID = 'actor_id'");
+    assert_buffer_contains(&out, "ACTOR_ID = 'actor.actor_id'");
+    assert_buffer_contains(&out, "PRIMARY = ('actor_id',)");
+    assert_buffer_contains(&out, "def Get(cls, query=None, **options):");
+    assert_buffer_equals(&error, "");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+
+    assert(carbon_schema_model_source(
+            schema,
+            sizeof(schema) - 1,
+            "typescript",
+            NULL,
+            0,
+            &out,
+            &error) == CARBON_STATUS_OK);
+    assert_buffer_contains(&out, "import * as carbon from '@carbonorm/carbonc';");
+    assert_buffer_contains(&out, "export interface Actor");
+    assert_buffer_contains(&out, "actor_id: number;");
+    assert_buffer_contains(&out, "export const ActorMeta = {");
+    assert_buffer_contains(&out, "Get(query = {}, options = {}) {");
+    assert_buffer_equals(&error, "");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+
+    assert(carbon_schema_model_source(
+            schema,
+            sizeof(schema) - 1,
+            "php",
+            php_options,
+            sizeof(php_options) - 1,
+            &out,
+            &error) == CARBON_STATUS_OK);
+    assert_buffer_contains(&out, "namespace CarbonORM\\Generated;");
+    assert_buffer_contains(&out, "final class Actor");
+    assert_buffer_contains(&out, "public const FIELD_ACTOR_ID = 'actor_id';");
+    assert_buffer_contains(&out, "public const ACTOR_ID = 'actor.actor_id';");
+    assert_buffer_contains(&out, "public static function Get(array $query = [], $schema = null");
+    assert_buffer_equals(&error, "");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+
+    assert(carbon_schema_model_source(
+            schema,
+            sizeof(schema) - 1,
+            "ruby",
+            ruby_options,
+            sizeof(ruby_options) - 1,
+            &out,
+            &error) == CARBON_STATUS_OK);
+    assert_buffer_contains(&out, "module CarbonModels");
+    assert_buffer_contains(&out, "Actor = Struct.new(:actor_id, :first_name, keyword_init: true)");
+    assert_buffer_contains(&out, "Actor::FIELD_ACTOR_ID = \"actor_id\"");
+    assert_buffer_contains(&out, "Actor::ACTOR_ID = \"actor.actor_id\"");
+    assert_buffer_contains(&out, "def Actor.Get(query_payload = nil, **options)");
+    assert_buffer_equals(&error, "");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+
+    assert(carbon_schema_model_source(
+            schema,
+            sizeof(schema) - 1,
+            "ruby",
+            bad_ruby_options,
+            sizeof(bad_ruby_options) - 1,
+            &out,
+            &error) == CARBON_STATUS_INVALID_ARGUMENT);
+    assert(out.data == NULL);
+    assert_buffer_equals(&error, "schema model source language or options are invalid");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+
+    assert(carbon_schema_model_source(
+            class_conflict_schema,
+            sizeof(class_conflict_schema) - 1,
+            "typescript",
+            NULL,
+            0,
+            &out,
+            &error) == CARBON_STATUS_INVALID_QUERY);
+    assert(out.data == NULL);
+    assert_buffer_equals(&error, "schema model source generated name conflict; use schema overrides or generate conflicting databases in separate namespaces/modules");
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+
+    assert(carbon_schema_model_source(
+            constant_conflict_schema,
+            sizeof(constant_conflict_schema) - 1,
+            "python",
+            NULL,
+            0,
+            &out,
+            &error) == CARBON_STATUS_INVALID_QUERY);
+    assert(out.data == NULL);
+    assert_buffer_equals(&error, "schema model source generated name conflict; use schema overrides or generate conflicting databases in separate namespaces/modules");
     carbon_buffer_free(&out);
     carbon_buffer_free(&error);
 }
@@ -1593,6 +1745,7 @@ int main(void) {
     test_schema_metadata_type_validation();
     test_schema_from_dump();
     test_schema_from_dump_rejects_conflicting_implicit_tables();
+    test_schema_model_source_generators();
     test_multiple_where_uses_and();
     test_match_against_rejects_bare_search_string();
     test_call_expression_rejects_invalid_function_name();

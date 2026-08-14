@@ -492,6 +492,8 @@ expected_metadata = {
 }
 raise "unexpected metadata: #{metadata.inspect}" unless metadata == expected_metadata
 models = CarbonC.schema_models(schema)
+raw_models = CarbonC.schema_model_source(JSON.generate(schema), 'ruby', JSON.generate('module_name' => 'CarbonModels'))
+raise 'schema_models should delegate to the C generator' unless models == raw_models
 raise "unexpected model source: #{models}" unless models.include?('module CarbonModels')
 raise "unexpected model source: #{models}" unless models.include?('Actor = Struct.new(:actor_id, :first_name, keyword_init: true)')
 raise "unexpected model source: #{models}" unless models.include?('Actor::FIELD_ACTOR_ID = "actor_id"')
@@ -536,6 +538,18 @@ unless constant_built.fetch('sql') == 'SELECT actor.actor_id, actor.first_name F
   raise "unexpected constant-built query sql: #{constant_built.fetch('sql')}"
 end
 raise "unexpected constant-built query params: #{constant_built.fetch('params').inspect}" unless constant_built.fetch('params') == [0]
+conflicting_model_schema = {
+  'TABLES' => {
+    'foo_bar' => {'COLUMNS' => {'foo_bar.id' => 'id'}},
+    'foo__bar' => {'COLUMNS' => {'foo__bar.id' => 'id'}}
+  }
+}
+begin
+  CarbonC.schema_models(conflicting_model_schema)
+  raise 'expected generated model name conflict'
+rescue ArgumentError => e
+  raise "unexpected model conflict error: #{e.message}" unless e.message.include?('generated name conflict')
+end
 model_built = CarbonC.model_select(CarbonModels::Actor, CarbonModels::Actor::FIELD_ACTOR_ID)
                      .where_op(CarbonModels::Actor::ACTOR_ID, CarbonC::C6C::GREATER_THAN, 0)
                      .limit(1)

@@ -487,6 +487,8 @@ CREATE TABLE `actor` (
         ]
     }, metadata
     models = carbon_codegen.schema_models(schema)
+    raw_models = carbon.schema_model_source(json.dumps(schema, separators=(",", ":")), "python", "{}")
+    assert models == raw_models, "schema_models should delegate to the C generator"
     assert "import carbon_codegen as _carbon_codegen" in models, models
     assert "class Actor:" in models, models
     assert "TABLE = 'actor'" in models, models
@@ -542,6 +544,17 @@ CREATE TABLE `actor` (
         "WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 1"
     ), constant_built
     assert constant_built["params"] == [0], constant_built
+    conflicting_model_schema = {
+        "TABLES": {
+            "foo_bar": {"COLUMNS": {"foo_bar.id": "id"}},
+            "foo__bar": {"COLUMNS": {"foo__bar.id": "id"}},
+        }
+    }
+    try:
+        carbon_codegen.schema_models(conflicting_model_schema)
+        raise AssertionError("expected generated model name conflict")
+    except ValueError as error:
+        assert "generated name conflict" in str(error), error
     model_built = (
         carbon_codegen.model_select(actor_model, actor_model.FIELD_ACTOR_ID)
         .where_op(actor_model.ACTOR_ID, carbon_codegen.C6C.GREATER_THAN, 0)

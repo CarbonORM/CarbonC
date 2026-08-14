@@ -12,14 +12,15 @@ The C layer should own:
 - bind-parameter extraction
 - allowlist normalization
 - schema metadata, diff, and introspection normalization
+- language-normalized model source generation
 
 The language bindings should own:
 
-- package-native model APIs
+- package-native runtime model APIs
 - connection pools and transactions
 - async/promise/event-loop behavior
 - exceptions and framework integration
-- generated class/type surfaces
+- packaging and loading generated class/type surfaces
 
 ## v0.1 Kernel Scope
 
@@ -89,6 +90,9 @@ Supported in this slice:
   types
 - SQL dump schema extraction into the same C6 `TABLES` schema shape used by
   every binding generator
+- C-owned model source generation for Python dataclasses, TypeScript
+  interfaces, PHP model classes, and Ruby Struct models, exposed through
+  package helpers that delegate back into `carbon_schema_model_source()`
 - schema metadata enrichment from CarbonNode-style `TYPE_VALIDATION` entries,
   including DB type, max length, nullability, auto-increment, and insert-skip
   flags
@@ -102,7 +106,8 @@ Supported in this slice:
   `between_lit()` for generated query payloads
 - package-level typed source generation helpers for Python dataclasses,
   TypeScript interfaces, PHP model classes, and Ruby Struct models, including
-  generated table, field-name, and qualified-column constants
+  generated table, field-name, and qualified-column constants from the shared C
+  generator
 - package-level native payload compile helpers that serialize idiomatic
   dict/array/object/hash inputs into the stable C JSON boundary
 - package-level model `Get` payload helpers and execution request envelopes
@@ -221,6 +226,7 @@ Primary entrypoints:
 - `carbon_compile_result_diagnostics_json()`
 - `carbon_schema_metadata()`
 - `carbon_schema_from_dump()`
+- `carbon_schema_model_source()`
 - `carbon_compile_result_free()`
 - `carbon_normalize_allowlist_sql()`
 
@@ -257,7 +263,8 @@ implicit short table name are rejected so applications can split generation by
 namespace or pass an explicit override.
 
 `carbon_schema_metadata()` returns a canonical JSON shape that package-level
-generators can turn into native models or types. When the input schema includes
+helpers can turn into native models or types through
+`carbon_schema_model_source()`. When the input schema includes
 CarbonNode-style `TYPE_VALIDATION` metadata keyed by qualified column name, or
 was extracted from a dump, column entries include optional type details:
 
@@ -292,6 +299,14 @@ was extracted from a dump, column entries include optional type details:
 }
 ```
 
+`carbon_schema_model_source()` is the source of truth for generated language
+model structures. It currently emits Python, TypeScript, PHP, and Ruby source
+from the same normalized metadata and fails on generated class, field, or
+constant name collisions. Applications with multiple databases that would
+produce conflicting model names should generate each database/schema into a
+separate source unit, PHP namespace, Ruby module, or package path instead of
+accepting ambiguous symbols.
+
 ## Build And Test
 
 ```bash
@@ -307,8 +322,8 @@ The Python binding wraps the same C ABI from
 `status`, `status_code`, `sql`, `params_json`, `allowlist_key`, `error`, and
 `diagnostics_json` fields. `bindings/python/carbon_codegen.py` adds
 native-payload compile helpers, typed result adapters, source generation helpers
-over the normalized schema metadata, and an optional `Query` facade for
-incremental construction:
+that delegate to `carbon.schema_model_source()`, and an optional `Query` facade
+for incremental construction:
 
 ```python
 import carbon
@@ -415,8 +430,8 @@ The PHP extension wraps the same compile result shape from
 `diagnostics_json`. The
 `bindings/php/carbon_codegen.php` helper adds `C6C` / `C6`, `CarbonDialect`,
 `carbon_compile_query_value()` for native arrays, typed result adapters, native
-PHP model class source over `carbon_schema_metadata()`, and an optional
-`CarbonQuery` facade for incremental construction:
+PHP model class source that delegates to `carbon_schema_model_source()`, and an
+optional `CarbonQuery` facade for incremental construction:
 
 ```php
 require_once __DIR__ . "/bindings/php/carbon_codegen.php";
@@ -518,6 +533,7 @@ The PHP surface exposes `carbon_version()`, `carbon_hello_world()`,
 `carbon_model_insert()`, `carbon_model_replace()`, `carbon_model_update()`,
 `carbon_model_upsert()`, `carbon_model_do_nothing()`,
 `carbon_schema_from_dump()`, `carbon_schema_metadata()`,
+`carbon_schema_model_source()`,
 and `carbon_normalize_allowlist_sql()`.
 
 ## Node Binding
@@ -525,8 +541,9 @@ and `carbon_normalize_allowlist_sql()`.
 The Node binding uses plain N-API from `bindings/node/carbon_node.cpp` and
 exports camelCase methods plus snake_case aliases. `bindings/node/index.js`
 adds `compileQueryValue()` / `compile_query_value()` for native objects, typed
-result adapters, a package-level TypeScript source generator, and an optional
-`CarbonQuery` / `query()` facade for incremental construction. Compile results include
+result adapters, a package-level TypeScript source generator that delegates to
+`schemaModelSource()`, and an optional `CarbonQuery` / `query()` facade for
+incremental construction. Compile results include
 `diagnostics_json` beside the status, SQL, params, allowlist, and error fields:
 
 ```js
@@ -643,7 +660,7 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `modelColumn()`, `modelApi()`, `modelGetPayload()`, `modelGetRequest()`,
 `modelInsert()`, `modelReplace()`, `modelUpdate()`,
 `modelUpsert()`, `modelDoNothing()`, `schemaFromDump()`, `schemaMetadata()`,
-`schemaModels()`, and
+`schemaModelSource()`, `schemaModels()`, and
 `normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
 
 ## Ruby Binding
@@ -653,8 +670,9 @@ The Ruby extension wraps the same compile result shape from
 `diagnostics_json`. The
 `bindings/ruby/carbon_codegen.rb` helper adds `CarbonC::C6C` / `CarbonC::C6`,
 `CarbonC::Dialect`, `CarbonC.compile_query_value` for native hashes, typed
-result adapters, Ruby Struct model source over `CarbonC.schema_metadata`, and
-an optional `CarbonC::Query` facade for incremental construction:
+result adapters, Ruby Struct model source that delegates to
+`CarbonC.schema_model_source`, and an optional `CarbonC::Query` facade for
+incremental construction:
 
 ```ruby
 require_relative './bindings/ruby/carbon_codegen'
@@ -760,7 +778,8 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.model_get_payload`, `CarbonC.model_get_request`,
 `CarbonC.model_insert`, `CarbonC.model_replace`, `CarbonC.model_update`,
 `CarbonC.model_upsert`, `CarbonC.model_do_nothing`,
-`CarbonC.schema_from_dump`, `CarbonC.schema_metadata`, and
+`CarbonC.schema_from_dump`, `CarbonC.schema_metadata`,
+`CarbonC.schema_model_source`, and
 `CarbonC.normalize_allowlist_sql`.
 
 ## Next Milestones
