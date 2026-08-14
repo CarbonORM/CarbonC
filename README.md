@@ -1,32 +1,60 @@
 # CarbonC
 
-CarbonC is the portable CarbonORM kernel. Its job is to hold the deterministic
-parts of C6 in a stable C ABI so PHP, Node, Python, Ruby, and other language
-packages can share one implementation without giving up their native runtime
-ergonomics.
+CarbonC is the portable CarbonORM kernel. It keeps the deterministic parts of
+C6 behind a stable C ABI so PHP, Node, Python, Ruby, and other language packages
+can share one compiler and schema interpretation while still presenting native
+runtime APIs.
 
-The C layer should own:
+The C layer owns pure transformations:
 
+- SQL dump schema extraction
+- schema metadata normalization
+- model source generation
 - query payload validation
-- SQL generation
+- SQL compilation
 - bind-parameter extraction
-- allowlist normalization
-- schema metadata, diff, and introspection normalization
-- language-normalized model source generation
+- allowlist key normalization
 
-The language bindings should own:
+Language bindings own runtime integration:
 
-- package-native runtime model APIs
-- connection pools and transactions
-- async/promise/event-loop behavior
-- exceptions and framework integration
-- packaging and loading generated class/type surfaces
+- native package APIs and generated model loading
+- connection pools, transactions, and async behavior
+- exception mapping and framework integration
+- serialization helpers, typed result adapters, and query-builder facades
 
-## v0.1 Kernel Scope
+CarbonC does not execute database queries. It turns a canonical C6 payload into
+SQL, parameters, diagnostics, and an allowlist key for the calling runtime to
+execute through its own database layer.
 
-The current kernel is intentionally small. It provides a versioned ABI, explicit
-buffer ownership, and a fixture-backed query compiler slice for canonical C6
-payloads:
+For the detailed compiler boundary and supported grammar, see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Golden compiler fixtures live in
+[tests/fixtures](tests/fixtures).
+
+## Core Workflow
+
+```text
+SQL dump
+  -> carbon_schema_from_dump()
+  -> C6 TABLES schema JSON
+  -> carbon_schema_metadata()
+  -> carbon_schema_model_source()
+  -> generated constants and model helpers
+
+native query object/array/hash
+  -> binding serializes canonical JSON
+  -> carbon_compile_query()
+  -> SQL + params JSON + allowlist key + status + diagnostics JSON
+  -> native runtime executes prepared statement
+```
+
+The package-level contract is a complete native query payload keyed by generated
+constants. Fluent builders are convenience APIs that emit the same payload
+shape.
+
+## Query Payload Contract
+
+CarbonC's stable boundary is JSON. Bindings can expose native objects, arrays,
+dicts, or hashes, but they serialize to the same C6 shape:
 
 ```json
 {
@@ -42,243 +70,80 @@ payloads:
 }
 ```
 
-This JSON is the stable ABI shape. Normal package code should build it through
-generated table/field/column constants plus the `C6C` token constants and
-literal predicate helpers such as `eqLit()` / `eq_lit()` / `carbon_eq_lit()`,
-plus `CarbonDialect` / `Dialect` dialect constants so query authors do not
-hand-type grammar strings or schema identifiers.
-
-Language packages also expose model request helpers for applications that need
-the same model method payload to run through different executors. The helpers
-keep the query object intact and add the generated model `FROM` table when
-needed; database transport, device policy, and offload decisions remain outside
-CarbonC:
-
-```js
-const Actor = carbon.modelApi(ActorMeta);
-const request = Actor.Get({
-  [carbon.C6C.SELECT]: [ActorColumns.actor_id],
-  [carbon.C6C.WHERE]: {
-    [ActorColumns.actor_id]: carbon.eqLit(10),
-  },
-  [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 500},
-  cacheResults: false,
-}, {
-  schema,
-  dialect: carbon.CarbonDialect.MYSQL,
-});
-```
-
-The compiler returns a numeric `status`, stable string `status_code`, SQL, a
-JSON array of bound parameter values, and a normalized allowlist key:
+For MySQL, that compiles to:
 
 ```sql
 SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) = ? ORDER BY actor.last_name ASC LIMIT 25
 ```
 
+With bound params:
+
 ```json
 [10]
 ```
+
+And an allowlist key normalized for stable policy checks:
 
 ```text
 SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) = ? ORDER BY actor.last_name ASC LIMIT ?
 ```
 
-Supported in this slice:
+Normal application code should avoid hand-typed grammar strings and schema
+identifiers. Bindings expose C6 token constants (`C6C` / `C6`), dialect
+constants (`CarbonDialect` / `Dialect`), generated table/field/column
+constants, and literal helpers such as `eqLit()`, `eq_lit()`, and
+`carbon_eq_lit()`.
 
-- schema metadata normalization into deterministic JSON for generated binding
-  types
-- SQL dump schema extraction into the same C6 `TABLES` schema shape used by
-  every binding generator
-- C-owned model source generation for Python dataclasses, TypeScript
-  interfaces, PHP model classes, and Ruby Struct models, exposed through
-  package helpers that delegate back into `carbon_schema_model_source()`
-- schema metadata enrichment from CarbonNode-style `TYPE_VALIDATION` entries,
-  including DB type, max length, nullability, auto-increment, and insert-skip
-  flags
-- CarbonNode-compatible C6 token constants exposed idiomatically in each binding
-  as `C6C`/`C6`
-- dialect constants exposed in each binding as `CarbonDialect` / `Dialect`
-- C consumers can use the matching `CARBON_C6_*` token macros and
-  `CARBON_DIALECT_*` macros from `include/carbon.h`
-- language-normalized literal predicate helpers such as `eqLit()` / `eq_lit()`,
-  `inLit()` / `in_lit()`, `notInLit()` / `not_in_lit()`, and `betweenLit()` /
-  `between_lit()` for generated query payloads
-- package-level typed source generation helpers for Python dataclasses,
-  TypeScript interfaces, PHP model classes, and Ruby Struct models, including
-  generated table, field-name, and qualified-column constants from the shared C
-  generator
-- package-level native payload compile helpers that serialize idiomatic
-  dict/array/object/hash inputs into the stable C JSON boundary
-- package-level model `Get` payload helpers and execution request envelopes
-  that preserve complete generated-constant query objects without owning
-  database execution policy
-- package-level typed result adapters that add decoded native `params` and
-  `diagnostics` values without removing raw JSON fields
-- package-level SELECT query-builder facades that emit the same canonical
-  payloads as the native helper layer for table/from, select, where, join,
-  group/having, limit/page, and order controls
-- `FROM` / legacy `table`
-- `SELECT` references, wrapper-form `AS` / `DISTINCT`, direct tuples for
-  CarbonNode known functions, and canonical `CALL` custom-function tuples
-- `JOIN` clauses for `INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, and
-  `RIGHT_OUTER` table aliases and stringified derived targets
-- MySQL `INDEX_HINTS` for base and joined tables, including CarbonNode-compatible
-  `FORCE INDEX`, `USE INDEX`, and `IGNORE INDEX` shapes
-- `WHERE` column mappings, `AND` / `OR`, comparison operators, `IN`, `NOT_IN`,
-  `BETWEEN`, `IS`, `IS_NOT`, `EXISTS`, `NOT_EXISTS`, `MATCH_AGAINST`, `LIT`,
-  `PARAM`, and boolean spatial-function predicates
-- `GROUP_BY` expression lists and `HAVING` boolean clauses
-- scalar `SUBSELECT` expressions in `SELECT` and `WHERE` operands
-- explicit `INSERT`, `REPLACE`, `UPDATE`, and `DELETE` write payloads,
-  including expression-valued `INSERT`/`UPDATE` columns and array-valued
-  multi-row `INSERT`/MySQL `REPLACE` rows
-- CarbonNode-compatible root-level POST row inserts when no read operation
-  controls are present
-- CarbonNode-compatible `dataInsertMultipleRows` insert payloads
-- MySQL upsert update lists through `UPDATE: ["column_name"]`
-- PostgreSQL `ON CONFLICT` upserts from `PRIMARY_SHORT` or `PRIMARY` schema
-  metadata, including `UPDATE: []` / `DO NOTHING`
-- PostgreSQL `UPDATE ... FROM` for `INNER` joined table aliases
-- PostgreSQL `DELETE ... USING` for `INNER` joined table aliases
-- `PAGINATION.ORDER`, compatible top-level `ORDER`, `LIMIT`, and `PAGE`
-- MySQL `?` placeholders and PostgreSQL `$1`-style placeholders
-- CarbonNode-style allowlist normalization for whitespace, `LIMIT` forms
-  including `LIMIT ... OFFSET ...`, parenthesized bind groups,
-  multi-row `VALUES` cardinality, and `IN` bind-list cardinality
-- schema-aware table, unqualified-reference, dotted-reference, join-alias, and
-  write-column validation when `schema_json` includes a `TABLES` object
-- schema-declared write column ordering for `INSERT`, `UPDATE`, and upsert
-  update lists
+## Current Scope
 
-Direct expression tuples are limited to CarbonNode's known SQL function list.
-Unknown/custom SQL functions must use `["CALL", "FUNCTION_NAME", ...args]`,
-and legacy positional alias forms such as `["COUNT", "id", "AS", "cnt"]`
-are rejected in favor of `["AS", expression, "cnt"]`.
+The v0.1 kernel includes:
 
-Top-level `ORDER` is accepted for CarbonNode compatibility and is treated as
-`PAGINATION.ORDER` when the pagination object does not also declare `ORDER`.
-Legacy object-map `ORDER` payloads and duplicate top-level/pagination order
-declarations are rejected.
+- deterministic schema metadata from C6 `TABLES` JSON
+- SQL dump extraction into the same `TABLES` schema shape
+- model source generation for Python dataclasses, TypeScript interfaces, PHP
+  model classes, and Ruby Struct models
+- typed source enrichment from DB type, length, nullability, primary key, and
+  insert-skip metadata
+- MySQL and PostgreSQL SELECT compilation with joins, aliases, derived joins,
+  subselects, grouping, having, ordering, pagination, index hints, and common
+  expression/predicate forms
+- INSERT, REPLACE, UPDATE, DELETE, multi-row insert, CarbonNode-style root POST
+  rows, MySQL upsert lists, and PostgreSQL `ON CONFLICT` upserts
+- PostgreSQL `UPDATE ... FROM` and `DELETE ... USING` for `INNER` joined writes
+- schema-aware validation for tables, columns, join aliases, write columns, and
+  schema-ordered write parameter emission
+- CarbonNode-compatible allowlist normalization for bind groups, `IN` lists,
+  multi-row `VALUES`, and `LIMIT` forms
+- binding-friendly diagnostics with stable status codes and JSON-style paths
 
-Derived JOIN targets use the same JSON-only ABI as other compiler inputs: the
-JOIN target key is a stringified object with `SUBSELECT` and `AS`, while the
-JOIN target value remains the `ON` clause.
-
-Table joins are plain query-object payloads. `JOIN` is grouped first by join
-kind (`INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, or `RIGHT_OUTER`), then by target
-table or `table alias`, and finally by an `ON` predicate map. Join `ON` maps use
-the same expression rules as `WHERE`: bare column strings are identifiers, while
-variable values should be wrapped with `LIT` helpers such as `eqLit()`.
-
-The preferred style is still constants-first. For aliased joins, choose the
-short alias once and derive alias-qualified columns from generated model fields:
-
-```js
-const filmActorAlias = 'fa';
-const FilmActorAlias = carbon.modelAliasColumns(FilmActor, filmActorAlias);
-
-const query = {
-  [carbon.C6C.FROM]: Actor.TABLE,
-  [carbon.C6C.SELECT]: [
-    Actor.COLUMNS.actor_id,
-    FilmActorAlias[FilmActor.FIELDS.film_id],
-  ],
-  [carbon.C6C.JOIN]: {
-    [carbon.C6C.INNER]: {
-      [carbon.modelJoinTarget(FilmActor, filmActorAlias)]: {
-        [FilmActorAlias[FilmActor.FIELDS.actor_id]]: [
-          carbon.C6C.EQUAL,
-          Actor.COLUMNS.actor_id,
-        ],
-      },
-    },
-  },
-  [carbon.C6C.WHERE]: {
-    [Actor.COLUMNS.actor_id]: carbon.eqLit(actorId),
-  },
-};
-```
-
-That payload compiles to an aliased join like
-`INNER JOIN film_actor AS fa ON fa.actor_id = actor.actor_id`. The package
-query-builder facades expose the same shape through `join()` /
-`joinSubselect()` (`join_subselect` in snake-case languages), but the
-query-object payload is the default contract to document and pass between
-front-end and back-end executors.
-
-`INDEX_HINTS` accepts CarbonNode's base hint form (`["idx"]`, `"idx"`, or an
-object keyed by `FORCE INDEX`, `USE INDEX`, and `IGNORE INDEX`) and target-keyed
-maps for joined tables. MySQL emits hints after the base table or joined alias;
-PostgreSQL accepts the payload and emits no hint syntax.
-
-Write support accepts explicit operation keys such as `INSERT`, `REPLACE`,
-`UPDATE`, and `DELETE`. It also accepts CarbonNode-style root-level POST rows
-like `{"FROM":"actor","first_name":"ALICE"}` when no read controls such as
-`SELECT`, `WHERE`, `JOIN`, `GROUP_BY`, `HAVING`, or `PAGINATION` are present.
-Root-level POST rows ignore request metadata keys such as `DB`, `cacheResults`,
-and `UPDATE: [...]`; that `UPDATE` array remains upsert metadata. Single-row and
-multi-row insert/upsert payloads are covered now, including
-`dataInsertMultipleRows`; later rows bind `null` for missing first-row columns to
-match CarbonNode's batch insert behavior. When schema `COLUMNS` metadata is
-present, write columns are emitted in schema order and later rows may use either
-qualified or short keys for the same normalized column. PostgreSQL writes
-currently cover simple insert/update/delete forms and schema-derived conflict
-targets for `ON CONFLICT` upserts, plus `INNER` joined updates through
-`UPDATE ... FROM` and `INNER` joined deletes through `DELETE ... USING`.
-PostgreSQL non-`INNER` joined writes and PostgreSQL derived joined writes are
-later work.
-
-Schema validation is opt-in for this slice. Passing `{}` keeps syntax-only
-identifier checks. Passing a `TABLES` object validates unqualified references
-against the current `FROM` table and validates dotted/join-alias references
-against C6-style table metadata:
-
-```json
-{
-  "TABLES": {
-    "actor": {
-      "PRIMARY_SHORT": ["actor_id"],
-      "COLUMNS": {
-        "actor.actor_id": "actor_id",
-        "actor.first_name": "first_name"
-      }
-    }
-  }
-}
-```
-
-This is not the full C6 grammar yet. It is the foundation for porting the rest
-of CarbonNode's canonical query grammar into C behind stable fixtures.
+The kernel intentionally rejects unsupported or ambiguous shapes instead of
+silently compiling weaker SQL. Direct expression tuples are limited to
+CarbonNode's known SQL function list; custom SQL functions must use the
+canonical `["CALL", "FUNCTION_NAME", ...args]` form.
 
 ## Public C API
 
-The public header is `include/carbon.h`.
+The public header is [include/carbon.h](include/carbon.h).
 
 Primary entrypoints:
 
 - `carbon_version()`
-- `carbon_context_new()`
-- `carbon_context_free()`
-- `carbon_buffer_init()`
-- `carbon_buffer_free()`
-- `carbon_status_code()`
-- `carbon_status_message()`
+- `carbon_status_code()` / `carbon_status_message()`
+- `carbon_context_new()` / `carbon_context_free()`
+- `carbon_buffer_init()` / `carbon_buffer_free()`
 - `carbon_compile_query()`
 - `carbon_compile_result_diagnostics_json()`
-- `carbon_schema_metadata()`
-- `carbon_schema_from_dump()`
-- `carbon_schema_model_source()`
 - `carbon_compile_result_free()`
+- `carbon_schema_from_dump()`
+- `carbon_schema_metadata()`
+- `carbon_schema_model_source()`
 - `carbon_normalize_allowlist_sql()`
 
-All buffers returned by CarbonC are owned by the caller and must be released
-with `carbon_buffer_free()` or `carbon_compile_result_free()`.
+All buffers returned by CarbonC are owned by the caller. Release them with
+`carbon_buffer_free()` or `carbon_compile_result_free()`.
 
-`carbon_compile_result_diagnostics_json()` returns a deterministic diagnostic
-document for language bindings. Successful compiles include an empty
-`diagnostics` array; failed compiles include a stable status code plus a
-binding-friendly `source` and JSON-style `path`:
+Compile diagnostics are projected as deterministic JSON so bindings can expose
+actionable failures without depending on C struct layout:
 
 ```json
 {
@@ -297,59 +162,9 @@ binding-friendly `source` and JSON-style `path`:
 }
 ```
 
-`carbon_schema_from_dump()` extracts ordered table/column/primary-key metadata
-from SQL dump text into the C6 `TABLES` schema shape. That extracted schema can
-be passed directly to `carbon_schema_metadata()`, compilers, and language model
-generators. Duplicate schema-qualified table names that collapse to the same
-implicit short table name are rejected so applications can split generation by
-namespace or pass an explicit override.
-
-`carbon_schema_metadata()` returns a canonical JSON shape that package-level
-helpers can turn into native models or types through
-`carbon_schema_model_source()`. When the input schema includes
-CarbonNode-style `TYPE_VALIDATION` metadata keyed by qualified column name, or
-was extracted from a dump, column entries include optional type details:
-
-```json
-{
-  "tables": [
-    {
-      "name": "actor",
-      "columns": [
-        {
-          "name": "actor_id",
-          "qualified": "actor.actor_id",
-          "db_type": "smallint",
-          "max_length": "",
-          "nullable": false,
-          "auto_increment": true,
-          "skip_insert": false
-        },
-        {
-          "name": "first_name",
-          "qualified": "actor.first_name",
-          "db_type": "varchar",
-          "max_length": "45",
-          "nullable": false,
-          "auto_increment": false,
-          "skip_insert": false
-        }
-      ],
-      "primary": ["actor_id"]
-    }
-  ]
-}
-```
-
-`carbon_schema_model_source()` is the source of truth for generated language
-model structures. It currently emits Python, TypeScript, PHP, and Ruby source
-from the same normalized metadata and fails on generated class, field, or
-constant name collisions. Applications with multiple databases that would
-produce conflicting model names should generate each database/schema into a
-separate source unit, PHP namespace, Ruby module, or package path instead of
-accepting ambiguous symbols.
-
 ## Build And Test
+
+Build the C library and test binary with CMake:
 
 ```bash
 cmake -S . -B build
@@ -357,211 +172,26 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-## Python Binding
+## Bindings
 
-The Python binding wraps the same C ABI from
-`bindings/python/carbon_python.c` and returns a plain Python `dict` with
-`status`, `status_code`, `sql`, `params_json`, `allowlist_key`, `error`, and
-`diagnostics_json` fields. `bindings/python/carbon_codegen.py` adds
-native-payload compile helpers, typed result adapters, source generation helpers
-that delegate to `carbon.schema_model_source()`, and an optional `Query` facade
-for incremental construction:
+Each binding wraps the same C ABI and exposes native helpers around the shared
+payload contract.
 
-```python
-import carbon
-import carbon_codegen
-
-schema = carbon.schema_from_dump("""
-CREATE TABLE `actor` (
-  `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
-  `first_name` varchar(45) NOT NULL,
-  PRIMARY KEY (`actor_id`)
-);
-""")
-generated: dict[str, object] = {}
-exec(carbon_codegen.schema_models(schema), generated)
-Actor = generated["Actor"]
-
-query = {
-    carbon_codegen.C6C.FROM: Actor.TABLE,
-    carbon_codegen.C6C.SELECT: [Actor.ACTOR_ID],
-    carbon_codegen.C6C.WHERE: {
-        Actor.ACTOR_ID: carbon_codegen.eq_lit(10),
-    },
-    carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 5},
-}
-typed_result = carbon_codegen.compile_query_result(
-    query,
-    schema=schema,
-    dialect=carbon_codegen.CarbonDialect.MYSQL,
-)
-get_request = Actor.Get(
-    {
-        carbon_codegen.C6C.SELECT: [Actor.ACTOR_ID],
-        carbon_codegen.C6C.WHERE: {
-            Actor.ACTOR_ID: carbon_codegen.eq_lit(10),
-        },
-        carbon_codegen.C6C.PAGINATION: {carbon_codegen.C6C.LIMIT: 500},
-        "cacheResults": False,
-    },
-    schema=schema,
-    dialect=carbon_codegen.CarbonDialect.MYSQL,
-)
-field_column = carbon_codegen.model_column(Actor, Actor.FIELD_ACTOR_ID)
-write_payload = {
-    carbon_codegen.C6C.FROM: Actor.TABLE,
-    carbon_codegen.C6C.INSERT: carbon_codegen.model_values(
-        Actor,
-        {Actor.FIELD_FIRST_NAME: "ALICE"},
-    ),
-}
-write_result = carbon_codegen.compile_query_result(
-    write_payload,
-    schema=schema,
-    dialect=carbon_codegen.CarbonDialect.MYSQL,
-)
-metadata_json = carbon.schema_metadata(schema)
-dataclass_source = carbon_codegen.schema_models(schema)
-```
-
-The default package path is to pass a complete native dict payload through
-`compile_query_result()` / `compile_query_value()`, matching CarbonORM's
-front-end/back-end query-object convention. `Query.to_payload()` is available
-when callers want incremental construction; it returns the canonical dict sent
-through the C JSON boundary
-for table/from, select, where, join, group/having, write operations
-(`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), scalar
-subselect helpers, derived `join_subselect` targets, advanced predicate helpers
-(`where_op`, `where_in`, `where_not_in`, `where_between`, `where_not_between`,
-`where_match_against`, `where_exists`, `where_not_exists`), composable boolean group helpers
-(`condition`, `and_`, `or_`, `where_and`, `where_or`), expression helpers
-(`fn`, `custom_call`, `call`, `lit`, `eq_lit`, `in_lit`, `not_in_lit`,
-`between_lit`, `param`, `st_contains`, `st_within`,
-`mbr_contains`), CarbonNode-compatible token constants (`C6C` / `C6`),
-dialect constants (`CarbonDialect` / `Dialect`), index hint helpers (`index_hints`, `force_index`,
-`use_index`, `ignore_index`), limit/page, and order controls.
-`compile_query_result()` returns the same fields as the raw result plus decoded
-Python `params` and `diagnostics` values. The generated dataclass source maps DB
-metadata into Python annotations such as
-`int`, `float`, `str`, `bool`, `bytes`, `Dict[str, Any]`, and `Optional[...]`,
-includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field constants such as
-`Actor.FIELD_ACTOR_ID`, direct column constants such as `Actor.ACTOR_ID`, and
-retains `__carbon_db_types__` / `__carbon_nullable__` metadata. Generated
-classes also expose `Get()` / `GetPayload()` delegates for model request
-payloads. Runtime helpers
-such as `model_query()`, `model_select()`, and `model_column()` consume that
-generated metadata to build schema-backed `Query` payloads. Model write helpers
-such as `model_insert()`, `model_replace()`, `model_update()`,
-`model_upsert()`, and `model_do_nothing()` accept values keyed by generated
-field constants and map them to qualified write columns. Model request helpers
-`model_get_payload()` and `model_get_request()` keep the same native query
-object shape while returning a plain executor envelope; they do not execute
-database calls. Join helpers `model_join_target()`, `model_alias_column()`, and
-`model_alias_columns()` derive aliased join targets and alias-qualified columns
-from generated model metadata.
-
-Build and smoke-test it from the repository root:
+### Python
 
 ```bash
 (cd bindings/python && python3 setup.py build_ext --inplace)
 PYTHONPATH=bindings/python python3 bindings/python/smoke.py
+PYTHONPATH=bindings/python python3 examples/python/example.py
 ```
 
-## PHP Binding
+Python exposes `carbon.schema_from_dump()`, `carbon.schema_metadata()`,
+`carbon.schema_model_source()`, raw compile functions, and
+`carbon_codegen` helpers for native payloads, typed result adapters, generated
+models, predicates, dialect constants, model request envelopes, write helpers,
+joins, and query-builder facades.
 
-The PHP extension wraps the same compile result shape from
-`bindings/php/carbon_php.c` as an associative array, including
-`diagnostics_json`. The
-`bindings/php/carbon_codegen.php` helper adds `C6C` / `C6`, `CarbonDialect`,
-`carbon_compile_query_value()` for native arrays, typed result adapters, native
-PHP model class source that delegates to `carbon_schema_model_source()`, and an
-optional `CarbonQuery` facade for incremental construction:
-
-```php
-require_once __DIR__ . "/bindings/php/carbon_codegen.php";
-
-$schema = carbon_schema_from_dump(<<<'SQL'
-CREATE TABLE `actor` (
-  `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
-  `first_name` varchar(45) NOT NULL,
-  PRIMARY KEY (`actor_id`)
-);
-SQL);
-$modelSource = carbon_schema_models($schema);
-eval(preg_replace('/^<\\?php\\s*/', '', $modelSource));
-
-$query = [
-    C6C::FROM => Actor::TABLE,
-    C6C::SELECT => [Actor::ACTOR_ID],
-    C6C::WHERE => [
-        Actor::ACTOR_ID => carbon_eq_lit(10),
-    ],
-    C6C::PAGINATION => [C6C::LIMIT => 5],
-];
-$typedResult = carbon_compile_query_result($query, $schema, CarbonDialect::MYSQL);
-$getRequest = Actor::Get(
-    [
-        C6C::SELECT => [Actor::ACTOR_ID],
-        C6C::WHERE => [
-            Actor::ACTOR_ID => carbon_eq_lit(10),
-        ],
-        C6C::PAGINATION => [C6C::LIMIT => 500],
-        "cacheResults" => false,
-    ],
-    $schema,
-    CarbonDialect::MYSQL
-);
-$fieldColumn = carbon_model_column(Actor::class, Actor::FIELD_ACTOR_ID);
-$writePayload = [
-    C6C::FROM => Actor::TABLE,
-    C6C::INSERT => carbon_model_values(Actor::class, [
-        Actor::FIELD_FIRST_NAME => "ALICE",
-    ]),
-];
-$writeResult = carbon_compile_query_result($writePayload, $schema, CarbonDialect::MYSQL);
-$metadataJson = carbon_schema_metadata($schema);
-$namespacedModelSource = carbon_schema_models($schema, "CarbonORM\\Generated");
-```
-
-The default package path is to pass a complete native array payload through
-`carbon_compile_query_result()` / `carbon_compile_query_value()`, matching
-CarbonORM's front-end/back-end query-object convention. `CarbonQuery::toPayload()`
-is available when callers want incremental construction; it returns the
-canonical array sent through the C JSON
-boundary for table/from, select, where, join, group/having, write operations
-(`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), scalar
-`carbon_subselect()` helpers, derived `joinSubselect()` targets, advanced
-predicate helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`,
-`whereNotBetween`, `whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group
-helpers (`carbon_condition`, `carbon_and_group`, `carbon_or_group`, `whereAnd`,
-`whereOr`), expression helpers (`carbon_fn`, `carbon_custom_call`,
-`carbon_call`, `carbon_lit`, `carbon_eq_lit`, `carbon_in_lit`,
-`carbon_not_in_lit`, `carbon_between_lit`, `carbon_param`, `carbon_st_contains`,
-`carbon_st_within`, `carbon_mbr_contains`), index hint helpers
-(`indexHints`, `forceIndex`, `useIndex`, `ignoreIndex`, `carbon_force_index`,
-`carbon_use_index`, `carbon_ignore_index`), limit/page, and order controls.
-`carbon_compile_query_result()`
-returns the same fields as the
-raw result plus decoded PHP `params` and `diagnostics` values. The generated PHP
-class source keeps properties untyped for runtime compatibility, adds PHPDoc type
-annotations, and includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field
-constants such as `Actor::FIELD_ACTOR_ID`, direct column constants such as
-`Actor::ACTOR_ID`, `DB_TYPES`, and `NULLABLE`. Generated classes also expose
-static `Get()` / `GetPayload()` delegates for model request payloads. Runtime
-helpers such as
-`carbon_model_query()`, `carbon_model_select()`, and `carbon_model_column()`
-consume generated class constants or metadata arrays to build schema-backed
-`CarbonQuery` payloads. Model write helpers such as `carbon_model_insert()`,
-`carbon_model_replace()`, `carbon_model_update()`, `carbon_model_upsert()`, and
-`carbon_model_do_nothing()` accept values keyed by generated field constants and
-map them to qualified write columns. Model request helpers
-`carbon_model_get_payload()` and `carbon_model_get_request()` keep the same
-native query object shape while returning a plain executor envelope; they do not
-execute database calls. Join helpers `carbon_model_join_target()`,
-`carbon_model_alias_column()`, and `carbon_model_alias_columns()` derive aliased
-join targets and alias-qualified columns from generated model metadata.
-
-Build and smoke-test it from the repository root:
+### PHP
 
 ```bash
 (cd bindings/php && bash build.sh)
@@ -569,70 +199,53 @@ php -d extension=bindings/php/modules/carbon.so bindings/php/smoke.php
 php -d extension=bindings/php/modules/carbon.so examples/php/index.php
 ```
 
-The PHP surface exposes `carbon_version()`, `carbon_hello_world()`,
-`carbon_status_code()`, `carbon_status_message()`, `carbon_compile_query()`,
-`carbon_compile_query_value()`, `carbon_compile_query_result()`,
-`carbon_adapt_compile_result()`, `carbon_query()`, `carbon_force_index()`,
-`carbon_use_index()`, `carbon_ignore_index()`, `C6C`, `C6`, `CarbonDialect`,
-`carbon_model_get_payload()`, `carbon_model_get_request()`,
-`carbon_model_query()`, `carbon_model_select()`, `carbon_model_column()`,
-`carbon_model_join_target()`, `carbon_model_alias_column()`,
-`carbon_model_alias_columns()`,
-`carbon_model_insert()`, `carbon_model_replace()`, `carbon_model_update()`,
-`carbon_model_upsert()`, `carbon_model_do_nothing()`,
-`carbon_schema_from_dump()`, `carbon_schema_metadata()`,
-`carbon_schema_model_source()`,
-and `carbon_normalize_allowlist_sql()`.
+PHP exposes raw extension functions plus `bindings/php/carbon_codegen.php` for
+`C6C`, `CarbonDialect`, native array compilation, typed result adapters,
+generated model classes, model request envelopes, joins, write helpers, and the
+optional `CarbonQuery` builder.
 
-## Node Binding
+### Node
 
-The Node binding uses plain N-API from `bindings/node/carbon_node.cpp` and
-exports camelCase methods plus snake_case aliases. `bindings/node/index.js`
-adds `compileQueryValue()` / `compile_query_value()` for native objects, typed
-result adapters, a package-level TypeScript source generator that delegates to
-`schemaModelSource()`, and an optional `CarbonQuery` / `query()` facade for
-incremental construction. Compile results include
-`diagnostics_json` beside the status, SQL, params, allowlist, and error fields:
+```bash
+(cd bindings/node && bash build.sh)
+node bindings/node/smoke.js
+node examples/node/index.js
+```
+
+Node uses plain N-API and exports camelCase methods plus snake_case aliases.
+`bindings/node/index.js` adds native object compilation, typed result adapters,
+generated TypeScript source, `C6C`, `CarbonDialect`, model APIs, joins, write
+helpers, and the optional `CarbonQuery` builder.
+
+### Ruby
+
+```bash
+(cd bindings/ruby && bash build.sh)
+ruby bindings/ruby/smoke.rb
+ruby examples/ruby/example.rb
+```
+
+Ruby exposes `CarbonC` extension methods and `bindings/ruby/carbon_codegen.rb`
+helpers for native hash compilation, typed result adapters, generated Struct
+models, `CarbonC::C6C`, `CarbonC::Dialect`, model request envelopes, joins,
+write helpers, and the optional `CarbonC::Query` builder.
+
+## Shared Binding Pattern
+
+All bindings follow the same shape:
+
+1. Extract or provide C6 schema JSON.
+2. Generate model metadata or source from that schema.
+3. Build query payloads with generated constants and literal helpers.
+4. Compile the payload through CarbonC.
+5. Execute the returned SQL and params in the host runtime.
+
+Example JavaScript payload:
 
 ```js
-const carbon = require('./bindings/node');
-
-const schema = carbon.schemaFromDump(`
-CREATE TABLE \`actor\` (
-  \`actor_id\` smallint unsigned NOT NULL AUTO_INCREMENT,
-  \`first_name\` varchar(45) NOT NULL,
-  PRIMARY KEY (\`actor_id\`)
-);
-`);
-const metadata = JSON.parse(carbon.schemaMetadata(schema));
-const typeSource = carbon.schemaModels(schema);
-// The generated TypeScript module exports the same ActorTable/ActorColumns shape,
-// plus an Actor object with Get/GetPayload delegates.
-const actorMetadata = metadata.tables[0];
-const ActorTable = actorMetadata.name;
-const ActorFields = Object.freeze(Object.fromEntries(
-  actorMetadata.columns.map((column) => [column.name, column.name])
-));
-const ActorColumns = Object.freeze(Object.fromEntries(
-  actorMetadata.columns.map((column) => [column.name, column.qualified])
-));
-const ActorMeta = {table: ActorTable, fields: ActorFields, columns: ActorColumns};
 const Actor = carbon.modelApi(ActorMeta);
 
-const query = {
-  [carbon.C6C.FROM]: ActorTable,
-  [carbon.C6C.SELECT]: [ActorColumns.actor_id],
-  [carbon.C6C.WHERE]: {
-    [ActorColumns.actor_id]: carbon.eqLit(10),
-  },
-  [carbon.C6C.PAGINATION]: {[carbon.C6C.LIMIT]: 5},
-};
-const typedResult = carbon.compileQueryResult(
-  query,
-  schema,
-  carbon.CarbonDialect.MYSQL,
-);
-const getRequest = Actor.Get({
+const request = Actor.Get({
   [carbon.C6C.SELECT]: [Actor.COLUMNS.actor_id],
   [carbon.C6C.WHERE]: {
     [Actor.COLUMNS.actor_id]: carbon.eqLit(10),
@@ -643,204 +256,36 @@ const getRequest = Actor.Get({
   schema,
   dialect: carbon.CarbonDialect.MYSQL,
 });
-const fieldColumn = carbon.modelColumn(ActorMeta, ActorFields.actor_id);
-const writePayload = {
-  [carbon.C6C.FROM]: ActorTable,
-  [carbon.C6C.INSERT]: carbon.modelValues(ActorMeta, {
-    [ActorFields.first_name]: 'ALICE',
-  }),
-};
-const writeResult = carbon.compileQueryResult(
-  writePayload,
-  schema,
-  carbon.CarbonDialect.MYSQL,
+
+const result = carbon.compileQueryResult(
+  request.query,
+  request.schema,
+  request.dialect,
 );
-const metadataJson = JSON.stringify(metadata);
 ```
 
-The default package path is to pass a complete native object payload through
-`compileQueryResult()` / `compileQueryValue()`, matching CarbonORM's
-front-end/back-end query-object convention. `CarbonQuery.toPayload()` is
-available when callers want incremental construction; it returns the canonical
-object sent through the C JSON
-boundary for table/from, select, where, join, group/having, write operations
-(`insert`, `replace`, `update`, `delete`, `upsert`, `doNothing`), scalar
-`subselect()` helpers, derived `joinSubselect()` targets, advanced predicate
-helpers (`whereOp`, `whereIn`, `whereNotIn`, `whereBetween`, `whereNotBetween`,
-`whereMatchAgainst`, `whereExists`, `whereNotExists`), composable boolean group helpers
-(`condition`, `andGroup`, `orGroup`, `whereAnd`, `whereOr`), expression helpers
-(`fn`, `customCall`, `call`, `lit`, `eqLit`, `inLit`, `notInLit`,
-`betweenLit`, `param`, `stContains`, `stWithin`,
-`mbrContains`), index hint helpers (`indexHints`, `forceIndex`, `useIndex`,
-`ignoreIndex`), limit/page, and order controls.
-`compileQueryResult()` returns the same fields as the raw result
-plus decoded JavaScript `params` and `diagnostics` values. The generated
-TypeScript source maps DB metadata into primitive field types, exports
-`ActorTable`, `ActorFields`, and `ActorColumns` constants beside each interface,
-adds `fields`, `dbTypes`, and `nullable` metadata to the generated `*Meta`
-object, and exports an `Actor` model object with `Get()` / `GetPayload()`
-delegates. Runtime helpers such as `modelApi()`, `modelQuery()`, `modelSelect()`, and
-`modelColumn()` consume generated `*Meta` objects to build schema-backed
-`CarbonQuery` payloads. Model write helpers such as `modelInsert()`,
-`modelReplace()`, `modelUpdate()`, `modelUpsert()`, and `modelDoNothing()`
-accept values keyed by generated field constants and map them to qualified write
-columns. Model request helpers `modelGetPayload()` and `modelGetRequest()` keep
-the same native query object shape while returning a plain executor envelope;
-they do not execute database calls. Join helpers `modelJoinTarget()`,
-`modelAliasColumn()`, and `modelAliasColumns()` derive aliased join targets and
-alias-qualified columns from generated model metadata.
+Model `Get` helpers return serializable request envelopes. They do not choose a
+database, route traffic, apply device/offload policy, or execute the query.
 
-Build and smoke-test it from the repository root:
+## Project Layout
 
-```bash
-(cd bindings/node && bash build.sh)
-node bindings/node/smoke.js
-node examples/node/index.js
+```text
+include/carbon.h          public C ABI
+src/carbon.c              kernel implementation
+tests/test_carbon.c       C test runner
+tests/fixtures/*.case     golden compiler fixtures
+bindings/python           Python extension and helpers
+bindings/php              PHP extension and helpers
+bindings/node             Node N-API addon and helpers
+bindings/ruby             Ruby extension and helpers
+examples                  binding examples
+docs/ARCHITECTURE.md      detailed boundary and grammar notes
 ```
 
-The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
-`statusCode()`, `compileQuery()`, `compileQueryValue()`,
-`compileQueryResult()`, `adaptCompileResult()`, `C6C`, `C6`, `CarbonDialect`,
-`Dialect`, `CarbonQuery`, `query()`,
-`fromTable()`, `subselect()`, `derivedTarget()`, `op()`, `lit()`, `eqLit()`,
-`inLit()`, `notInLit()`, `betweenLit()`, `param()`, `call()`, `alias()`,
-`distinct()`, `between()`, `inList()`, `existsSpec()`,
-`exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
-`forceIndex()`, `useIndex()`, `ignoreIndex()`, `modelQuery()`, `modelSelect()`,
-`modelColumn()`, `modelJoinTarget()`, `modelAliasColumn()`,
-`modelAliasColumns()`, `modelApi()`, `modelGetPayload()`, `modelGetRequest()`,
-`modelInsert()`, `modelReplace()`, `modelUpdate()`,
-`modelUpsert()`, `modelDoNothing()`, `schemaFromDump()`, `schemaMetadata()`,
-`schemaModelSource()`, `schemaModels()`, and
-`normalizeAllowlistSql()`, plus snake_case aliases for the multiword functions.
+## Direction
 
-## Ruby Binding
+Next work should continue behind stable fixtures:
 
-The Ruby extension wraps the same compile result shape from
-`bindings/ruby/carbon_ruby.c` as a `Hash` with string keys, including
-`diagnostics_json`. The
-`bindings/ruby/carbon_codegen.rb` helper adds `CarbonC::C6C` / `CarbonC::C6`,
-`CarbonC::Dialect`, `CarbonC.compile_query_value` for native hashes, typed
-result adapters, Ruby Struct model source that delegates to
-`CarbonC.schema_model_source`, and an optional `CarbonC::Query` facade for
-incremental construction:
-
-```ruby
-require_relative './bindings/ruby/carbon_codegen'
-
-schema = CarbonC.schema_from_dump(<<~SQL)
-  CREATE TABLE `actor` (
-    `actor_id` smallint unsigned NOT NULL AUTO_INCREMENT,
-    `first_name` varchar(45) NOT NULL,
-    PRIMARY KEY (`actor_id`)
-  );
-SQL
-eval(CarbonC.schema_models(schema))
-
-query = {
-  CarbonC::C6C::FROM => CarbonModels::Actor::TABLE,
-  CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
-  CarbonC::C6C::WHERE => {
-    CarbonModels::Actor::ACTOR_ID => CarbonC.eq_lit(10)
-  },
-  CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 5}
-}
-typed_result = CarbonC.compile_query_result(query, schema, CarbonC::Dialect::MYSQL)
-get_request = CarbonModels::Actor.Get(
-  {
-    CarbonC::C6C::SELECT => [CarbonModels::Actor::ACTOR_ID],
-    CarbonC::C6C::WHERE => {
-      CarbonModels::Actor::ACTOR_ID => CarbonC.eq_lit(10)
-    },
-    CarbonC::C6C::PAGINATION => {CarbonC::C6C::LIMIT => 500},
-    'cacheResults' => false
-  },
-  schema: schema,
-  dialect: CarbonC::Dialect::MYSQL
-)
-field_column = CarbonC.model_column(CarbonModels::Actor, CarbonModels::Actor::FIELD_ACTOR_ID)
-write_payload = {
-  CarbonC::C6C::FROM => CarbonModels::Actor::TABLE,
-  CarbonC::C6C::INSERT => CarbonC.model_values(
-    CarbonModels::Actor,
-    CarbonModels::Actor::FIELD_FIRST_NAME => 'ALICE'
-  )
-}
-write_result = CarbonC.compile_query_result(write_payload, schema, CarbonC::Dialect::MYSQL)
-metadata_json = CarbonC.schema_metadata(schema)
-model_source = CarbonC.schema_models(schema)
-```
-
-The default package path is to pass a complete native hash payload through
-`CarbonC.compile_query_result` / `CarbonC.compile_query_value`, matching
-CarbonORM's front-end/back-end query-object convention. `CarbonC::Query#to_payload`
-is available when callers want incremental construction; it returns the
-canonical hash sent through the C JSON
-boundary for table/from, select, where, join, group/having, write operations
-(`insert`, `replace`, `update`, `delete`, `upsert`, `do_nothing`), scalar
-`CarbonC.subselect` helpers, derived `join_subselect` targets, advanced
-predicate helpers (`where_op`, `where_in`, `where_not_in`, `where_between`,
-`where_not_between`, `where_match_against`, `where_exists`, `where_not_exists`), composable boolean
-group helpers (`CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
-`where_and`, `where_or`), expression helpers (`CarbonC.fn`,
-`CarbonC.custom_call`, `CarbonC.call`, `CarbonC.lit`, `CarbonC.eq_lit`,
-`CarbonC.in_lit`, `CarbonC.not_in_lit`, `CarbonC.between_lit`, `CarbonC.param`,
-`CarbonC.st_contains`, `CarbonC.st_within`, `CarbonC.mbr_contains`), index hint
-helpers (`index_hints`, `force_index`, `use_index`, `ignore_index`), limit/page,
-and order controls.
-`CarbonC.compile_query_result` returns the same fields as the raw
-result plus decoded Ruby `params` and `diagnostics` values. The generated Ruby
-Struct source includes `TABLE`, `PRIMARY`, `FIELDS`, `COLUMNS`, field constants
-such as `CarbonModels::Actor::FIELD_ACTOR_ID`, direct column constants such as
-`CarbonModels::Actor::ACTOR_ID`, plus `TYPES` and `NULLABLE` metadata constants
-for runtime consumers. Generated Struct classes also expose `Get` / `GetPayload`
-delegates for model request payloads. Runtime helpers such as `CarbonC.model_query`,
-`CarbonC.model_select`, and `CarbonC.model_column` consume generated constants
-or metadata hashes to build schema-backed `CarbonC::Query` payloads. Model write
-helpers such as `CarbonC.model_insert`, `CarbonC.model_replace`,
-`CarbonC.model_update`, `CarbonC.model_upsert`, and `CarbonC.model_do_nothing`
-accept values keyed by generated field constants and map them to qualified write
-columns. Model request helpers `CarbonC.model_get_payload` and
-`CarbonC.model_get_request` keep the same native query object shape while
-returning a plain executor envelope; they do not execute database calls. Join
-helpers `CarbonC.model_join_target`, `CarbonC.model_alias_column`, and
-`CarbonC.model_alias_columns` derive aliased join targets and alias-qualified
-columns from generated model metadata.
-
-Build and smoke-test it from the repository root:
-
-```bash
-(cd bindings/ruby && bash build.sh)
-ruby bindings/ruby/smoke.rb
-ruby examples/ruby/example.rb
-```
-
-The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
-`CarbonC.status_code`, `CarbonC.status_message`, `CarbonC.compile_query`,
-`CarbonC.compile_query_value`, `CarbonC.compile_query_result`,
-`CarbonC.adapt_compile_result`, `CarbonC::C6C`, `CarbonC::C6`,
-`CarbonC::Dialect`, `CarbonC.query`, `CarbonC.from_table`,
-`CarbonC.subselect`, `CarbonC.derived_target`, `CarbonC.op`, `CarbonC.lit`,
-`CarbonC.eq_lit`, `CarbonC.in_lit`, `CarbonC.not_in_lit`,
-`CarbonC.between_lit`,
-`CarbonC.param`, `CarbonC.call`, `CarbonC.alias_expression`,
-`CarbonC.distinct`, `CarbonC.between`, `CarbonC.in_list`,
-`CarbonC.exists_spec`, `CarbonC.exists`, `CarbonC.not_exists`,
-`CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
-`CarbonC.force_index`, `CarbonC.use_index`, `CarbonC.ignore_index`,
-`CarbonC.model_query`, `CarbonC.model_select`, `CarbonC.model_column`,
-`CarbonC.model_join_target`, `CarbonC.model_alias_column`,
-`CarbonC.model_alias_columns`,
-`CarbonC.model_get_payload`, `CarbonC.model_get_request`,
-`CarbonC.model_insert`, `CarbonC.model_replace`, `CarbonC.model_update`,
-`CarbonC.model_upsert`, `CarbonC.model_do_nothing`,
-`CarbonC.schema_from_dump`, `CarbonC.schema_metadata`,
-`CarbonC.schema_model_source`, and
-`CarbonC.normalize_allowlist_sql`.
-
-## Next Milestones
-
-1. Expand the remaining CarbonNode C6 grammar behind golden fixtures.
-2. Add richer multi-diagnostic reporting for validation batches.
-3. Add higher-level package examples and fixture imports from production C6
-   query shapes as the remaining grammar lands.
+1. Expand the remaining CarbonNode C6 grammar.
+2. Add richer batched diagnostics.
+3. Add higher-level package examples from real production C6 query shapes.
