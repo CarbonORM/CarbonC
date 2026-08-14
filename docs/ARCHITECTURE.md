@@ -164,6 +164,32 @@ Derived JOIN targets stay ABI-neutral: bindings pass a JSON string key whose
 decoded value is an object containing `SUBSELECT` and `AS`, and the associated
 JOIN value remains the `ON` clause.
 
+Join targets follow the same constants-first rule as normal model access. The C
+ABI accepts the canonical payload shape, while package helpers derive
+`table alias` targets and `alias.column` references from generated model
+metadata:
+
+```json
+{
+  "FROM": "actor",
+  "SELECT": ["actor.actor_id", "fa.film_id"],
+  "JOIN": {
+    "INNER": {
+      "film_actor fa": {
+        "fa.actor_id": ["=", "actor.actor_id"]
+      }
+    }
+  }
+}
+```
+
+The right-hand `"actor.actor_id"` in the join predicate is an identifier, not a
+bound string value. Query authors should continue to use `LIT` helpers for
+variable values. Bindings expose alias helpers such as `modelJoinTarget()` /
+`model_join_target()` and `modelAliasColumns()` / `model_alias_columns()` so
+join payloads can be built from generated field constants without retyping
+schema column names.
+
 `INDEX_HINTS` supports CarbonNode's `FORCE INDEX`, `USE INDEX`, and
 `IGNORE INDEX` hint specs. Target-keyed maps are resolved by alias, `table alias`,
 table, and `__base__` precedence before emitting MySQL syntax.
@@ -233,7 +259,7 @@ CarbonC now carries the first CarbonNode-derived golden fixtures under
 wrappers, package-level native payload helpers, typed result adapters,
 read/write/subselect/predicate query-builder facades, boolean-group compiler
 wrapping, C6 token constants, dialect constants, C-owned typed source generation with
-generated field and column constants, model-aware read/write query scaffolds, full-text
+generated field and column constants, model-aware read/write/join query scaffolds, full-text
 `MATCH_AGAINST` predicates, boolean spatial-function predicates, canonical
 custom-call expressions, expression-valued writes, MySQL index hints, and binding-friendly
 diagnostic JSON. The next
