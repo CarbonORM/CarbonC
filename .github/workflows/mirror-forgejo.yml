@@ -24,21 +24,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure Forgejo SSH key
+      - name: Validate Forgejo mirror token
         env:
-          FORGEJO_MIRROR_SSH_KEY: ${{ secrets.FORGEJO_MIRROR_SSH_KEY }}
+          FORGEJO_MIRROR_TOKEN: ${{ secrets.FORGEJO_MIRROR_TOKEN }}
         run: |
-          test -n "$FORGEJO_MIRROR_SSH_KEY"
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$FORGEJO_MIRROR_SSH_KEY" > ~/.ssh/forgejo_mirror
-          chmod 600 ~/.ssh/forgejo_mirror
-          ssh-keyscan -H git.miles.systems >> ~/.ssh/known_hosts
+          test -n "$FORGEJO_MIRROR_TOKEN"
 
       - name: Push main and tags to Forgejo
         env:
-          GIT_SSH_COMMAND: ssh -i ~/.ssh/forgejo_mirror -o IdentitiesOnly=yes
+          FORGEJO_MIRROR_TOKEN: ${{ secrets.FORGEJO_MIRROR_TOKEN }}
         run: |
-          git remote add forgejo git@git.miles.systems:CarbonORM/CarbonC.git
+          git remote add forgejo "https://richardtmiles:${FORGEJO_MIRROR_TOKEN}@git.miles.systems/CarbonORM/CarbonC.git"
           git fetch origin '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/*:refs/tags/*'
           git push forgejo refs/remotes/origin/main:refs/heads/main --tags
