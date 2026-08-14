@@ -211,6 +211,53 @@ static VALUE carbon_ruby_schema_from_dump(VALUE self, VALUE sql_value) {
     return schema;
 }
 
+static VALUE carbon_ruby_schema_model_source(int argc, VALUE *argv, VALUE self) {
+    VALUE schema_value;
+    VALUE language_value;
+    VALUE options_value;
+    const char *options_json = "{}";
+    size_t options_json_length = 2;
+    carbon_buffer out;
+    carbon_buffer error;
+    carbon_status status;
+    VALUE source;
+
+    (void) self;
+
+    rb_scan_args(argc, argv, "21", &schema_value, &language_value, &options_value);
+    Check_Type(schema_value, T_STRING);
+    Check_Type(language_value, T_STRING);
+    if (!NIL_P(options_value)) {
+        Check_Type(options_value, T_STRING);
+        options_json = RSTRING_PTR(options_value);
+        options_json_length = (size_t) RSTRING_LEN(options_value);
+    }
+
+    carbon_buffer_init(&out);
+    carbon_buffer_init(&error);
+    status = carbon_schema_model_source(
+            RSTRING_PTR(schema_value),
+            (size_t) RSTRING_LEN(schema_value),
+            RSTRING_PTR(language_value),
+            options_json,
+            options_json_length,
+            &out,
+            &error);
+    if (status != CARBON_STATUS_OK) {
+        VALUE exception = rb_exc_new2(
+                rb_eArgError,
+                error.data == NULL ? carbon_status_message(status) : error.data);
+        carbon_buffer_free(&out);
+        carbon_buffer_free(&error);
+        rb_exc_raise(exception);
+    }
+
+    source = carbon_ruby_buffer_to_string(&out);
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+    return source;
+}
+
 void Init_carbon(void) {
     carbon_ruby_module = rb_define_module("CarbonC");
     rb_define_singleton_method(carbon_ruby_module, "version", carbon_ruby_version, 0);
@@ -225,4 +272,5 @@ void Init_carbon(void) {
             1);
     rb_define_singleton_method(carbon_ruby_module, "schema_metadata", carbon_ruby_schema_metadata, -1);
     rb_define_singleton_method(carbon_ruby_module, "schema_from_dump", carbon_ruby_schema_from_dump, 1);
+    rb_define_singleton_method(carbon_ruby_module, "schema_model_source", carbon_ruby_schema_model_source, -1);
 }

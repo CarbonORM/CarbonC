@@ -10,6 +10,7 @@ CarbonC owns pure transformations:
 
 - SQL dump schema extraction
 - schema metadata normalization
+- language-normalized model source generation
 - query payload validation
 - SQL compilation
 - parameter list extraction
@@ -26,7 +27,7 @@ Bindings own runtime integration:
 - language-native C6 token constants
 - language-native dialect constants
 - query-builder facades
-- native model classes and generated types
+- packaging/loading native model classes and generated types
 - exception mapping
 
 The initial Python, PHP, Node, and Ruby bindings keep the native extensions
@@ -37,7 +38,8 @@ serialization helpers, typed result adapters that decode params/diagnostics JSON
 optional query-builder facades, CarbonNode-compatible `C6C` token constants, C
 `CARBON_C6_*` macros, `CarbonDialect` / `Dialect` constants, C
 `CARBON_DIALECT_*` macros, language-normalized literal predicate helpers such as
-`eqLit` / `eq_lit` / `carbon_eq_lit`, and typed source generators for Python
+`eqLit` / `eq_lit` / `carbon_eq_lit`, and typed source generator wrappers that
+delegate to the C `carbon_schema_model_source()` implementation for Python
 dataclasses, TypeScript interfaces, PHP model classes, and Ruby Struct models.
 Generated model sources expose table, field-name, and qualified-column constants
 plus model `Get` helpers so query authors do not hand-type grammar
@@ -68,7 +70,8 @@ native binding object
   -> native driver executes prepared statement
 
 SQL dump -> CarbonC schema extractor -> schema JSON
-schema JSON -> CarbonC schema metadata normalizer -> native type generator
+schema JSON -> CarbonC schema metadata normalizer -> CarbonC model source generator
+model source -> language package loader/build step
 
 native model Get payload -> application executor
 ```
@@ -98,9 +101,9 @@ The initial compiler supports:
   metadata normalization, compiler validation, and every binding generator
 - schema metadata enrichment from CarbonNode-style `TYPE_VALIDATION` entries
   keyed by qualified column name
-- package-level typed source generators for Python dataclasses, TypeScript
+- C-owned typed source generation for Python dataclasses, TypeScript
   interfaces, PHP model classes, and Ruby Struct models, including generated
-  table and column constants
+  table and column constants, exposed through package-level wrappers
 - package-level compile helpers for native Python dicts, PHP arrays, JavaScript
   objects, and Ruby hashes
 - package-level model `Get` payload helpers that preserve generated-constant
@@ -178,9 +181,10 @@ conflicting model classes.
 
 `carbon_schema_metadata()` returns a stable `{"tables":[...]}` JSON document
 with ordered table names, ordered `columns` entries (`name` plus `qualified`),
-and `primary` short-column names. Bindings can parse that shape to generate
-language-native models without duplicating C6 schema interpretation. Those
-generators emit native table, field-name, and qualified-column constants
+and `primary` short-column names. `carbon_schema_model_source()` consumes that
+same interpretation to generate language-native model structures without
+duplicating C6 schema handling in each package. The generated sources emit
+native table, field-name, and qualified-column constants
 (`Actor.FIELD_ACTOR_ID`, `Actor::ACTOR_ID`, `ActorFields.actor_id`,
 `ActorColumns.actor_id`, etc.) and metadata maps that point back to the same
 values. When a table includes CarbonNode-style
@@ -188,6 +192,12 @@ values. When a table includes CarbonNode-style
 `nullable`, `auto_increment`, and `skip_insert` fields. Object-valued `COLUMNS`
 entries may also carry those fields directly for schema sources that do not
 separate type validation.
+
+Generated symbol names are normalized per target language. Reserved words are
+adjusted into valid identifiers, but collisions between normalized class,
+field, or constant names are reported as generation errors. Multiple databases
+that would produce conflicting symbols should be generated into separate source
+units, package paths, PHP namespaces, or Ruby modules.
 
 PostgreSQL write support covers simple insert/update/delete forms, multi-row
 `INSERT ... RETURNING *`, and schema-derived `ON CONFLICT` targets in this
@@ -222,7 +232,7 @@ CarbonC now carries the first CarbonNode-derived golden fixtures under
 `tests/fixtures/*.case`, plus native Python, PHP, Node, and Ruby smoke
 wrappers, package-level native payload helpers, typed result adapters,
 read/write/subselect/predicate query-builder facades, boolean-group compiler
-wrapping, C6 token constants, dialect constants, typed source generators with
+wrapping, C6 token constants, dialect constants, C-owned typed source generation with
 generated field and column constants, model-aware read/write query scaffolds, full-text
 `MATCH_AGAINST` predicates, boolean spatial-function predicates, canonical
 custom-call expressions, expression-valued writes, MySQL index hints, and binding-friendly

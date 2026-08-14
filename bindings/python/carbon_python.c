@@ -224,6 +224,55 @@ static PyObject *carbon_py_schema_from_dump(PyObject *self, PyObject *args) {
     return result;
 }
 
+static PyObject *carbon_py_schema_model_source(PyObject *self, PyObject *args) {
+    const char *schema_json = "{}";
+    Py_ssize_t schema_json_length = 2;
+    const char *language;
+    const char *options_json = "{}";
+    Py_ssize_t options_json_length = 2;
+    carbon_buffer out;
+    carbon_buffer error;
+    carbon_status status;
+    PyObject *result;
+
+    (void) self;
+    if (!PyArg_ParseTuple(
+            args,
+            "s#s|s#:schema_model_source",
+            &schema_json,
+            &schema_json_length,
+            &language,
+            &options_json,
+            &options_json_length)) {
+        return NULL;
+    }
+
+    status = carbon_schema_model_source(
+            schema_json,
+            (size_t) schema_json_length,
+            language,
+            options_json,
+            (size_t) options_json_length,
+            &out,
+            &error);
+    if (status != CARBON_STATUS_OK) {
+        PyObject *message = PyUnicode_FromString(error.data == NULL ? carbon_status_message(status) : error.data);
+        carbon_buffer_free(&out);
+        carbon_buffer_free(&error);
+        if (message == NULL) {
+            return NULL;
+        }
+        PyErr_SetObject(PyExc_ValueError, message);
+        Py_DECREF(message);
+        return NULL;
+    }
+
+    result = PyUnicode_FromStringAndSize(out.data == NULL ? "" : out.data, (Py_ssize_t) out.length);
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+    return result;
+}
+
 static PyMethodDef carbon_methods[] = {
         {"version", carbon_py_version, METH_NOARGS, "Return the CarbonC version."},
         {"hello_world", carbon_py_hello_world, METH_NOARGS, "Return the CarbonC smoke-test message."},
@@ -237,6 +286,8 @@ static PyMethodDef carbon_methods[] = {
          "Normalize C6 schema metadata into JSON for generated binding types."},
         {"schema_from_dump", carbon_py_schema_from_dump, METH_VARARGS,
          "Extract C6 schema JSON from SQL dump text."},
+        {"schema_model_source", carbon_py_schema_model_source, METH_VARARGS,
+         "Generate language-native model source from C6 schema JSON."},
         {NULL, NULL, 0, NULL}
 };
 

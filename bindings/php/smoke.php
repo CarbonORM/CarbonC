@@ -514,6 +514,12 @@ carbon_assert(
     'unexpected metadata: ' . json_encode($metadata)
 );
 $models = carbon_schema_models($schema, 'CarbonORM\\Generated');
+$rawModels = carbon_schema_model_source(
+    json_encode($schema),
+    'php',
+    json_encode(['namespace' => 'CarbonORM\\Generated'])
+);
+carbon_assert($models === $rawModels, 'carbon_schema_models should delegate to the C generator');
 carbon_assert(strpos($models, 'namespace CarbonORM\\Generated;') !== false, 'expected generated namespace');
 carbon_assert(strpos($models, 'final class Actor') !== false, 'expected generated Actor class');
 carbon_assert(strpos($models, "public const FIELD_ACTOR_ID = 'actor_id';") !== false, 'expected generated actor_id field constant');
@@ -561,6 +567,18 @@ carbon_assert(
     'unexpected constant-built query sql: ' . $constantBuilt['sql']
 );
 carbon_assert($constantBuilt['params'] === [0], 'unexpected constant-built query params: ' . json_encode($constantBuilt['params']));
+$conflictingModelSchema = [
+    'TABLES' => [
+        'foo_bar' => ['COLUMNS' => ['foo_bar.id' => 'id']],
+        'foo__bar' => ['COLUMNS' => ['foo__bar.id' => 'id']],
+    ],
+];
+try {
+    carbon_schema_models($conflictingModelSchema);
+    carbon_assert(false, 'expected generated model name conflict');
+} catch (ValueError $error) {
+    carbon_assert(strpos($error->getMessage(), 'generated name conflict') !== false, 'unexpected model conflict error');
+}
 $modelBuilt = carbon_model_select(Actor::class, Actor::FIELD_ACTOR_ID)
     ->whereOp(Actor::ACTOR_ID, C6C::GREATER_THAN, 0)
     ->limit(1)

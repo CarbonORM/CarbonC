@@ -450,6 +450,11 @@ assert.strictEqual(
   '{"tables":[]}'
 );
 const modelSource = carbon.schemaModels(schema);
+assert.strictEqual(
+  modelSource,
+  carbon.schemaModelSource(JSON.stringify(schema), 'typescript', '{}'),
+  'schemaModels should delegate to the C generator'
+);
 assert(modelSource.includes("import * as carbon from '@carbonorm/carbonc';"));
 assert(modelSource.includes('export interface Actor'));
 assert(modelSource.includes('actor_id: number;'));
@@ -503,6 +508,16 @@ assert.strictEqual(
   'SELECT actor.actor_id, actor.first_name FROM `actor` WHERE (actor.actor_id) > ? ORDER BY actor.first_name ASC LIMIT 1'
 );
 assert.deepStrictEqual(constantBuilt.params, [0]);
+const conflictingModelSchema = {
+  TABLES: {
+    foo_bar: {COLUMNS: {'foo_bar.id': 'id'}},
+    foo__bar: {COLUMNS: {'foo__bar.id': 'id'}},
+  },
+};
+assert.throws(
+  () => carbon.schemaModels(conflictingModelSchema),
+  /generated name conflict/
+);
 const modelBuilt = carbon.modelSelect(actorMeta, actorMeta.fields.actor_id)
   .whereOp(actorMeta.columns.actor_id, carbon.C6C.GREATER_THAN, 0)
   .limit(1)

@@ -183,6 +183,26 @@ carbon_status carbon_schema_from_dump(
         carbon_buffer *error);
 
 /*
+ * Generates language-native model source from C6 schema metadata through the C
+ * core. `language` currently accepts python, typescript, php, or ruby. The
+ * options JSON is optional; PHP accepts {"namespace":"Vendor\\Package"} and
+ * Ruby accepts {"module_name":"CarbonModels"}. Generated source includes table,
+ * field-name, qualified-column, type/nullability metadata, and model Get /
+ * GetPayload helpers matching the package helper contracts. If normalized
+ * generated class, field, or constant names collide, generation fails so
+ * callers can split conflicting database schemas into separate namespaces,
+ * modules, or generated source units instead of accepting ambiguous symbols.
+ */
+carbon_status carbon_schema_model_source(
+        const char *schema_json,
+        size_t schema_json_length,
+        const char *language,
+        const char *options_json,
+        size_t options_json_length,
+        carbon_buffer *out,
+        carbon_buffer *error);
+
+/*
  * Normalizes generated SQL into the deterministic allowlist key used by
  * CarbonORM, including LIMIT, IN bind-list, parenthesized bind-group, and
  * multi-row VALUES cardinality normalization. The output buffers are

@@ -515,6 +515,82 @@ fail:
     return carbon_node_null(env);
 }
 
+static napi_value carbon_node_schema_model_source(napi_env env, napi_callback_info info) {
+    size_t argc = 3;
+    napi_value args[3];
+    char *schema_json = NULL;
+    size_t schema_json_length = 0;
+    char *language = NULL;
+    size_t language_length = 0;
+    char *options_json = NULL;
+    size_t options_json_length = 0;
+    carbon_buffer out;
+    carbon_buffer error;
+    carbon_status status;
+    napi_value value;
+
+    carbon_buffer_init(&out);
+    carbon_buffer_init(&error);
+
+    if (napi_get_cb_info(env, info, &argc, args, NULL, NULL) != napi_ok) {
+        napi_throw_error(env, NULL, "CarbonC failed to read arguments");
+        goto fail;
+    }
+
+    if (argc < 2) {
+        napi_throw_type_error(env, NULL, "schema_json and language must be strings");
+        goto fail;
+    }
+
+    if (!carbon_node_get_string(env, args[0], "schema_json must be a string", &schema_json, &schema_json_length)
+        || !carbon_node_get_string(env, args[1], "language must be a string", &language, &language_length)) {
+        goto fail;
+    }
+    (void) language_length;
+
+    if (argc >= 3) {
+        if (!carbon_node_get_string(env, args[2], "options_json must be a string", &options_json, &options_json_length)) {
+            goto fail;
+        }
+    }
+
+    status = carbon_schema_model_source(
+            schema_json,
+            schema_json_length,
+            language,
+            options_json == NULL ? "{}" : options_json,
+            options_json == NULL ? 2 : options_json_length,
+            &out,
+            &error);
+    if (status != CARBON_STATUS_OK) {
+        napi_throw_range_error(
+                env,
+                NULL,
+                error.data == NULL ? carbon_status_message(status) : error.data);
+        goto fail;
+    }
+
+    if (napi_create_string_utf8(env, out.data == NULL ? "" : out.data, out.length, &value) != napi_ok) {
+        napi_throw_error(env, NULL, "CarbonC failed to allocate model source string");
+        goto fail;
+    }
+
+    free(schema_json);
+    free(language);
+    free(options_json);
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+    return value;
+
+fail:
+    free(schema_json);
+    free(language);
+    free(options_json);
+    carbon_buffer_free(&out);
+    carbon_buffer_free(&error);
+    return carbon_node_null(env);
+}
+
 napi_value carbon_node_init(napi_env env, napi_value exports) {
     napi_property_descriptor descriptors[] = {
         {"version", NULL, carbon_node_version, NULL, NULL, NULL, napi_default, NULL},
@@ -525,6 +601,7 @@ napi_value carbon_node_init(napi_env env, napi_value exports) {
         {"normalizeAllowlistSql", NULL, carbon_node_normalize_allowlist_sql, NULL, NULL, NULL, napi_default, NULL},
         {"schemaMetadata", NULL, carbon_node_schema_metadata, NULL, NULL, NULL, napi_default, NULL},
         {"schemaFromDump", NULL, carbon_node_schema_from_dump, NULL, NULL, NULL, napi_default, NULL},
+        {"schemaModelSource", NULL, carbon_node_schema_model_source, NULL, NULL, NULL, napi_default, NULL},
         {"hello_world", NULL, carbon_node_hello_world, NULL, NULL, NULL, napi_default, NULL},
         {"status_code", NULL, carbon_node_status_code, NULL, NULL, NULL, napi_default, NULL},
         {"status_message", NULL, carbon_node_status_message, NULL, NULL, NULL, napi_default, NULL},
@@ -532,6 +609,7 @@ napi_value carbon_node_init(napi_env env, napi_value exports) {
         {"normalize_allowlist_sql", NULL, carbon_node_normalize_allowlist_sql, NULL, NULL, NULL, napi_default, NULL},
         {"schema_metadata", NULL, carbon_node_schema_metadata, NULL, NULL, NULL, napi_default, NULL},
         {"schema_from_dump", NULL, carbon_node_schema_from_dump, NULL, NULL, NULL, napi_default, NULL},
+        {"schema_model_source", NULL, carbon_node_schema_model_source, NULL, NULL, NULL, napi_default, NULL},
     };
 
     if (napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors) != napi_ok) {
