@@ -141,10 +141,28 @@ assert.deepStrictEqual(
     PAGINATION: {ORDER: [['actor.first_name', 'DESC']], LIMIT: 5},
   }
 );
+const joinActorMeta = {
+  table: 'actor',
+  columns: {actor_id: 'actor.actor_id', first_name: 'actor.first_name'},
+};
+const joinFilmActorMeta = {
+  table: 'film_actor',
+  columns: {actor_id: 'film_actor.actor_id', film_id: 'film_actor.film_id'},
+};
+const actorIdColumn = carbon.modelColumn(joinActorMeta, 'actor_id');
+const filmActorAlias = 'fa';
+const filmActorAliasColumns = carbon.modelAliasColumns(joinFilmActorMeta, filmActorAlias);
+assert.deepStrictEqual(filmActorAliasColumns, {actor_id: 'fa.actor_id', film_id: 'fa.film_id'});
+assert.strictEqual(carbon.modelAliasColumn(joinFilmActorMeta, filmActorAlias, 'actor_id'), 'fa.actor_id');
+assert.strictEqual(carbon.modelJoinTarget(joinFilmActorMeta, filmActorAlias), 'film_actor fa');
 assert.deepStrictEqual(
-  carbon.fromTable('actor')
-    .select('actor.actor_id')
-    .join('INNER', 'film_actor fa', {'fa.actor_id': ['=', 'actor.actor_id']})
+  carbon.fromTable(carbon.modelTable(joinActorMeta))
+    .select(actorIdColumn)
+    .join(
+      'INNER',
+      carbon.modelJoinTarget(joinFilmActorMeta, filmActorAlias),
+      {[filmActorAliasColumns.actor_id]: [carbon.C6C.EQUAL, actorIdColumn]}
+    )
     .toPayload(),
   {
     FROM: 'actor',
@@ -168,9 +186,13 @@ assert.deepStrictEqual(
     PAGINATION: {LIMIT: 10},
   }
 );
-const hintedJoin = carbon.query('actor')
-  .select('actor.actor_id', 'fa.film_id')
-  .join('INNER', 'film_actor fa', {'fa.actor_id': ['=', 'actor.actor_id']})
+const hintedJoin = carbon.query(carbon.modelTable(joinActorMeta))
+  .select(actorIdColumn, filmActorAliasColumns.film_id)
+  .join(
+    'INNER',
+    carbon.modelJoinTarget(joinFilmActorMeta, filmActorAlias),
+    {[filmActorAliasColumns.actor_id]: [carbon.C6C.EQUAL, actorIdColumn]}
+  )
   .indexHints({
     actor: carbon.ignoreIndex('idx_actor_last_name'),
     'film_actor fa': carbon.useIndex('idx_film_actor_actor_id'),
@@ -181,9 +203,9 @@ assert.strictEqual(
   hintedJoin.sql,
   'SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) ON ((fa.actor_id) = actor.actor_id) LIMIT 5'
 );
-const recentActorIds = carbon.query('film_actor')
-  .select('film_actor.actor_id')
-  .where({'film_actor.film_id': ['>', 10]})
+const recentActorIds = carbon.query(carbon.modelTable(joinFilmActorMeta))
+  .select(carbon.modelColumn(joinFilmActorMeta, 'actor_id'))
+  .where({[carbon.modelColumn(joinFilmActorMeta, 'film_id')]: ['>', 10]})
   .limit(1);
 assert.deepStrictEqual(carbon.subselect(recentActorIds), [
   'SUBSELECT',
@@ -194,10 +216,16 @@ assert.deepStrictEqual(carbon.subselect(recentActorIds), [
     PAGINATION: {LIMIT: 1},
   },
 ]);
-const derived = carbon.query('actor')
-  .select('actor.actor_id', 'fa_recent.actor_id')
-  .joinSubselect('INNER', 'fa_recent', recentActorIds, {'fa_recent.actor_id': ['=', 'actor.actor_id']})
-  .where({'actor.actor_id': ['>', 100]})
+const recentAliasColumns = carbon.modelAliasColumns(joinFilmActorMeta, 'fa_recent');
+const derived = carbon.query(carbon.modelTable(joinActorMeta))
+  .select(actorIdColumn, recentAliasColumns.actor_id)
+  .joinSubselect(
+    'INNER',
+    'fa_recent',
+    recentActorIds,
+    {[recentAliasColumns.actor_id]: [carbon.C6C.EQUAL, actorIdColumn]}
+  )
+  .where({[actorIdColumn]: ['>', 100]})
   .compile(undefined, carbon.CarbonDialect.MYSQL);
 assert.strictEqual(derived.status, 0, JSON.stringify(derived));
 assert.strictEqual(

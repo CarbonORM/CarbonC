@@ -165,6 +165,48 @@ Derived JOIN targets use the same JSON-only ABI as other compiler inputs: the
 JOIN target key is a stringified object with `SUBSELECT` and `AS`, while the
 JOIN target value remains the `ON` clause.
 
+Table joins are plain query-object payloads. `JOIN` is grouped first by join
+kind (`INNER`, `LEFT`, `LEFT_OUTER`, `RIGHT`, or `RIGHT_OUTER`), then by target
+table or `table alias`, and finally by an `ON` predicate map. Join `ON` maps use
+the same expression rules as `WHERE`: bare column strings are identifiers, while
+variable values should be wrapped with `LIT` helpers such as `eqLit()`.
+
+The preferred style is still constants-first. For aliased joins, choose the
+short alias once and derive alias-qualified columns from generated model fields:
+
+```js
+const filmActorAlias = 'fa';
+const FilmActorAlias = carbon.modelAliasColumns(FilmActor, filmActorAlias);
+
+const query = {
+  [carbon.C6C.FROM]: Actor.TABLE,
+  [carbon.C6C.SELECT]: [
+    Actor.COLUMNS.actor_id,
+    FilmActorAlias[FilmActor.FIELDS.film_id],
+  ],
+  [carbon.C6C.JOIN]: {
+    [carbon.C6C.INNER]: {
+      [carbon.modelJoinTarget(FilmActor, filmActorAlias)]: {
+        [FilmActorAlias[FilmActor.FIELDS.actor_id]]: [
+          carbon.C6C.EQUAL,
+          Actor.COLUMNS.actor_id,
+        ],
+      },
+    },
+  },
+  [carbon.C6C.WHERE]: {
+    [Actor.COLUMNS.actor_id]: carbon.eqLit(actorId),
+  },
+};
+```
+
+That payload compiles to an aliased join like
+`INNER JOIN film_actor AS fa ON fa.actor_id = actor.actor_id`. The package
+query-builder facades expose the same shape through `join()` /
+`joinSubselect()` (`join_subselect` in snake-case languages), but the
+query-object payload is the default contract to document and pass between
+front-end and back-end executors.
+
 `INDEX_HINTS` accepts CarbonNode's base hint form (`["idx"]`, `"idx"`, or an
 object keyed by `FORCE INDEX`, `USE INDEX`, and `IGNORE INDEX`) and target-keyed
 maps for joined tables. MySQL emits hints after the base table or joined alias;
@@ -414,7 +456,9 @@ such as `model_insert()`, `model_replace()`, `model_update()`,
 field constants and map them to qualified write columns. Model request helpers
 `model_get_payload()` and `model_get_request()` keep the same native query
 object shape while returning a plain executor envelope; they do not execute
-database calls.
+database calls. Join helpers `model_join_target()`, `model_alias_column()`, and
+`model_alias_columns()` derive aliased join targets and alias-qualified columns
+from generated model metadata.
 
 Build and smoke-test it from the repository root:
 
@@ -513,7 +557,9 @@ consume generated class constants or metadata arrays to build schema-backed
 map them to qualified write columns. Model request helpers
 `carbon_model_get_payload()` and `carbon_model_get_request()` keep the same
 native query object shape while returning a plain executor envelope; they do not
-execute database calls.
+execute database calls. Join helpers `carbon_model_join_target()`,
+`carbon_model_alias_column()`, and `carbon_model_alias_columns()` derive aliased
+join targets and alias-qualified columns from generated model metadata.
 
 Build and smoke-test it from the repository root:
 
@@ -530,6 +576,8 @@ The PHP surface exposes `carbon_version()`, `carbon_hello_world()`,
 `carbon_use_index()`, `carbon_ignore_index()`, `C6C`, `C6`, `CarbonDialect`,
 `carbon_model_get_payload()`, `carbon_model_get_request()`,
 `carbon_model_query()`, `carbon_model_select()`, `carbon_model_column()`,
+`carbon_model_join_target()`, `carbon_model_alias_column()`,
+`carbon_model_alias_columns()`,
 `carbon_model_insert()`, `carbon_model_replace()`, `carbon_model_update()`,
 `carbon_model_upsert()`, `carbon_model_do_nothing()`,
 `carbon_schema_from_dump()`, `carbon_schema_metadata()`,
@@ -638,7 +686,9 @@ delegates. Runtime helpers such as `modelApi()`, `modelQuery()`, `modelSelect()`
 accept values keyed by generated field constants and map them to qualified write
 columns. Model request helpers `modelGetPayload()` and `modelGetRequest()` keep
 the same native query object shape while returning a plain executor envelope;
-they do not execute database calls.
+they do not execute database calls. Join helpers `modelJoinTarget()`,
+`modelAliasColumn()`, and `modelAliasColumns()` derive aliased join targets and
+alias-qualified columns from generated model metadata.
 
 Build and smoke-test it from the repository root:
 
@@ -657,7 +707,8 @@ The addon exposes `version()`, `helloWorld()`, `statusMessage()`,
 `distinct()`, `between()`, `inList()`, `existsSpec()`,
 `exists()`, `notExists()`, `condition()`, `andGroup()`, `orGroup()`,
 `forceIndex()`, `useIndex()`, `ignoreIndex()`, `modelQuery()`, `modelSelect()`,
-`modelColumn()`, `modelApi()`, `modelGetPayload()`, `modelGetRequest()`,
+`modelColumn()`, `modelJoinTarget()`, `modelAliasColumn()`,
+`modelAliasColumns()`, `modelApi()`, `modelGetPayload()`, `modelGetRequest()`,
 `modelInsert()`, `modelReplace()`, `modelUpdate()`,
 `modelUpsert()`, `modelDoNothing()`, `schemaFromDump()`, `schemaMetadata()`,
 `schemaModelSource()`, `schemaModels()`, and
@@ -751,7 +802,10 @@ helpers such as `CarbonC.model_insert`, `CarbonC.model_replace`,
 accept values keyed by generated field constants and map them to qualified write
 columns. Model request helpers `CarbonC.model_get_payload` and
 `CarbonC.model_get_request` keep the same native query object shape while
-returning a plain executor envelope; they do not execute database calls.
+returning a plain executor envelope; they do not execute database calls. Join
+helpers `CarbonC.model_join_target`, `CarbonC.model_alias_column`, and
+`CarbonC.model_alias_columns` derive aliased join targets and alias-qualified
+columns from generated model metadata.
 
 Build and smoke-test it from the repository root:
 
@@ -775,6 +829,8 @@ The extension exposes `CarbonC.version`, `CarbonC.hello_world`,
 `CarbonC.condition`, `CarbonC.and_group`, `CarbonC.or_group`,
 `CarbonC.force_index`, `CarbonC.use_index`, `CarbonC.ignore_index`,
 `CarbonC.model_query`, `CarbonC.model_select`, `CarbonC.model_column`,
+`CarbonC.model_join_target`, `CarbonC.model_alias_column`,
+`CarbonC.model_alias_columns`,
 `CarbonC.model_get_payload`, `CarbonC.model_get_request`,
 `CarbonC.model_insert`, `CarbonC.model_replace`, `CarbonC.model_update`,
 `CarbonC.model_upsert`, `CarbonC.model_do_nothing`,

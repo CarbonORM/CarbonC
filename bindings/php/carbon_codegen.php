@@ -426,6 +426,39 @@ if (!function_exists('carbon_schema_models')) {
         return (string) $columns[$field];
     }
 
+    function carbon_model_join_target($model, string $alias): string
+    {
+        if ($alias === '') {
+            throw new InvalidArgumentException('model join alias must be a non-empty string');
+        }
+        return carbon_model_table($model) . ' ' . $alias;
+    }
+
+    function carbon_model_alias_column($model, string $alias, string $field): string
+    {
+        $columns = carbon_model_columns($model);
+        if (!array_key_exists($field, $columns)) {
+            throw new InvalidArgumentException('unknown model field: ' . $field);
+        }
+        if ($alias === '') {
+            throw new InvalidArgumentException('model column alias must be a non-empty string');
+        }
+        return $alias . '.' . $field;
+    }
+
+    function carbon_model_alias_columns($model, string $alias): array
+    {
+        $columns = carbon_model_columns($model);
+        if ($alias === '') {
+            throw new InvalidArgumentException('model column alias must be a non-empty string');
+        }
+        $mapped = [];
+        foreach ($columns as $field => $_column) {
+            $mapped[(string) $field] = $alias . '.' . (string) $field;
+        }
+        return $mapped;
+    }
+
     function carbon_model_query($model): CarbonQuery
     {
         return carbon_query(carbon_model_table($model));

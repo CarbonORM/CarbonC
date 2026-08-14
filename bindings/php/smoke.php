@@ -156,9 +156,27 @@ carbon_assert(
     ],
     'unexpected ordered builder payload: ' . json_encode($orderedPayload)
 );
-$joinPayload = carbon_query('actor')
-    ->select('actor.actor_id')
-    ->join('INNER', 'film_actor fa', ['fa.actor_id' => ['=', 'actor.actor_id']])
+$joinActorMeta = [
+    'table' => 'actor',
+    'columns' => ['actor_id' => 'actor.actor_id', 'first_name' => 'actor.first_name'],
+];
+$joinFilmActorMeta = [
+    'table' => 'film_actor',
+    'columns' => ['actor_id' => 'film_actor.actor_id', 'film_id' => 'film_actor.film_id'],
+];
+$actorIdColumn = carbon_model_column($joinActorMeta, 'actor_id');
+$filmActorAlias = 'fa';
+$filmActorAliasColumns = carbon_model_alias_columns($joinFilmActorMeta, $filmActorAlias);
+carbon_assert($filmActorAliasColumns === ['actor_id' => 'fa.actor_id', 'film_id' => 'fa.film_id'], 'unexpected alias columns');
+carbon_assert(carbon_model_alias_column($joinFilmActorMeta, $filmActorAlias, 'actor_id') === 'fa.actor_id', 'unexpected alias column');
+carbon_assert(carbon_model_join_target($joinFilmActorMeta, $filmActorAlias) === 'film_actor fa', 'unexpected join target');
+$joinPayload = carbon_query(carbon_model_table($joinActorMeta))
+    ->select($actorIdColumn)
+    ->join(
+        'INNER',
+        carbon_model_join_target($joinFilmActorMeta, $filmActorAlias),
+        [$filmActorAliasColumns['actor_id'] => [C6C::EQUAL, $actorIdColumn]]
+    )
     ->toPayload();
 carbon_assert(
     $joinPayload === [
@@ -188,9 +206,13 @@ carbon_assert(
     ],
     'unexpected index hint builder payload: ' . json_encode($hintPayload)
 );
-$hintedJoin = carbon_query('actor')
-    ->select('actor.actor_id', 'fa.film_id')
-    ->join('INNER', 'film_actor fa', ['fa.actor_id' => ['=', 'actor.actor_id']])
+$hintedJoin = carbon_query(carbon_model_table($joinActorMeta))
+    ->select($actorIdColumn, $filmActorAliasColumns['film_id'])
+    ->join(
+        'INNER',
+        carbon_model_join_target($joinFilmActorMeta, $filmActorAlias),
+        [$filmActorAliasColumns['actor_id'] => [C6C::EQUAL, $actorIdColumn]]
+    )
     ->indexHints([
         'actor' => carbon_ignore_index('idx_actor_last_name'),
         'film_actor fa' => carbon_use_index('idx_film_actor_actor_id'),
@@ -201,9 +223,9 @@ carbon_assert(
     $hintedJoin['sql'] === 'SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) ON ((fa.actor_id) = actor.actor_id) LIMIT 5',
     'unexpected hinted join sql: ' . $hintedJoin['sql']
 );
-$recentActorIds = carbon_query('film_actor')
-    ->select('film_actor.actor_id')
-    ->where(['film_actor.film_id' => ['>', 10]])
+$recentActorIds = carbon_query(carbon_model_table($joinFilmActorMeta))
+    ->select(carbon_model_column($joinFilmActorMeta, 'actor_id'))
+    ->where([carbon_model_column($joinFilmActorMeta, 'film_id') => ['>', 10]])
     ->limit(1);
 carbon_assert(
     carbon_subselect($recentActorIds) === [
@@ -217,10 +239,16 @@ carbon_assert(
     ],
     'unexpected subselect helper payload'
 );
-$derived = carbon_query('actor')
-    ->select('actor.actor_id', 'fa_recent.actor_id')
-    ->joinSubselect('INNER', 'fa_recent', $recentActorIds, ['fa_recent.actor_id' => ['=', 'actor.actor_id']])
-    ->where(['actor.actor_id' => ['>', 100]])
+$recentAliasColumns = carbon_model_alias_columns($joinFilmActorMeta, 'fa_recent');
+$derived = carbon_query(carbon_model_table($joinActorMeta))
+    ->select($actorIdColumn, $recentAliasColumns['actor_id'])
+    ->joinSubselect(
+        'INNER',
+        'fa_recent',
+        $recentActorIds,
+        [$recentAliasColumns['actor_id'] => [C6C::EQUAL, $actorIdColumn]]
+    )
+    ->where([$actorIdColumn => ['>', 100]])
     ->compile(null, CarbonDialect::MYSQL);
 carbon_assert($derived['status'] === 0, 'unexpected derived compile status: ' . json_encode($derived));
 carbon_assert(

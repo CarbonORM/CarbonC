@@ -360,6 +360,32 @@ function modelColumn(model, field) {
   return columns[field];
 }
 
+function modelJoinTarget(model, alias) {
+  if (typeof alias !== 'string' || alias.length === 0) {
+    throw new TypeError('model join alias must be a non-empty string');
+  }
+  return `${modelTable(model)} ${alias}`;
+}
+
+function modelAliasColumn(model, alias, field) {
+  const columns = modelColumns(model);
+  if (!Object.prototype.hasOwnProperty.call(columns, field)) {
+    throw new TypeError(`unknown model field: ${field}`);
+  }
+  if (typeof alias !== 'string' || alias.length === 0) {
+    throw new TypeError('model column alias must be a non-empty string');
+  }
+  return `${alias}.${field}`;
+}
+
+function modelAliasColumns(model, alias) {
+  const columns = modelColumns(model);
+  if (typeof alias !== 'string' || alias.length === 0) {
+    throw new TypeError('model column alias must be a non-empty string');
+  }
+  return Object.fromEntries(Object.keys(columns).map((field) => [field, `${alias}.${field}`]));
+}
+
 function modelQuery(model) {
   return query(modelTable(model));
 }
@@ -814,6 +840,12 @@ native.modelColumns = modelColumns;
 native.model_columns = modelColumns;
 native.modelColumn = modelColumn;
 native.model_column = modelColumn;
+native.modelJoinTarget = modelJoinTarget;
+native.model_join_target = modelJoinTarget;
+native.modelAliasColumn = modelAliasColumn;
+native.model_alias_column = modelAliasColumn;
+native.modelAliasColumns = modelAliasColumns;
+native.model_alias_columns = modelAliasColumns;
 native.modelQuery = modelQuery;
 native.model_query = modelQuery;
 native.modelSelect = modelSelect;

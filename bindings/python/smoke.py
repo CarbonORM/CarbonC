@@ -134,10 +134,28 @@ CREATE TABLE `actor` (
         "SELECT": ["actor.actor_id"],
         "PAGINATION": {"ORDER": [["actor.first_name", "DESC"]], "LIMIT": 5},
     }, ordered_payload
+    join_actor_model = {
+        "table": "actor",
+        "columns": {"actor_id": "actor.actor_id", "first_name": "actor.first_name"},
+    }
+    join_film_actor_model = {
+        "table": "film_actor",
+        "columns": {"actor_id": "film_actor.actor_id", "film_id": "film_actor.film_id"},
+    }
+    actor_id_column = carbon_codegen.model_column(join_actor_model, "actor_id")
+    film_actor_alias = "fa"
+    film_actor_alias_columns = carbon_codegen.model_alias_columns(join_film_actor_model, film_actor_alias)
+    assert film_actor_alias_columns == {"actor_id": "fa.actor_id", "film_id": "fa.film_id"}
+    assert carbon_codegen.model_alias_column(join_film_actor_model, film_actor_alias, "actor_id") == "fa.actor_id"
+    assert carbon_codegen.model_join_target(join_film_actor_model, film_actor_alias) == "film_actor fa"
     join_payload = (
-        carbon_codegen.from_table("actor")
-        .select("actor.actor_id")
-        .join("INNER", "film_actor fa", {"fa.actor_id": ["=", "actor.actor_id"]})
+        carbon_codegen.from_table(carbon_codegen.model_table(join_actor_model))
+        .select(actor_id_column)
+        .join(
+            "INNER",
+            carbon_codegen.model_join_target(join_film_actor_model, film_actor_alias),
+            {film_actor_alias_columns["actor_id"]: [carbon_codegen.C6C.EQUAL, actor_id_column]},
+        )
         .to_payload()
     )
     assert join_payload == {
@@ -162,9 +180,13 @@ CREATE TABLE `actor` (
         "PAGINATION": {"LIMIT": 10},
     }, hint_payload
     hinted_join = (
-        carbon_codegen.query("actor")
-        .select("actor.actor_id", "fa.film_id")
-        .join("INNER", "film_actor fa", {"fa.actor_id": ["=", "actor.actor_id"]})
+        carbon_codegen.query(carbon_codegen.model_table(join_actor_model))
+        .select(actor_id_column, film_actor_alias_columns["film_id"])
+        .join(
+            "INNER",
+            carbon_codegen.model_join_target(join_film_actor_model, film_actor_alias),
+            {film_actor_alias_columns["actor_id"]: [carbon_codegen.C6C.EQUAL, actor_id_column]},
+        )
         .index_hints(
             {
                 "actor": carbon_codegen.ignore_index("idx_actor_last_name"),
@@ -180,9 +202,9 @@ CREATE TABLE `actor` (
         "ON ((fa.actor_id) = actor.actor_id) LIMIT 5"
     ), hinted_join
     recent_actor_ids = (
-        carbon_codegen.query("film_actor")
-        .select("film_actor.actor_id")
-        .where({"film_actor.film_id": [">", 10]})
+        carbon_codegen.query(carbon_codegen.model_table(join_film_actor_model))
+        .select(carbon_codegen.model_column(join_film_actor_model, "actor_id"))
+        .where({carbon_codegen.model_column(join_film_actor_model, "film_id"): [">", 10]})
         .limit(1)
     )
     assert carbon_codegen.subselect(recent_actor_ids) == [
@@ -194,11 +216,17 @@ CREATE TABLE `actor` (
             "PAGINATION": {"LIMIT": 1},
         },
     ]
+    recent_alias_columns = carbon_codegen.model_alias_columns(join_film_actor_model, "fa_recent")
     derived = (
-        carbon_codegen.query("actor")
-        .select("actor.actor_id", "fa_recent.actor_id")
-        .join_subselect("INNER", "fa_recent", recent_actor_ids, {"fa_recent.actor_id": ["=", "actor.actor_id"]})
-        .where({"actor.actor_id": [">", 100]})
+        carbon_codegen.query(carbon_codegen.model_table(join_actor_model))
+        .select(actor_id_column, recent_alias_columns["actor_id"])
+        .join_subselect(
+            "INNER",
+            "fa_recent",
+            recent_actor_ids,
+            {recent_alias_columns["actor_id"]: [carbon_codegen.C6C.EQUAL, actor_id_column]},
+        )
+        .where({actor_id_column: [">", 100]})
         .compile(dialect=carbon_codegen.CarbonDialect.MYSQL)
     )
     assert derived["status"] == 0, derived

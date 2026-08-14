@@ -143,9 +143,27 @@ expected_ordered_payload = {
 unless ordered_payload == expected_ordered_payload
   raise "unexpected ordered builder payload: #{ordered_payload.inspect}"
 end
-join_payload = CarbonC.query('actor')
-                      .select('actor.actor_id')
-                      .join('INNER', 'film_actor fa', {'fa.actor_id' => ['=', 'actor.actor_id']})
+join_actor_model = {
+  'table' => 'actor',
+  'columns' => {'actor_id' => 'actor.actor_id', 'first_name' => 'actor.first_name'}
+}
+join_film_actor_model = {
+  'table' => 'film_actor',
+  'columns' => {'actor_id' => 'film_actor.actor_id', 'film_id' => 'film_actor.film_id'}
+}
+actor_id_column = CarbonC.model_column(join_actor_model, 'actor_id')
+film_actor_alias = 'fa'
+film_actor_alias_columns = CarbonC.model_alias_columns(join_film_actor_model, film_actor_alias)
+raise "unexpected alias columns: #{film_actor_alias_columns.inspect}" unless film_actor_alias_columns == {'actor_id' => 'fa.actor_id', 'film_id' => 'fa.film_id'}
+raise 'unexpected alias column' unless CarbonC.model_alias_column(join_film_actor_model, film_actor_alias, 'actor_id') == 'fa.actor_id'
+raise 'unexpected join target' unless CarbonC.model_join_target(join_film_actor_model, film_actor_alias) == 'film_actor fa'
+join_payload = CarbonC.query(CarbonC.model_table(join_actor_model))
+                      .select(actor_id_column)
+                      .join(
+                        'INNER',
+                        CarbonC.model_join_target(join_film_actor_model, film_actor_alias),
+                        film_actor_alias_columns.fetch('actor_id') => [CarbonC::C6C::EQUAL, actor_id_column]
+                      )
                       .to_payload
 expected_join_payload = {
   'FROM' => 'actor',
@@ -175,9 +193,13 @@ expected_hint_payload = {
 unless hint_payload == expected_hint_payload
   raise "unexpected index hint builder payload: #{hint_payload.inspect}"
 end
-hinted_join = CarbonC.query('actor')
-                     .select('actor.actor_id', 'fa.film_id')
-                     .join('INNER', 'film_actor fa', {'fa.actor_id' => ['=', 'actor.actor_id']})
+hinted_join = CarbonC.query(CarbonC.model_table(join_actor_model))
+                     .select(actor_id_column, film_actor_alias_columns.fetch('film_id'))
+                     .join(
+                       'INNER',
+                       CarbonC.model_join_target(join_film_actor_model, film_actor_alias),
+                       film_actor_alias_columns.fetch('actor_id') => [CarbonC::C6C::EQUAL, actor_id_column]
+                     )
                      .index_hints(
                        'actor' => CarbonC.ignore_index('idx_actor_last_name'),
                        'film_actor fa' => CarbonC.use_index('idx_film_actor_actor_id')
@@ -187,9 +209,9 @@ hinted_join = CarbonC.query('actor')
 unless hinted_join.fetch('sql') == 'SELECT actor.actor_id, fa.film_id FROM `actor` IGNORE INDEX (`idx_actor_last_name`) INNER JOIN `film_actor` AS `fa` USE INDEX (`idx_film_actor_actor_id`) ON ((fa.actor_id) = actor.actor_id) LIMIT 5'
   raise "unexpected hinted join sql: #{hinted_join.fetch('sql')}"
 end
-recent_actor_ids = CarbonC.query('film_actor')
-                          .select('film_actor.actor_id')
-                          .where({'film_actor.film_id' => ['>', 10]})
+recent_actor_ids = CarbonC.query(CarbonC.model_table(join_film_actor_model))
+                          .select(CarbonC.model_column(join_film_actor_model, 'actor_id'))
+                          .where(CarbonC.model_column(join_film_actor_model, 'film_id') => ['>', 10])
                           .limit(1)
 expected_subselect_payload = [
   'SUBSELECT',
@@ -203,10 +225,16 @@ expected_subselect_payload = [
 unless CarbonC.subselect(recent_actor_ids) == expected_subselect_payload
   raise "unexpected subselect helper payload: #{CarbonC.subselect(recent_actor_ids).inspect}"
 end
-derived = CarbonC.query('actor')
-                 .select('actor.actor_id', 'fa_recent.actor_id')
-                 .join_subselect('INNER', 'fa_recent', recent_actor_ids, {'fa_recent.actor_id' => ['=', 'actor.actor_id']})
-                 .where({'actor.actor_id' => ['>', 100]})
+recent_alias_columns = CarbonC.model_alias_columns(join_film_actor_model, 'fa_recent')
+derived = CarbonC.query(CarbonC.model_table(join_actor_model))
+                 .select(actor_id_column, recent_alias_columns.fetch('actor_id'))
+                 .join_subselect(
+                   'INNER',
+                   'fa_recent',
+                   recent_actor_ids,
+                   recent_alias_columns.fetch('actor_id') => [CarbonC::C6C::EQUAL, actor_id_column]
+                 )
+                 .where(actor_id_column => ['>', 100])
                  .compile(nil, CarbonC::Dialect::MYSQL)
 raise "unexpected derived compile status: #{derived.inspect}" unless derived.fetch('status') == 0
 unless derived.fetch('sql') == 'SELECT actor.actor_id, fa_recent.actor_id FROM `actor` INNER JOIN (SELECT film_actor.actor_id FROM `film_actor` WHERE (film_actor.film_id) > ? LIMIT 1) AS `fa_recent` ON ((fa_recent.actor_id) = actor.actor_id) WHERE (actor.actor_id) > ? LIMIT 100'

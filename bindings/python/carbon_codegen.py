@@ -398,6 +398,28 @@ def model_column(model: Any, field: str) -> str:
     return columns[field]
 
 
+def model_join_target(model: Any, alias: str) -> str:
+    if not isinstance(alias, str) or not alias:
+        raise TypeError("model join alias must be a non-empty string")
+    return f"{model_table(model)} {alias}"
+
+
+def model_alias_column(model: Any, alias: str, field: str) -> str:
+    columns = model_columns(model)
+    if field not in columns:
+        raise KeyError(f"unknown model field: {field}")
+    if not isinstance(alias, str) or not alias:
+        raise TypeError("model column alias must be a non-empty string")
+    return f"{alias}.{field}"
+
+
+def model_alias_columns(model: Any, alias: str) -> dict[str, str]:
+    columns = model_columns(model)
+    if not isinstance(alias, str) or not alias:
+        raise TypeError("model column alias must be a non-empty string")
+    return {field: f"{alias}.{field}" for field in columns}
+
+
 def model_query(model: Any) -> Query:
     return query(model_table(model))
 
@@ -688,13 +710,16 @@ __all__ = [
     "lit",
     "match_against",
     "mbr_contains",
+    "model_alias_column",
+    "model_alias_columns",
     "model_column",
     "model_columns",
-    "model_query",
     "model_do_nothing",
-    "model_insert",
     "model_get_payload",
     "model_get_request",
+    "model_insert",
+    "model_join_target",
+    "model_query",
     "model_replace",
     "model_select",
     "model_table",

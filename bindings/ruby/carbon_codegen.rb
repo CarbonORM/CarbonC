@@ -493,6 +493,34 @@ module CarbonC
       columns.fetch(key)
     end
 
+    def model_join_target(model, alias_name)
+      alias_value = alias_name.to_s
+      raise ArgumentError, 'model join alias must be a non-empty string' if alias_value.empty?
+
+      "#{model_table(model)} #{alias_value}"
+    end
+
+    def model_alias_column(model, alias_name, field)
+      columns = model_columns(model)
+      key = field.to_s
+      raise KeyError, "unknown model field: #{key}" unless columns.key?(key)
+
+      alias_value = alias_name.to_s
+      raise ArgumentError, 'model column alias must be a non-empty string' if alias_value.empty?
+
+      "#{alias_value}.#{key}"
+    end
+
+    def model_alias_columns(model, alias_name)
+      columns = model_columns(model)
+      alias_value = alias_name.to_s
+      raise ArgumentError, 'model column alias must be a non-empty string' if alias_value.empty?
+
+      columns.each_key.with_object({}) do |field, mapped|
+        mapped[field] = "#{alias_value}.#{field}"
+      end
+    end
+
     def model_query(model)
       query(model_table(model))
     end
